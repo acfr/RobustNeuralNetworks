@@ -42,6 +42,9 @@ class LipNet(nn.Module):
     gamma_trainable: bool = False
 
     # act_fn: Callable = nn.relu
+    
+    # TODO: This uses the old version of LFTN, not the one in the docs/ folder
+    #       We should update this to make the networks more efficient!!
 
     @nn.compact
     def __call__(self, x : jnp.array) -> jnp.array:
