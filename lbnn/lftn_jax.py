@@ -58,7 +58,6 @@ class LFTN(nn.Module):
         use_bias: Whether to use bias terms (default: True).
         trainable_lipschitz: Whether to make the Lipschitz constant trainable (default: False).
     
-    TODO: Generalise for non-ReLU activation function.
     TODO: Optional activation on final layer is not implemented yet.
     """
     layer_sizes: Sequence[int]
