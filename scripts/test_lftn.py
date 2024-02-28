@@ -14,8 +14,6 @@ model = LFTN(
     gamma=jnp.float32(2.0)
 )
 
-params = model.init(rng, jnp.ones((6,nu)))
-print(jax.tree_map(jnp.shape, params))
-
 test = jax.random.normal(rng2, shape=(4, nu))
+params = model.init(rng, jnp.ones((6,nu)))
 jax.debug.print("Out {x}", x = model.apply(params, test))

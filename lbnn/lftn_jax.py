@@ -5,13 +5,16 @@ from flax import linen as nn
 import flax.linen.initializers as init
 from typing import Any, Sequence, Callable
 
+
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
+
 def l2_norm(x, eps=jnp.finfo(jnp.float32).eps):
-    """Compute l2 norm of a vector with JAX.
+    """Compute l2 norm of a vector/matrix with JAX.
     This is safe for backpropagation, unlike `jnp.linalg.norm`."""
     return jnp.sqrt(jnp.maximum(jnp.sum(x**2), eps))
+
 
 def cayley(W):
     """Perform Cayley transform on a stacked matrix [U; V]"""
@@ -27,6 +30,7 @@ def cayley(W):
     #       And is it faster if we do?
 
     return jnp.concatenate([Zi @ (I-Z), -2 * V @ Zi], axis=0)
+
 
 class LFTN(nn.Module):
     """Lipschitz-bounded Feed-through Network.
@@ -61,7 +65,7 @@ class LFTN(nn.Module):
     layer_sizes: Sequence[int]
     gamma: jnp.float32 = 1.0
     activation: ActivationFn = nn.relu
-    kernel_init: Initializer = init.glorot_normal
+    kernel_init: Initializer = init.glorot_normal()
     activate_final: bool = False
     use_bias: bool = True
     trainable_lipschitz: bool = False
@@ -85,7 +89,7 @@ class LFTN(nn.Module):
             gamma = init.constant(self.gamma)(_rng, (1,), jnp.float32)
         
         # Define free parameter Fq and compute Qx, Qy via normalized Cayley
-        Fq = self.param("Fq", self.kernel_init(), (nx+ny, sum(self.hidden_sizes)), jnp.float32)
+        Fq = self.param("Fq", self.kernel_init, (nx+ny, sum(self.hidden_sizes)), jnp.float32)
         fq = self.param("fq", init.constant(l2_norm(Fq)),(1,), jnp.float32)
         
         QT = cayley((fq / l2_norm(Fq)) * Fq)
@@ -103,13 +107,14 @@ class LFTN(nn.Module):
         for k, nz in enumerate(self.hidden_sizes):
             
             # Free params Fr = [Fa; Fb] and get Rk = [Ak Bk]
-            Fr = self.param(f"Fr{k}", self.kernel_init(), (nz+nz_1, nz), jnp.float32)
+            Fr = self.param(f"Fr{k}", self.kernel_init, (nz+nz_1, nz), jnp.float32)
             fr = self.param(f"fr{k}", init.constant(l2_norm(Fr)), (1,), jnp.float32)
             RT = cayley((fr / l2_norm(Fr)) * Fr)
             
             # Bias and activation scaling
             bk = self.param(f'b{k}', init.zeros_init(), (nz,), jnp.float32)
             # pk = self.param(f'p{k}', init.zeros_init(), (nz,), jnp.float32)
+            # TODO: Might need to put a bound of something like 5 on pk to avoid blow-up
             
             # Compute the layer update
             xhat_k = xhat[..., idx:idx+nz]
