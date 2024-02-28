@@ -25,11 +25,11 @@ def cayley(W):
     U, V = W[:n, :], W[n:, :]
     Z = (U - U.T) + (V.T @ V)
     I = jnp.eye(n)
-    Zi = jnp.linalg.inv(I+Z) 
-    # TODO: Can we avoid explicitly computing inverse? 
-    #       And is it faster if we do?
-
-    return jnp.concatenate([Zi @ (I-Z), -2 * V @ Zi], axis=0)
+    ZI = Z + I
+    
+    # Note that B * A^-1 = solve(A.T, B.T).T
+    return jnp.concatenate([jnp.linalg.solve(ZI, I-Z),
+                            -2 * jnp.linalg.solve(ZI.T, V.T).T])
 
 
 class LFTN(nn.Module):
