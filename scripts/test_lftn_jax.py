@@ -7,7 +7,9 @@ rng = jax.random.PRNGKey(0)
 rng2 = jax.random.PRNGKey(1)
 
 nu = 5
-nlayers = (8,16,8,2)
+ny = 2
+nlayers = (8,16,8,ny)
+
 model = LFTN(
     layer_sizes=nlayers,
     activation=linen.relu,
