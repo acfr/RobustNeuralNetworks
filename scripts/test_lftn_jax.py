@@ -12,10 +12,13 @@ nlayers = (8,16,8,ny)
 
 model = LFTN(
     layer_sizes=nlayers,
-    activation=linen.relu,
-    gamma=jnp.float32(2.0)
+    activation=linen.tanh,
+    gamma=jnp.float32(2.0),
+    use_bias=True,
 )
 
 test = jax.random.normal(rng2, shape=(4, nu))
 params = model.init(rng, jnp.ones((6,nu)))
-jax.debug.print("Out {x}", x = model.apply(params, test))
+
+y = model.apply(params, test)
+jax.debug.print("Out {x}", x = y)

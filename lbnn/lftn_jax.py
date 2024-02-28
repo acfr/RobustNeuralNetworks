@@ -59,8 +59,7 @@ class LFTN(nn.Module):
         trainable_lipschitz: Whether to make the Lipschitz constant trainable (default: False).
     
     TODO: Generalise for non-ReLU activation function.
-    TODO: Optional bias
-    TODO: Optional activation on final layer
+    TODO: Optional activation on final layer is not implemented yet.
     """
     layer_sizes: Sequence[int]
     gamma: jnp.float32 = 1.0
@@ -76,7 +75,7 @@ class LFTN(nn.Module):
         self.output_size = self.layer_sizes[-1]
     
     @nn.compact
-    def __call__(self, x : jnp.array) -> jnp.array:
+    def __call__(self, x : jnp.array) -> jnp.array:      
         
         # Input and output shapes
         nx = jnp.shape(x)[-1]
@@ -106,20 +105,29 @@ class LFTN(nn.Module):
         # Loop through the hidden layers
         for k, nz in enumerate(self.hidden_sizes):
             
+            # Wrapper for scaling activation function
+            if self.activation == nn.relu:
+                activation_k = self.activation
+            else:
+                d = self.param(f'p{k}', init.zeros_init(), (nz,), jnp.float32)
+                psi_k = jnp.exp(d)
+                activation_k = lambda x: psi_k * self.activation(x / psi_k)
+            
             # Free params Fr = [Fa; Fb] and get Rk = [Ak Bk]
             Fr = self.param(f"Fr{k}", self.kernel_init, (nz+nz_1, nz), jnp.float32)
             fr = self.param(f"fr{k}", init.constant(l2_norm(Fr)), (1,), jnp.float32)
             RT = cayley((fr / l2_norm(Fr)) * Fr)
-            
-            # Bias and activation scaling
-            bk = self.param(f'b{k}', init.zeros_init(), (nz,), jnp.float32)
-            # pk = self.param(f'p{k}', init.zeros_init(), (nz,), jnp.float32)
-            # TODO: Might need to put a bound of something like 5 on pk to avoid blow-up
-            
+
             # Compute the layer update
             xhat_k = xhat[..., idx:idx+nz]
             xhat_hk_1 = jnp.concatenate((xhat_k, hk_1), axis=-1)
-            gk_hk = jnp.sqrt(2) * self.activation(jnp.sqrt(2) * xhat_hk_1 @ RT + bk) @ RT.T
+            temp_var = jnp.sqrt(2) * xhat_hk_1 @ RT
+            
+            if self.use_bias:
+                bk = self.param(f'b{k}', init.zeros_init(), (nz,), jnp.float32)
+                temp_var += bk
+                
+            gk_hk = jnp.sqrt(2) * activation_k(temp_var) @ RT.T
             
             # Split outputs and store for later
             hk = gk_hk[..., :nz] - xhat_k
@@ -134,8 +142,10 @@ class LFTN(nn.Module):
         # Handle the output layer separately
         yhat_ks.append(hk_1)
         yhat = jnp.concatenate(yhat_ks, axis=-1)
+        y = jnp.sqrt(2/gamma) * (xhat + yhat) @ QT_y.T
         
-        by = self.param("by", init.zeros_init(), (ny,), jnp.float32)
-        y = jnp.sqrt(2/gamma) * (xhat + yhat) @ QT_y.T + by
+        if self.use_bias:
+            by = self.param("by", init.zeros_init(), (ny,), jnp.float32)
+            y += by
         
         return y
