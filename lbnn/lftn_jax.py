@@ -109,7 +109,7 @@ class LFTN(nn.Module):
             if self.activation == nn.relu:
                 activation_k = self.activation
             else:
-                d = self.param(f'p{k}', init.zeros_init(), (nz,), jnp.float32)
+                d = self.param(f'd{k}', init.zeros_init(), (nz,), jnp.float32)
                 psi_k = jnp.exp(d)
                 activation_k = lambda x: psi_k * self.activation(x / psi_k)
             
