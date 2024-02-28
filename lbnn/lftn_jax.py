@@ -4,7 +4,7 @@ from flax import linen as nn
 from typing import Any, Sequence, Callable
 
 eps = 0.05
-norms = lambda x: l2_normalize(x, axis=-1)
+norms = lambda x: jnp.linalg.norm(x, axis=-1)
 
 def estimate_lipschitz(state, x, dx):
     f = lambda x: state.apply_fn(state.params, x)
@@ -59,8 +59,8 @@ class LipNet(nn.Module):
             gamma = nn.initializers.constant(self.gamma)(_default_key, (1,), jnp.float32)
         
         Fq = self.param('Fq', nn.initializers.glorot_normal(), (nx+ny, sum(self.units)), jnp.float32)
-        fq = self.param('fq', nn.initializers.constant(l2_normalize(Fq)), (1,), jnp.float32)
-        QT = cayley((fq / l2_normalize(Fq)) * Fq) 
+        fq = self.param('fq', nn.initializers.constant(jnp.linalg.norm(Fq)), (1,), jnp.float32)
+        QT = cayley((fq / jnp.linalg.norm(Fq)) * Fq) 
         
         x = jnp.sqrt(gamma) * x 
         y = 0.
@@ -69,8 +69,8 @@ class LipNet(nn.Module):
         Ak_1 = jnp.zeros((0, 0))
         for k, nz in enumerate(self.units):
             Fab = self.param(f'Fab{k}', nn.initializers.glorot_normal(), (nz+nz_1, nz), jnp.float32)
-            fab = self.param(f'fab{k}',nn.initializers.constant(l2_normalize(Fab)), (1,), jnp.float32)
-            ABT = cayley((fab / l2_normalize(Fab)) * Fab)
+            fab = self.param(f'fab{k}',nn.initializers.constant(jnp.linalg.norm(Fab)), (1,), jnp.float32)
+            ABT = cayley((fab / jnp.linalg.norm(Fab)) * Fab)
             ATk, BTk = ABT[:nz, :], ABT[nz:, :]
             QT_xk_1, QT_xk = QT[:nx, idx-nz_1:idx], QT[:nx, idx:idx+nz]
             QT_yk_1, QT_yk = QT[nx:, idx-nz_1:idx], QT[nx:, idx:idx+nz]
