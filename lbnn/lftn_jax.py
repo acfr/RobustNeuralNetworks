@@ -1,29 +1,23 @@
 import jax 
 import jax.numpy as jnp
-from flax import linen as nn 
+
+from flax import linen as nn
+import flax.linen.initializers as init
 from typing import Any, Sequence, Callable
 
-eps = 0.05
-norms = lambda x: jnp.linalg.norm(x, axis=-1)
 
-def estimate_lipschitz(state, x, dx):
-    f = lambda x: state.apply_fn(state.params, x)
-    dy = f(x + eps * dx) - f(x - eps * dx)
-    lip = 0.5 * norms(dy) / (eps * norms(dx))
+ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
+Initializer = Callable[..., Any]
 
-    return jnp.max(lip)
 
-def l2_length(x, eps=jnp.finfo(jnp.float32).eps):
-    """Compute l2 norm of a vector with JAX."""
-    return jnp.sqrt(jnp.maximum(jnp.sum(
-        x**2, axis=-1, keepdims=True), eps))
+def l2_norm(x, eps=jnp.finfo(jnp.float32).eps):
+    """Compute l2 norm of a vector/matrix with JAX.
+    This is safe for backpropagation, unlike `jnp.linalg.norm`."""
+    return jnp.sqrt(jnp.maximum(jnp.sum(x**2), eps))
 
-def l2_normalize(x, eps=jnp.finfo(jnp.float32).eps):
-    """Normalize x to unit length along last axis.
-    This is safe for backpropagation, unlike `jnp.linalg.norm1`."""
-    return x / l2_length(x, eps=eps)
 
 def cayley(W):
+    """Perform Cayley transform on a stacked matrix [U; V]"""
     m, n = W.shape 
     if n > m:
        return cayley(W.T).T
@@ -31,59 +25,117 @@ def cayley(W):
     U, V = W[:n, :], W[n:, :]
     Z = (U - U.T) + (V.T @ V)
     I = jnp.eye(n)
-    Zi = jnp.linalg.inv(I+Z)
+    Zi = jnp.linalg.inv(I+Z) 
+    # TODO: Can we avoid explicitly computing inverse? 
+    #       And is it faster if we do?
 
     return jnp.concatenate([Zi @ (I-Z), -2 * V @ Zi], axis=0)
 
-class LipNet(nn.Module):
-    units: Sequence[int]
-    fout: int 
-    gamma: jnp.float32 = 1.0 # Lipschitz bound
-    gamma_trainable: bool = False
 
-    # act_fn: Callable = nn.relu
+class LFTN(nn.Module):
+    """Lipschitz-bounded Feed-through Network.
     
-    # TODO: This uses the old version of LFTN, not the one in the docs/ folder
-    #       We should update this to make the networks more efficient!!
-
+    Example usage::
+    
+        >>> from liprl.networks.lftn import LFTN
+        >>> import jax, jax.numpy as jnp
+        
+        >>> nu, ny = 5, 2
+        >>> layers = (8, 16, ny)
+        >>> gamma = jnp.float32(10)
+        
+        >>> model = LFTN(layer_sizes=layers, gamma=gamma)
+        >>> params = model.init(jax.random.key(0), jnp.ones((6,nu)))
+        >>> jax.tree_map(jnp.shape, params)
+        {'params': {'Fq': (7, 24), 'Fr0': (8, 8), 'Fr1': (24, 16), 'b0': (8,), 'b1': (16,), 'by': (2,), 'fq': (1,), 'fr0': (1,), 'fr1': (1,), 'gamma': (1,)}}
+    
+    Attributes:
+        layer_sizes: Tuple of hidden layer sizes and the output size.
+        gamma: Upper bound on the Lipschitz constant (default: 1.0).
+        activation: Activation function to use (default: relu).
+        kernel_init: Initialisation function for matrics (default: glorot_normal).
+        activate_final: Whether to apply activation to the final layer (default: False).
+        use_bias: Whether to use bias terms (default: True).
+        trainable_lipschitz: Whether to make the Lipschitz constant trainable (default: False).
+    
+    TODO: Generalise for non-ReLU activation function.
+    TODO: Optional bias
+    TODO: Optional activation on final layer
+    """
+    layer_sizes: Sequence[int]
+    gamma: jnp.float32 = 1.0
+    activation: ActivationFn = nn.relu
+    kernel_init: Initializer = init.glorot_normal()
+    activate_final: bool = False
+    use_bias: bool = True
+    trainable_lipschitz: bool = False
+    
+    def setup(self):
+        """Define some common sizes."""
+        self.hidden_sizes = self.layer_sizes[:-1]
+        self.output_size = self.layer_sizes[-1]
+    
     @nn.compact
     def __call__(self, x : jnp.array) -> jnp.array:
-        nx = jnp.shape(x)[-1]  
-        ny = self.fout
-
-        gamma = self.param("gamma", nn.initializers.constant(self.gamma), (1,), jnp.float32)
-
-        # If not trainable, update as fixed parameter.
-        if not self.gamma_trainable:
-            _default_key = jax.random.PRNGKey(0)
-            gamma = nn.initializers.constant(self.gamma)(_default_key, (1,), jnp.float32)
         
-        Fq = self.param('Fq', nn.initializers.glorot_normal(), (nx+ny, sum(self.units)), jnp.float32)
-        fq = self.param('fq', nn.initializers.constant(jnp.linalg.norm(Fq)), (1,), jnp.float32)
-        QT = cayley((fq / jnp.linalg.norm(Fq)) * Fq) 
+        # Input and output shapes
+        nx = jnp.shape(x)[-1]
+        ny = self.output_size
         
-        x = jnp.sqrt(gamma) * x 
-        y = 0.
-        idx, nz_1 = 0, 0 
-        zk = x[..., :0]
-        Ak_1 = jnp.zeros((0, 0))
-        for k, nz in enumerate(self.units):
-            Fab = self.param(f'Fab{k}', nn.initializers.glorot_normal(), (nz+nz_1, nz), jnp.float32)
-            fab = self.param(f'fab{k}',nn.initializers.constant(jnp.linalg.norm(Fab)), (1,), jnp.float32)
-            ABT = cayley((fab / jnp.linalg.norm(Fab)) * Fab)
-            ATk, BTk = ABT[:nz, :], ABT[nz:, :]
-            QT_xk_1, QT_xk = QT[:nx, idx-nz_1:idx], QT[:nx, idx:idx+nz]
-            QT_yk_1, QT_yk = QT[nx:, idx-nz_1:idx], QT[nx:, idx:idx+nz]
-            # use relu activation, no need for psi
-            # pk = self.param(f'p{k}', nn.initializers.zeros_init(), (nz,), jnp.float32)
-            bk = self.param(f'b{k}', nn.initializers.zeros_init(), (nz,), jnp.float32)
-            zk = nn.relu(2 * (zk @ Ak_1 @ BTk + x @ QT_xk @ ATk - x @ QT_xk_1 @ BTk) + bk)
-            y += zk @ ATk.T @ QT_yk.T - zk @ BTk.T @ QT_yk_1.T 
-            idx += nz 
-            nz_1 = nz 
-            Ak_1 = ATk.T     
+        # Set up trainable/constant Lipschitz bound
+        gamma = self.param("gamma", init.constant(self.gamma), (1,), jnp.float32)
+        if not self.trainable_lipschitz:
+            _rng = jax.random.PRNGKey(0)
+            gamma = init.constant(self.gamma)(_rng, (1,), jnp.float32)
+        
+        # Define free parameter Fq and compute Qx, Qy via normalized Cayley
+        Fq = self.param("Fq", self.kernel_init, (nx+ny, sum(self.hidden_sizes)), jnp.float32)
+        fq = self.param("fq", init.constant(l2_norm(Fq)),(1,), jnp.float32)
+        
+        QT = cayley((fq / l2_norm(Fq)) * Fq)
+        QT_x = QT[:nx, :]
+        QT_y = QT[nx:, :]
 
-        by = self.param('by', nn.initializers.zeros_init(), (ny,), jnp.float32) 
-        y = jnp.sqrt(gamma) * y + by 
-
-        return y 
+        # Set up for layer-wise loop
+        xhat = jnp.sqrt(2*gamma) * x @ QT_x
+        hk_1 = xhat[..., :0]
+        yhat_ks = []
+        idx = 0
+        nz_1 = 0
+        
+        # Loop through the hidden layers
+        for k, nz in enumerate(self.hidden_sizes):
+            
+            # Free params Fr = [Fa; Fb] and get Rk = [Ak Bk]
+            Fr = self.param(f"Fr{k}", self.kernel_init, (nz+nz_1, nz), jnp.float32)
+            fr = self.param(f"fr{k}", init.constant(l2_norm(Fr)), (1,), jnp.float32)
+            RT = cayley((fr / l2_norm(Fr)) * Fr)
+            
+            # Bias and activation scaling
+            bk = self.param(f'b{k}', init.zeros_init(), (nz,), jnp.float32)
+            # pk = self.param(f'p{k}', init.zeros_init(), (nz,), jnp.float32)
+            # TODO: Might need to put a bound of something like 5 on pk to avoid blow-up
+            
+            # Compute the layer update
+            xhat_k = xhat[..., idx:idx+nz]
+            xhat_hk_1 = jnp.concatenate((xhat_k, hk_1), axis=-1)
+            gk_hk = jnp.sqrt(2) * self.activation(jnp.sqrt(2) * xhat_hk_1 @ RT + bk) @ RT.T
+            
+            # Split outputs and store for later
+            hk = gk_hk[..., :nz] - xhat_k
+            gk = gk_hk[..., nz:]
+            yhat_ks.append(hk_1 - gk)
+            
+            # Update intermediates/indices
+            idx += nz
+            hk_1 = hk
+            nz_1 = nz
+            
+        # Handle the output layer separately
+        yhat_ks.append(hk_1)
+        yhat = jnp.concatenate(yhat_ks, axis=-1)
+        
+        by = self.param("by", init.zeros_init(), (ny,), jnp.float32)
+        y = jnp.sqrt(2/gamma) * (xhat + yhat) @ QT_y.T + by
+        
+        return y
