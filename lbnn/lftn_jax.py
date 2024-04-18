@@ -141,7 +141,7 @@ class LFTN(nn.Module):
         # Handle the output layer separately
         yhat_ks.append(hk_1)
         yhat = jnp.concatenate(yhat_ks, axis=-1)
-        y = jnp.sqrt(2/gamma) * (xhat + yhat) @ QT_y.T
+        y = jnp.sqrt(gamma/2) * (xhat + yhat) @ QT_y.T
         
         if self.use_bias:
             by = self.param("by", init.zeros_init(), (ny,), jnp.float32)
