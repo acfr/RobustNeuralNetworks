@@ -138,17 +138,20 @@ class LFTN_Sparse(nn.Module):
             # Split outputs and store for later
             hk = gk_hk[..., :nz] - xhat_hk
             gk = gk_hk[..., nz:]
-            yhat_ks.append(hk_1 - gk)
+
+            yhat = hk_1 - gk
+            if sum(self.skip_connections) == len(self.skip_connections):
+                yhat_ks.append(yhat)
             
             # Update intermediates/indices
             idx += nz
             hk_1 = hk
             nz_1 = nz
             
-        # Handle the output layer separately
-        # TODO(Ray) these differ a bit from the densely connected to the sparsely connect? Can you check please?
-        yhat_ks.append(hk_1)
-        yhat = jnp.concatenate(yhat_ks, axis=-1)
+        # Handle the output layer separately, and handling for dense connections.
+        if sum(self.skip_connections) == len(self.skip_connections):
+            yhat_ks.append(hk_1)
+            yhat = jnp.concatenate(yhat_ks, axis=-1)
         y = jnp.sqrt(gamma/2) * (yhat) @ Qy.T
         
         if self.use_bias:
