@@ -62,6 +62,7 @@ class LFTN_Sparse(nn.Module):
     """
     layer_sizes: Sequence[int]
     skip_connections: Sequence[bool]
+    layer_result: Sequence[bool]
     gamma: jnp.float32 = 1.0
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = init.glorot_normal()
@@ -103,6 +104,8 @@ class LFTN_Sparse(nn.Module):
         yhat_ks = []
         idx = 0
         nz_1 = 0
+
+        layer_outs = []
         
         # Loop through the hidden layers
         for k, nz in enumerate(self.hidden_sizes):
@@ -132,15 +135,21 @@ class LFTN_Sparse(nn.Module):
             if self.use_bias:
                 bk = self.param(f'b{k}', init.zeros_init(), (nz,), jnp.float32)
                 temp_var += bk
-                
-            gk_hk = jnp.sqrt(2) * activation_k(temp_var) @ RT.T
+            z = activation_k(temp_var)
+            
+            # To take intermediate results from the network
+            if self.layer_result.any() and self.layer_result[k]:
+                layer_outs.append(z)
+
+
+            gk_hk = jnp.sqrt(2) * z @ RT.T
             
             # Split outputs and store for later
             hk = gk_hk[..., :nz] - xhat_hk
             gk = gk_hk[..., nz:]
 
             yhat = hk_1 - gk
-            if sum(self.skip_connections) == len(self.skip_connections):
+            if self.skip_connections.all():
                 yhat_ks.append(yhat)
             
             # Update intermediates/indices
@@ -158,4 +167,7 @@ class LFTN_Sparse(nn.Module):
             by = self.param("by", init.zeros_init(), (ny,), jnp.float32)
             y += by
         
-        return y
+        if self.layer_result.any():
+            return y, layer_outs
+        else:
+            return y
