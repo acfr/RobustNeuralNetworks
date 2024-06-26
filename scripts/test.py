@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from robustnn.ren_jax import tril_equlibrium_layer
+from robustnn.ren_jax.utils import tril_equlibrium_layer
 
 
 ##################### Test it all out #####################
