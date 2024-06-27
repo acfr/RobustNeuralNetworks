@@ -1,37 +1,17 @@
 import jax
 import jax.numpy as jnp
 
-from robustnn.ren_jax.utils import tril_equlibrium_layer
+from robustnn.ren_jax.ren_base import RENBase
 
+batches = 4
+nu, nx, nv, ny = 1, 1, 2, 1 # TODO: Allow nx = 0, and/or nv = 0
+ren = RENBase(nx, nv, ny)
 
-##################### Test it all out #####################
+rng = jax.random.key(0)
+key1, key2 = jax.random.split(rng)
 
-D = jnp.array(
-    [[0.0 , 0.        , 0.        , 0.        , 0.        ],
-     [0.27276897, 0.0 , 0.        , 0.        , 0.        ],
-     [0.8973534 , 0.45088673, 0.0, 0.        , 0.         ],
-     [0.94310784, 0.02125645, 0.44761765, 0.0, 0.         ],
-     [0.24344909, 0.17582   , 0.18456626, 0.40024185, 0.0 ]]
-)
-b = jnp.array(
-    [[0.5338    , 0.9719182 , 0.61623883, 0.868845  , 0.6309322 ],
-    [0.20438278, 0.7415488 , 0.15026295, 0.21696508, 0.32493377],
-    [0.7355863 , 0.79253435, 0.3715024 , 0.1306243 , 0.04838264]]
-)
+states = ren.initialize_carry(key1, (batches, nu))
+inputs = jnp.ones((batches, nu))
 
-# Run it once
-act = jnp.tanh
-w_eq = tril_equlibrium_layer(act, D, b)
-print(w_eq)
-
-# Test gradients
-def loss(D, b):
-    w_eq = tril_equlibrium_layer(act, D, b)
-    return jnp.sum(w_eq**2)
-
-grad_func = jax.jit(jax.grad(loss, argnums=(0,1)))
-gs = grad_func(D,b)
-
-print(loss(D,b))
-print("Gradient for D: ", gs[0])
-print("Gradient for b: ", gs[1])
+params = ren.init(key2, states, inputs)
+print(jax.tree_map(jnp.shape, params))
