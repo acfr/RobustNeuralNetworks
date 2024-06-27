@@ -54,6 +54,8 @@ class RENBase(nn.Module):
         d22_zero: Fix `D22 = 0` to remove any feedthrough in the REN (default: False).
         eps: Regularising parameter for positive-definite matrices (default: machine 
              precision for `jnp.float32`).
+        abar: upper bound on the contraction rate. Requires
+              `0 <= abar <= 1` (default: 1).
         
     NOTE: Initializing the `X` matrix for a REN with `orthogonal()` is likely to make
           the initial REN dynamics slow, with long memory. For faster initial dynamics,
@@ -71,6 +73,7 @@ class RENBase(nn.Module):
     d22_free: bool = False
     d22_zero: bool = False
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps
+    abar: jnp.float32 = 1
     
     @nn.compact
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
@@ -87,6 +90,7 @@ class RENBase(nn.Module):
         nv = self.features
         ny = self.output_size
         
+        # Define REN params
         B2 = self.param("B2", self.kernel_init, (nx, nu), self.param_dtype)
         D12 = self.param("D12", self.kernel_init, (nv, nu), self.param_dtype)
         X = self.param("X", self.recurrent_kernel_init, 
@@ -117,15 +121,14 @@ class RENBase(nn.Module):
         bv = self.param("bv", self.bias_init, (nv,), self.param_dtype)
         by = self.param("by", self.bias_init, (ny,), self.param_dtype)
 
-        state = state
-        out = inputs
-        return state, out
+        # Direct parameterisation mapping
+        # TODO: Use dataclasses to tidy this the fuck up.
+        explicit = self.direct_to_explicit(X, p, B2, D12, Y1, C2, D21, 
+                                           D22, X3, Y3, Z3, bx, bv, by)
         
-    
-    def direct_to_explicit(self, *params):
-        """Convert direct paremeterization of a REN to explicit form
-        for evaluation. This depends on the specific REN parameterization."""
-        raise NotImplementedError
+        # Call the explicit REN form and return
+        state, out = self.ren_call(state, inputs, *explicit)
+        return state, out
     
     def ren_call(
         self, x: Array, u: Array, 
@@ -155,4 +158,55 @@ class RENBase(nn.Module):
         rng, _ = jax.random.split(rng)
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
+    
+    def direct_to_explicit(self, X, p, B2, D12, Y1, C2, D21, 
+                           D22, X3, Y3, Z3, bx, bv, by):
+        """Convert direct paremeterization of a REN to explicit form
+        for evaluation. This depends on the specific REN parameterization."""
+        raise NotImplementedError("RENBase models should not be called. Choose a REN parameterization instead (eg: `ContractingREN`).")
+    
+    def x_to_h(self, X, p):
+        """Convert REN X matrix to H matrix using polar parameterization."""
+        H = p**2 * (X.T @ X) / (l2_norm(X)**2) + self.eps * jnp.identity(jnp.shape(X)[0])
+        return H
+    
+    def hmatrix_to_explicit(self, H, B2, D12, Y1, C2, D21, D22, bx, bv, by):
+        
+        nx = self.state_size
+        nv = self.features
+        
+        # Extract sections of the H matrix
+        H11 = H[:nx, :nx]
+        H22 = H[nx:(nx + nv), nx:(nx + nv)]
+        H33 = H[(nx + nv):(2*nx + nv), (nx + nv):(2*nx + nv)]
+        H21 = H[nx:(nx + nv), :nx]
+        H31 = H[(nx + nv):(2*nx + nv), :nx]
+        H32 = H[(nx + nv):(2*nx + nv), nx:(nx + nv)]
+                
+        # Construct implicit model parameters
+        P_imp = H33
+        F = H31
+        E = (H11 + P_imp / (self.abar**2) + Y1 - Y1.T) / 2
+        
+        # Equilibrium network params (imp for "implicit")
+        B1_imp = H32
+        C1_imp = -H21
+        Lambda_inv = 2 / jnp.diag(H22)
+        D11_imp = -jnp.tril(H22, k=-1)
+        
+        # Construct the explicit model (e for "explicit")
+        A_e = jnp.linalg.solve(E, F)
+        B1_e = jnp.linalg.solve(E, B1_imp)
+        B2_e = jnp.linalg.solve(E, B2)
+        
+        # Equilibrium layer matrices
+        C1_e = (Lambda_inv * C1_imp.T).T
+        D11_e = (Lambda_inv * D11_imp.T).T
+        D12_e = (Lambda_inv * D12.T).T
+        
+        # Remaining explicit params are biases/in the output layer
+        # and are unchanged
+        explicit = (A_e, B1_e, B2_e, C1_e, C2, D11_e, 
+                    D12_e, D21, D22, bx, bv, by)
+        return explicit
         
