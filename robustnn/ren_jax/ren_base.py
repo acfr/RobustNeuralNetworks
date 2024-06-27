@@ -107,7 +107,7 @@ class RENBase(nn.Module):
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = init.glorot_normal()
     recurrent_kernel_init: Initializer = init.orthogonal()
-    bias_init: Initializer = init.glorot_normal() # TODO: Change back!!
+    bias_init: Initializer = init.zeros_init()
     carry_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
     d22_free: bool = False
@@ -141,7 +141,7 @@ class RENBase(nn.Module):
         Y1 = self.param("Y1", self.kernel_init, (nx, nx), self.param_dtype)
         C2 = self.param("C2", self.kernel_init, (ny, nx), self.param_dtype)
         D21 = self.param("D21", self.kernel_init, (ny, nv), self.param_dtype)
-        D22 = self.param("D22", self.kernel_init, (ny, nu), self.param_dtype) # TODO: Change back!!
+        D22 = self.param("D22", init.zeros_init(), (ny, nu), self.param_dtype)
         if self.d22_zero:
             _rng = jax.random.PRNGKey(0)
             D22 = init.zeros(_rng, (ny, nu), self.param_dtype)
