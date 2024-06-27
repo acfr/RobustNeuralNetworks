@@ -1,12 +1,14 @@
 import jax
 import jax.numpy as jnp
 
+from dataclasses import dataclass
 from flax import linen as nn
 from flax.linen import initializers as init
 from flax.typing import Dtype
 from typing import Union, Callable, Any, Tuple
 
 from robustnn.ren_jax.utils import tril_equlibrium_layer
+
 
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
@@ -29,6 +31,43 @@ def _identity_init():
     def init(key, shape, dtype) -> Array:
         return jnp.identity(jnp.shape(shape)[0], dtype)
     return init
+
+
+@dataclass
+class DirectRENParams:
+    """Class to keep track of explicit params for a REN."""
+    p: Array
+    X: Array
+    B2: Array
+    D12: Array
+    Y1: Array
+    C2: Array
+    D21: Array
+    D22: Array
+    X3: Array
+    Y3: Array
+    Z3: Array
+    bx: Array
+    bv: Array
+    by: Array
+
+
+@dataclass
+class ExplicitRENParams:
+    """Class to keep track of explicit params for a REN."""
+    A: Array
+    B1: Array
+    B2: Array
+    C1: Array
+    C2: Array
+    D11: Array
+    D12: Array
+    D21: Array
+    D22: Array
+    bx: Array
+    bv: Array
+    by: Array
+
 
 class RENBase(nn.Module):
     """
@@ -122,24 +161,75 @@ class RENBase(nn.Module):
         by = self.param("by", self.bias_init, (ny,), self.param_dtype)
 
         # Direct parameterisation mapping
-        # TODO: Use dataclasses to tidy this the fuck up.
-        explicit = self.direct_to_explicit(X, p, B2, D12, Y1, C2, D21, 
-                                           D22, X3, Y3, Z3, bx, bv, by)
+        direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
+                                 D22, X3, Y3, Z3, bx, bv, by)
+        explicit = self.direct_to_explicit(direct)
         
         # Call the explicit REN form and return
-        state, out = self.ren_call(state, inputs, *explicit)
+        state, out = self.ren_call(state, inputs, explicit)
         return state, out
     
-    def ren_call(
-        self, x: Array, u: Array, 
-        A, B1, B2, C1, C2, D11, D12, D21, D22, bx, bv, by
-    ) -> Tuple[Array, Array]:
+    def ren_call(self, x: Array, u: Array, e: ExplicitRENParams) -> Tuple[Array, Array]:
         """Evaluate a REN given its explicit parameterization."""
-        b = x @ C1.T + u @ D12.T + bv
-        w = tril_equlibrium_layer(self.activation, D11, b)
-        x1 = x @ A.T + w @ B1.T + u @ B2.T + bx
-        y = x @ C2.T + w @ D21.T + u @ D22.T + by
+        b = x @ e.C1.T + u @ e.D12.T + e.bv
+        w = tril_equlibrium_layer(self.activation, e.D11, b)
+        x1 = x @ e.A.T + w @ e.B1.T + u @ e.B2.T + e.bx
+        y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
         return x1, y
+    
+    def direct_to_explicit(self, direct: DirectRENParams) -> ExplicitRENParams:
+        """
+        Convert direct paremeterization of a REN to explicit form
+        for evaluation. This depends on the specific REN parameterization.
+        """
+        raise NotImplementedError("RENBase models should not be called. Choose a REN parameterization instead (eg: `ContractingREN`).")
+    
+    def x_to_h(self, X: Array, p: Array) -> Array:
+        """Convert REN X matrix to H matrix using polar parameterization."""
+        H = p**2 * (X.T @ X) / (l2_norm(X)**2) + self.eps * jnp.identity(jnp.shape(X)[0])
+        return H
+    
+    def hmatrix_to_explicit(
+        self, ps: DirectRENParams, H: Array, D22: Array
+    ) -> ExplicitRENParams:
+        """Convert REN H matrix to explict form given direct params."""
+        
+        nx = self.state_size
+        nv = self.features
+        
+        # Extract sections of the H matrix
+        H11 = H[:nx, :nx]
+        H22 = H[nx:(nx + nv), nx:(nx + nv)]
+        H33 = H[(nx + nv):(2*nx + nv), (nx + nv):(2*nx + nv)]
+        H21 = H[nx:(nx + nv), :nx]
+        H31 = H[(nx + nv):(2*nx + nv), :nx]
+        H32 = H[(nx + nv):(2*nx + nv), nx:(nx + nv)]
+                
+        # Construct implicit model parameters
+        P_imp = H33
+        F = H31
+        E = (H11 + P_imp / (self.abar**2) + ps.Y1 - ps.Y1.T) / 2
+        
+        # Equilibrium network params (imp for "implicit")
+        B1_imp = H32
+        C1_imp = -H21
+        Lambda_inv = 2 / jnp.diag(H22)
+        D11_imp = -jnp.tril(H22, k=-1)
+        
+        # Construct the explicit model (e for "explicit")
+        A_e = jnp.linalg.solve(E, F)
+        B1_e = jnp.linalg.solve(E, B1_imp)
+        B2_e = jnp.linalg.solve(E, ps.B2)
+        
+        # Equilibrium layer matrices
+        C1_e = (Lambda_inv * C1_imp.T).T
+        D11_e = (Lambda_inv * D11_imp.T).T
+        D12_e = (Lambda_inv * ps.D12.T).T
+        
+        # Remaining explicit params are biases/in the output layer (unchanged)
+        explicit = ExplicitRENParams(A_e, B1_e, B2_e, C1_e, ps.C2, D11_e, 
+                                     D12_e, ps.D21, D22, ps.bx, ps.bv, ps.by)
+        return explicit
     
     @nn.nowrap
     def initialize_carry(
@@ -158,55 +248,3 @@ class RENBase(nn.Module):
         rng, _ = jax.random.split(rng)
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
-    
-    def direct_to_explicit(self, X, p, B2, D12, Y1, C2, D21, 
-                           D22, X3, Y3, Z3, bx, bv, by):
-        """Convert direct paremeterization of a REN to explicit form
-        for evaluation. This depends on the specific REN parameterization."""
-        raise NotImplementedError("RENBase models should not be called. Choose a REN parameterization instead (eg: `ContractingREN`).")
-    
-    def x_to_h(self, X, p):
-        """Convert REN X matrix to H matrix using polar parameterization."""
-        H = p**2 * (X.T @ X) / (l2_norm(X)**2) + self.eps * jnp.identity(jnp.shape(X)[0])
-        return H
-    
-    def hmatrix_to_explicit(self, H, B2, D12, Y1, C2, D21, D22, bx, bv, by):
-        
-        nx = self.state_size
-        nv = self.features
-        
-        # Extract sections of the H matrix
-        H11 = H[:nx, :nx]
-        H22 = H[nx:(nx + nv), nx:(nx + nv)]
-        H33 = H[(nx + nv):(2*nx + nv), (nx + nv):(2*nx + nv)]
-        H21 = H[nx:(nx + nv), :nx]
-        H31 = H[(nx + nv):(2*nx + nv), :nx]
-        H32 = H[(nx + nv):(2*nx + nv), nx:(nx + nv)]
-                
-        # Construct implicit model parameters
-        P_imp = H33
-        F = H31
-        E = (H11 + P_imp / (self.abar**2) + Y1 - Y1.T) / 2
-        
-        # Equilibrium network params (imp for "implicit")
-        B1_imp = H32
-        C1_imp = -H21
-        Lambda_inv = 2 / jnp.diag(H22)
-        D11_imp = -jnp.tril(H22, k=-1)
-        
-        # Construct the explicit model (e for "explicit")
-        A_e = jnp.linalg.solve(E, F)
-        B1_e = jnp.linalg.solve(E, B1_imp)
-        B2_e = jnp.linalg.solve(E, B2)
-        
-        # Equilibrium layer matrices
-        C1_e = (Lambda_inv * C1_imp.T).T
-        D11_e = (Lambda_inv * D11_imp.T).T
-        D12_e = (Lambda_inv * D12.T).T
-        
-        # Remaining explicit params are biases/in the output layer
-        # and are unchanged
-        explicit = (A_e, B1_e, B2_e, C1_e, C2, D11_e, 
-                    D12_e, D21, D22, bx, bv, by)
-        return explicit
-        
