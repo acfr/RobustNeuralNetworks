@@ -22,14 +22,13 @@ def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
     return jnp.sqrt(jnp.maximum(jnp.sum(x**2, **kwargs), eps))
 
 
-def _identity_init():
+def identity_init():
     """Initialize a weight as the identity matrix.
     
-    Assumes that shape is a tuple (n,n), only uses
-    first element.
+    Assumes that shape is a tuple (n,n), only uses first element.
     """
     def init(key, shape, dtype) -> Array:
-        return jnp.identity(jnp.shape(shape)[0], dtype)
+        return jnp.identity(shape[0], dtype)
     return init
 
 
@@ -78,8 +77,9 @@ class RENBase(nn.Module):
     Explanations below.
         
     Attributes:
+        input_size: the number of input features (nu).
         state_size: the number of internal states (nx).
-        features: the number of neurons (nv).
+        features: the number of (hidden) neurons (nv).
         output_size: the number of output features (ny).
         activation: Activation function to use (default: relu).
         kernel_init: initializer for weights (default: glorot_normal()).
@@ -100,13 +100,14 @@ class RENBase(nn.Module):
           the initial REN dynamics slow, with long memory. For faster initial dynamics,
           use `glorot_normal()` instead.
     """
+    input_size: int
     state_size: int
     features: int
     output_size: int
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = init.glorot_normal()
     recurrent_kernel_init: Initializer = init.orthogonal()
-    bias_init: Initializer = init.zeros_init()
+    bias_init: Initializer = init.glorot_normal() # TODO: Change back!!
     carry_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
     d22_free: bool = False
@@ -124,7 +125,7 @@ class RENBase(nn.Module):
             state, out = ren(state, in)
         where `state` is an array.
         """
-        nu = jnp.shape(inputs)[-1]
+        nu = self.input_size
         nx = self.state_size
         nv = self.features
         ny = self.output_size
@@ -140,25 +141,25 @@ class RENBase(nn.Module):
         Y1 = self.param("Y1", self.kernel_init, (nx, nx), self.param_dtype)
         C2 = self.param("C2", self.kernel_init, (ny, nx), self.param_dtype)
         D21 = self.param("D21", self.kernel_init, (ny, nv), self.param_dtype)
-        D22 = self.param("D22", init.zeros_init(), (ny, nu), self.param_dtype)
+        D22 = self.param("D22", self.kernel_init, (ny, nu), self.param_dtype) # TODO: Change back!!
         if self.d22_zero:
             _rng = jax.random.PRNGKey(0)
             D22 = init.zeros(_rng, (ny, nu), self.param_dtype)
         
         if not self.d22_free and not self.d22_zero:
-            d = jnp.minimum(nu, ny)
-            X3 = self.param("X3", _identity_init(), (d, d), self.param_dtype)
+            d = min(nu, ny)
+            X3 = self.param("X3", identity_init(), (d, d), self.param_dtype)
             Y3 = self.param("Y3", init.zeros_init(), (d, d), self.param_dtype)
-            Z3 = self.param("Z3", init.zeros_init(), (jnp.abs(ny - nu), d), 
+            Z3 = self.param("Z3", init.zeros_init(), (abs(ny - nu), d), 
                             self.param_dtype)
         else:
             X3 = None
             Y3 = None
             Z3 = None
             
-        bx = self.param("bx", self.bias_init, (nx,), self.param_dtype)
-        bv = self.param("bv", self.bias_init, (nv,), self.param_dtype)
-        by = self.param("by", self.bias_init, (ny,), self.param_dtype)
+        bx = self.param("bx", self.bias_init, (1, nx), self.param_dtype)
+        bv = self.param("bv", self.bias_init, (1, nv), self.param_dtype)
+        by = self.param("by", self.bias_init, (1, ny), self.param_dtype)
 
         # Direct parameterisation mapping
         direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
@@ -166,11 +167,15 @@ class RENBase(nn.Module):
         explicit = self.direct_to_explicit(direct)
         
         # Call the explicit REN form and return
-        state, out = self.ren_call(state, inputs, explicit)
+        state, out = self.explicit_call(state, inputs, explicit)
         return state, out
     
-    def ren_call(self, x: Array, u: Array, e: ExplicitRENParams) -> Tuple[Array, Array]:
-        """Evaluate a REN given its explicit parameterization."""
+    def explicit_call(
+        self, x: Array, u: Array, e: ExplicitRENParams
+    ) -> Tuple[Array, Array]:
+        """
+        Evaluate a REN given its explicit parameterization.
+        """
         b = x @ e.C1.T + u @ e.D12.T + e.bv
         w = tril_equlibrium_layer(self.activation, e.D11, b)
         x1 = x @ e.A.T + w @ e.B1.T + u @ e.B2.T + e.bx
