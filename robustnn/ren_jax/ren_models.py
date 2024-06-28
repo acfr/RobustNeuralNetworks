@@ -79,6 +79,7 @@ class LipschitzREN(RENBase):
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
+        I = jnp.identity(nu, self.param_dtype)
         
         # Implicit params
         B2_imp = ps.B2
@@ -88,7 +89,6 @@ class LipschitzREN(RENBase):
         if self.d22_zero:
             D22 = ps.D22
         else:
-            I = jnp.identity(nu, self.param_dtype)
             M = ps.X3.T @ ps.X3 + ps.Y3 - ps.Y3.T + ps.Z3.T @ ps.Z3 + self.eps*I
             if ny >= nu:
                 N = jnp.vstack((jnp.linalg.solve((I + M).T, (I - M).T).T,
@@ -162,8 +162,8 @@ class GeneralREN(RENBase):
     def setup(self):
         if self.d22_free:
             raise ValueError("Set `d22_free=False` for general QSR RENs")
-        if self.d22_zero:
-            raise ValueError("Cannot have zero D22 for general QSR REN.")
+        if (not self.d22_zero) and self.init_output_zero:
+            raise ValueError("Cannot have zero output on init without setting `d22_zero=True`.")
         Q, self.S, R = self.qsr
         
         # Small delta to help numerical conditioning with cholesky decomposition
@@ -186,16 +186,19 @@ class GeneralREN(RENBase):
         D12_imp = ps.D12
         
         # Construct D22 (Eqns 31-33 of Revay et al. (2023))
-        I = jnp.identity(nu, self.param_dtype)
-        M = ps.X3.T @ ps.X3 + ps.Y3 - ps.Y3.T + ps.Z3.T @ ps.Z3 + self.eps*I
-        if ny >= nu:
-            N = jnp.vstack((jnp.linalg.solve((I + M).T, (I - M).T).T,
-                            jnp.linalg.solve((I + M).T, -2*ps.Z3.T).T))
+        if self.d22_zero:
+            D22 = ps.D22
         else:
-            N = jnp.hstack((jnp.linalg.solve((I + M), (I - M)),
-                            jnp.linalg.solve((I + M), -2*ps.Z3.T)))
-        
-        D22 = jnp.linalg.solve(-self.Q, self.S.T) + jnp.linalg.solve(LQ, N) @ LR
+            I = jnp.identity(nu, self.param_dtype)
+            M = ps.X3.T @ ps.X3 + ps.Y3 - ps.Y3.T + ps.Z3.T @ ps.Z3 + self.eps*I
+            if ny >= nu:
+                N = jnp.vstack((jnp.linalg.solve((I + M).T, (I - M).T).T,
+                                jnp.linalg.solve((I + M).T, -2*ps.Z3.T).T))
+            else:
+                N = jnp.hstack((jnp.linalg.solve((I + M), (I - M)),
+                                jnp.linalg.solve((I + M), -2*ps.Z3.T)))
+            
+            D22 = jnp.linalg.solve(-self.Q, self.S.T) + jnp.linalg.solve(LQ, N) @ LR
         
         # Construct H (Eqn. 28 of Revay et al. (2023))
         C2_imp = (D22.T @ self.Q + self.S) @ ps.C2

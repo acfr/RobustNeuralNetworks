@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import flax.linen as nn
 
-from robustnn.ren_jax.ren_models import GeneralREN
+import robustnn.ren_jax.ren_models as ren
 
 # TODO: Test for nx = 0, and/or nv = 0 in forward/reverse mode
 
@@ -17,22 +17,23 @@ S = jax.random.normal(keyS, (nu, ny))
 Q = -X.T @ X
 R = S @ jnp.linalg.solve(Q, S.T) + Y.T @ Y
 
-ren = GeneralREN(nu, nx, nv, ny, qsr=(Q,S,R), activation=nn.tanh)
-ren.check_valid_qsr(*ren.qsr)
+model = ren.LipschitzREN(nu, nx, nv, ny, gamma=1.0, activation=nn.tanh)
+# model = ren.GeneralREN(nu, nx, nv, ny, qsr=(Q,S,R), activation=nn.tanh, init_output_zero=True, d22_zero=True)
+# model.check_valid_qsr(*model.qsr)
 
 batches = 4
-states = ren.initialize_carry(key1, (batches, nu)) + 1
+states = model.initialize_carry(key1, (batches, nu)) + 1
 inputs = jnp.ones((batches, nu))
-params = ren.init(key2, states, inputs)
+params = model.init(key2, states, inputs)
 
-jit_call = jax.jit(ren.apply)
+jit_call = jax.jit(model.apply)
 new_state, out = jit_call(params, states, inputs)
 print(new_state)
 print(out)
 
 # Test taking a gradient
 def loss(states, inputs):
-    nstate, out = ren.apply(params, states, inputs)
+    nstate, out = model.apply(params, states, inputs)
     return jnp.sum(nstate**2) + jnp.sum(out**2)
 
 grad_func = jax.jit(jax.grad(loss, argnums=(0,1)))

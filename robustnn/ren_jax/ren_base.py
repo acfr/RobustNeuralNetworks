@@ -75,7 +75,7 @@ class RENBase(nn.Module):
     convenience, but this deviates from the REN literature.
     Explanations below.
         
-    Attributes:
+    Attributes::
         input_size: the number of input features (nu).
         state_size: the number of internal states (nx).
         features: the number of (hidden) neurons (nv).
@@ -86,6 +86,8 @@ class RENBase(nn.Module):
         bias_init: initializer for the bias parameters (default: zeros_init()).
         carry_init: initializer for the internal state vector (default: zeros_init()).
         param_dtype: the dtype passed to parameter initializers (default: float32).
+        init_output_zero: whether to initialize the network so its output is zero 
+                          (default: False).
         d22_free: Specify whether to train `D22` as a free parameter (`True`), or construct
                   it separately from `X3, Y3, Z3` (`false`). Typically `True` only for a 
                   contracting REN (default: False).
@@ -109,6 +111,7 @@ class RENBase(nn.Module):
     bias_init: Initializer = init.zeros_init()
     carry_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
+    init_output_zero: bool = False
     d22_free: bool = False
     d22_zero: bool = False
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps
@@ -129,17 +132,30 @@ class RENBase(nn.Module):
         nv = self.features
         ny = self.output_size
         
-        # Define REN params
+        # Define direct params for REN
         B2 = self.param("B2", self.kernel_init, (nx, nu), self.param_dtype)
         D12 = self.param("D12", self.kernel_init, (nv, nu), self.param_dtype)
         X = self.param("X", self.recurrent_kernel_init, 
                        (2 * nx + nv, 2 * nx + nv), self.param_dtype)
         p = self.param("polar", init.constant(l2_norm(X, eps=self.eps)),
-                       (1,), self.param_dtype)
-        
+                       (1,), self.param_dtype)        
         Y1 = self.param("Y1", self.kernel_init, (nx, nx), self.param_dtype)
-        C2 = self.param("C2", self.kernel_init, (ny, nx), self.param_dtype)
-        D21 = self.param("D21", self.kernel_init, (ny, nv), self.param_dtype)
+        bx = self.param("bx", self.bias_init, (1, nx), self.param_dtype)
+        bv = self.param("bv", self.bias_init, (1, nv), self.param_dtype)
+        
+        # Output layer params
+        if self.init_output_zero:
+            out_kernel_init = init.zeros_init()
+            out_bias_init = init.zeros_init()
+        else:
+            out_kernel_init = self.kernel_init
+            out_bias_init = self.bias_init
+            
+        by = self.param("by", out_bias_init, (1, ny), self.param_dtype)
+        C2 = self.param("C2", out_kernel_init, (ny, nx), self.param_dtype)
+        D21 = self.param("D21", out_kernel_init, (ny, nv), self.param_dtype)
+        
+        # The rest is for the feedthrough term D22
         D22 = self.param("D22", init.zeros_init(), (ny, nu), self.param_dtype)
         if self.d22_zero:
             _rng = jax.random.PRNGKey(0)
@@ -155,10 +171,6 @@ class RENBase(nn.Module):
             X3 = None
             Y3 = None
             Z3 = None
-            
-        bx = self.param("bx", self.bias_init, (1, nx), self.param_dtype)
-        bv = self.param("bv", self.bias_init, (1, nv), self.param_dtype)
-        by = self.param("by", self.bias_init, (1, ny), self.param_dtype)
 
         # Direct parameterisation mapping
         direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
