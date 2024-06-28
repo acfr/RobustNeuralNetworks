@@ -11,20 +11,20 @@ class ContractingREN(RENBase):
     
     Example usage::
 
-        >>> from robustnn.ren_jax.ren_models import ContractingREN
+        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
         
         >>> rng = jax.random.key(0)
         >>> key1, key2 = jax.random.split(rng)
 
         >>> nu, nx, nv, ny = 1, 2, 4, 1
-        >>> ren = ContractingREN(nu, nx, nv, ny)
+        >>> model = ren.ContractingREN(nu, nx, nv, ny)
         
         >>> batches = 5
-        >>> states = ren.initialize_carry(key1, (batches, nu))
+        >>> states = model.initialize_carry(key1, (batches, nu))
         >>> inputs = jnp.ones((batches, nu))
         
-        >>> params = ren.init(key2, states, inputs)
+        >>> params = model.init(key2, states, inputs)
         >>> jax.tree_util.tree_map(jnp.shape, params)
         {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (4,), 'bx': (2,), 'by': (1,), 'polar': (1,)}}
     
@@ -50,20 +50,20 @@ class LipschitzREN(RENBase):
     
     Example usage::
 
-        >>> from robustnn.ren_jax.ren_models import LipschitzREN
+        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
         
         >>> rng = jax.random.key(0)
         >>> key1, key2 = jax.random.split(rng)
 
         >>> nu, nx, nv, ny = 1, 2, 4, 1
-        >>> ren = LipschitzREN(nu, nx, nv, ny, gamma=10.0)
+        >>> model = ren.LipschitzREN(nu, nx, nv, ny, gamma=10.0)
         
         >>> batches = 5
-        >>> states = ren.initialize_carry(key1, (batches, nu))
+        >>> states = model.initialize_carry(key1, (batches, nu))
         >>> inputs = jnp.ones((batches, nu))
         
-        >>> params = ren.init(key2, states, inputs)
+        >>> params = model.init(key2, states, inputs)
         >>> jax.tree_util.tree_map(jnp.shape, params)
         {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
     
@@ -112,12 +112,13 @@ class LipschitzREN(RENBase):
         explicit = self.hmatrix_to_explicit(ps, H, D22)
         return explicit
 
+
 class GeneralREN(RENBase):
     """Construct a REN satisfying an incremental IQC defined by Q, S, R.
     
     Example usage::
 
-        >>> from robustnn.ren_jax.ren_models import GeneralREN
+        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
         
         >>> rng = jax.random.key(0)
@@ -132,16 +133,17 @@ class GeneralREN(RENBase):
         >>> R = S @ jnp.linalg.solve(Q, S.T) + Y.T @ Y
         
         >>> # Construct REN and check for valid IQC params
-        >>> ren = LipschitzREN(nu, nx, nv, ny, gamma=10.0)
-        >>> ren.check_valid_qsr(*ren.qsr)
+        >>> model = ren.GeneralREN(nu, nx, nv, ny, qsr=(Q,S,R))
+        >>> model.check_valid_qsr(*model.qsr)
         
         >>> batches = 5
-        >>> states = ren.initialize_carry(key1, (batches, nu))
+        >>> states = model.initialize_carry(key1, (batches, nu))
         >>> inputs = jnp.ones((batches, nu))
         
-        >>> params = ren.init(key2, states, inputs)
+        >>> params = model.init(key2, states, inputs)
         >>> jax.tree_util.tree_map(jnp.shape, params)
-    
+        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
+        
     Attributes::
         qsr: tuple of IQC matrices (Q, S, R), see Eqn. (5) of Revay et al. (2023).
     
@@ -153,9 +155,8 @@ class GeneralREN(RENBase):
         - `Q` must be negative definite.
         - `R - S @ (inv(Q) @ S.T)` must be positive definite.
     We expect users to JIT calls to the `.init()` and `.apply()` methods for a
-    REN, so we can't do any error checking to make sure the symmetric/negative
-    semi-definite conditions are met. Instead, we leave this up to the user
-    and provide tools to check for appropriate (Q, S, R) matrices (see above).
+    REN, so we leave error checking as a separate API call. Use 
+    `model.check_valid_qsr(*model.qsr)` to check for appropriate (Q, S, R) matrices.
     """
     qsr: Tuple[Array, Array, Array] = (None, None, None)
     

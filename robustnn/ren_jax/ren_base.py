@@ -117,6 +117,16 @@ class RENBase(nn.Module):
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps
     abar: jnp.float32 = 1
     
+    def setup(self):
+        if not self.input_size > 0:
+            raise ValueError("Input size must be an integer > 0.")
+        if not self.state_size > 0:
+            raise ValueError("State size must be an integer > 0.")
+        if not self.features > 0:
+            raise ValueError("Feature size must be an integer > 0.")
+        if not self.output_size > 0:
+            raise ValueError("Output size must be an integer > 0.")
+    
     @nn.compact
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
         """

@@ -17,9 +17,9 @@ S = jax.random.normal(keyS, (nu, ny))
 Q = -X.T @ X
 R = S @ jnp.linalg.solve(Q, S.T) + Y.T @ Y
 
-model = ren.LipschitzREN(nu, nx, nv, ny, gamma=1.0, activation=nn.tanh)
-# model = ren.GeneralREN(nu, nx, nv, ny, qsr=(Q,S,R), activation=nn.tanh, init_output_zero=True, d22_zero=True)
-# model.check_valid_qsr(*model.qsr)
+# model = ren.LipschitzREN(nu, nx, nv, ny, gamma=1.0, activation=nn.tanh)
+model = ren.GeneralREN(nu, nx, nv, ny, qsr=(Q,S,R), activation=nn.tanh)
+model.check_valid_qsr(*model.qsr)
 
 batches = 4
 states = model.initialize_carry(key1, (batches, nu)) + 1
