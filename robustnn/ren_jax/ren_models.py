@@ -79,7 +79,9 @@ class LipschitzREN(RENBase):
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
-        I = jnp.identity(nu, self.param_dtype)
+        Iu = jnp.identity(nu, self.param_dtype)
+        Iy = jnp.identity(ny, self.param_dtype)
+        
         
         # Implicit params
         B2_imp = ps.B2
@@ -89,20 +91,20 @@ class LipschitzREN(RENBase):
         if self.d22_zero:
             D22 = ps.D22
         else:
-            M = ps.X3.T @ ps.X3 + ps.Y3 - ps.Y3.T + ps.Z3.T @ ps.Z3 + self.eps*I
+            M = ps.X3.T @ ps.X3 + ps.Y3 - ps.Y3.T + ps.Z3.T @ ps.Z3 + self.eps*Iy
             if ny >= nu:
-                N = jnp.vstack((jnp.linalg.solve((I + M).T, (I - M).T).T,
-                                jnp.linalg.solve((I + M).T, -2*ps.Z3.T).T))
+                N = jnp.vstack((jnp.linalg.solve((Iy + M).T, (Iy - M).T).T,
+                                jnp.linalg.solve((Iy + M).T, -2*ps.Z3.T).T))
             else:
-                N = jnp.hstack((jnp.linalg.solve((I + M), (I - M)),
-                                jnp.linalg.solve((I + M), -2*ps.Z3.T)))
+                N = jnp.hstack((jnp.linalg.solve((Iy + M), (Iy - M)),
+                                jnp.linalg.solve((Iy + M), -2*ps.Z3.T)))
             D22 = self.gamma * N
         
         # Construct H (Eqn. 28 of Revay et al. (2023))
         C2_imp = -D22.T @ ps.C2 / self.gamma
         D21_imp = -(D22.T @ ps.D21) / self.gamma - D12_imp.T
         
-        R = self.gamma * (-D22.T @ D22 / (self.gamma**2) + I)
+        R = self.gamma * (-D22.T @ D22 / (self.gamma**2) + Iu)
         mul_Q = jnp.hstack((ps.C2, ps.D21, jnp.zeros((ny, nx), self.param_dtype)))
         mul_R = jnp.hstack((C2_imp, D21_imp, B2_imp.T))
         Gamma_Q = mul_Q.T @ mul_Q / (-self.gamma)
@@ -190,7 +192,7 @@ class GeneralREN(RENBase):
         if self.d22_zero:
             D22 = ps.D22
         else:
-            I = jnp.identity(nu, self.param_dtype)
+            I = jnp.identity(ny, self.param_dtype)
             M = ps.X3.T @ ps.X3 + ps.Y3 - ps.Y3.T + ps.Z3.T @ ps.Z3 + self.eps*I
             if ny >= nu:
                 N = jnp.vstack((jnp.linalg.solve((I + M).T, (I - M).T).T,
