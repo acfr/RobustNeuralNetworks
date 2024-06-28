@@ -1,13 +1,12 @@
 import jax
 import jax.numpy as jnp
-
 from dataclasses import dataclass
+from functools import partial
+from typing import Union, Callable, Any, Tuple
+
 from flax import linen as nn
 from flax.linen import initializers as init
 from flax.typing import Dtype
-from typing import Union, Callable, Any, Tuple
-
-from robustnn.ren_jax.utils import tril_equlibrium_layer
 
 
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
@@ -107,7 +106,7 @@ class RENBase(nn.Module):
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = init.glorot_normal()
     recurrent_kernel_init: Initializer = init.orthogonal()
-    bias_init: Initializer = init.zeros_init()
+    bias_init: Initializer = init.glorot_normal() # TODO: Change back!!
     carry_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
     d22_free: bool = False
@@ -141,7 +140,7 @@ class RENBase(nn.Module):
         Y1 = self.param("Y1", self.kernel_init, (nx, nx), self.param_dtype)
         C2 = self.param("C2", self.kernel_init, (ny, nx), self.param_dtype)
         D21 = self.param("D21", self.kernel_init, (ny, nv), self.param_dtype)
-        D22 = self.param("D22", init.zeros_init(), (ny, nu), self.param_dtype)
+        D22 = self.param("D22", self.kernel_init, (ny, nu), self.param_dtype) # TODO: Change back!!
         if self.d22_zero:
             _rng = jax.random.PRNGKey(0)
             D22 = init.zeros(_rng, (ny, nu), self.param_dtype)
@@ -253,3 +252,75 @@ class RENBase(nn.Module):
         rng, _ = jax.random.split(rng)
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
+
+
+def tril_equlibrium_layer(activation, D11, b):
+    """
+    Solve `w = activation(D11 @ w + b)` for lower-triangular D11.
+    
+    Activation must be monotone with slope restricted to `[0,1]`.
+    """
+    # Forward pass (compute custom grads below)
+    w_eq = jax.lax.stop_gradient(solve_tril_layer(activation, D11, b))
+    
+    # Re-evaluate the equilibrium layer so autodiff can track grads
+    # through these two operations, then customise for grad of w_eq
+    v = w_eq @ D11.T + b
+    w_eq = activation(v)
+    return tril_layer_do_grad(activation, D11, v, w_eq)
+
+@partial(jax.jit, static_argnums=(0,))
+def solve_tril_layer(activation, D11, b):
+    """
+    Solve `w = activation(D11 @ w + b)` for lower-triangular D11.
+    
+    Only valid for the forward pass (not backprop with auto-diff).
+    """
+    w_eq = jnp.zeros_like(b)
+    D11_T = D11.T
+    for i in range(D11.shape[0]):
+        Di_T = D11_T[:i, i]
+        wi = w_eq[..., :i]
+        bi = b[..., i]
+        Di_wi = wi @ Di_T
+        w_eq = w_eq.at[..., i].set(activation(Di_wi + bi))
+    return w_eq
+
+@partial(jax.custom_vjp, nondiff_argnums=(0,))
+def tril_layer_do_grad(activation, D11, v, w_eq):
+    return w_eq
+
+def tril_layer_do_grad_fwd(activation, D11, v, w_eq):
+    I = jnp.identity(v.shape[-1])
+    return w_eq, (D11, v, I)
+
+def tril_layer_do_grad_bwd(activation, res, y_bar):
+    """
+    Compute backwards pass with implicit function theorem.
+    
+    See Equation 13 of Revay et al. (2023).
+    """
+    D11, v, I = res
+    
+    # Ignore grads for D11, v
+    D11_bar = jnp.zeros_like(D11)
+    v_bar = jnp.zeros_like(v)
+    
+    # Get Jacobian of activation(v) evaluated at v
+    # Scalar activation ==> diagonal Jacobian, so get
+    # diagonal elements for each batch. j_diag has
+    # dimensions (batches, nv)
+    _, vjp_act_v = jax.vjp(activation, v)
+    j_diag, = vjp_act_v(jnp.ones_like(v))
+    
+    # Compute gradient with implicit function theorem (per batch)
+    w_eq_bar = jnp.zeros_like(v)
+    for i in range(w_eq_bar.shape[0]):
+        ji = j_diag[i, ...]
+        y_bar_i = y_bar[i, ...]
+        w_grad = jnp.linalg.solve(I - (ji * D11.T), y_bar_i.T).T
+        w_eq_bar = w_eq_bar.at[i, ...].set(w_grad)
+    
+    return (D11_bar, v_bar, w_eq_bar)
+
+tril_layer_do_grad.defvjp(tril_layer_do_grad_fwd, tril_layer_do_grad_bwd)

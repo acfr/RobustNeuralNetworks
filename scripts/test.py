@@ -2,15 +2,15 @@ import jax
 import jax.numpy as jnp
 import flax.linen as nn
 
-from robustnn.ren_jax.contracting_ren import ContractingREN
+from robustnn.ren_jax.ren_models import LipschitzREN
 
 # TODO: Test for nx = 0, and/or nv = 0 in forward/reverse mode
 
 rng = jax.random.key(0)
 key1, key2 = jax.random.split(rng)
 
-nu, nx, nv, ny = 1, 2, 4, 1
-ren = ContractingREN(nu, nx, nv, ny, activation=nn.tanh)
+nu, nx, nv, ny = 1, 3, 4, 2
+ren = LipschitzREN(nu, nx, nv, ny, gamma=10.0, activation=nn.tanh, abar=0.5)
 
 batches = 4
 states = ren.initialize_carry(key1, (batches, nu)) + 1
