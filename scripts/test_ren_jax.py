@@ -4,8 +4,6 @@ import flax.linen as nn
 
 import robustnn.ren_jax.ren_models as ren
 
-# TODO: Test for nx = 0, and/or nv = 0 in forward/reverse mode
-
 rng = jax.random.key(0)
 rng, keyX, keyY, keyS, key1, key2 = jax.random.split(rng, 6)
 

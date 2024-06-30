@@ -119,17 +119,6 @@ class RENBase(nn.Module):
     
     def setup(self):
         self._error_checking()
-    
-    @nn.compact
-    def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
-        """
-        Call an REN.
-        
-        This implementation treats the REN as a dynamical system
-        to be evaluated at a single time. The syntax is
-            state, out = ren(state, in)
-        where `state` is an array.
-        """
         nu = self.input_size
         nx = self.state_size
         nv = self.features
@@ -174,11 +163,23 @@ class RENBase(nn.Module):
             X3 = None
             Y3 = None
             Z3 = None
+            
+        # Set up the direct parameter struct
+        self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
+                                      D22, X3, Y3, Z3, bx, bv, by)
+        
+    @nn.compact
+    def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
+        """
+        Call an REN.
+        
+        This implementation treats the REN as a dynamical system to be evaluated
+        at a single time. The syntax is `state, out = ren(state, in)` where `state` 
+        is an array.
+        """
 
         # Direct parameterisation mapping
-        direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
-                                 D22, X3, Y3, Z3, bx, bv, by)
-        explicit = self.direct_to_explicit(direct)
+        explicit = self.direct_to_explicit(self.direct)
         
         # Call the explicit REN form and return
         state, out = self.explicit_call(state, inputs, explicit)
