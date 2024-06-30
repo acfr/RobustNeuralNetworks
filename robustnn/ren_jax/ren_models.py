@@ -32,7 +32,7 @@ class ContractingREN(RENBase):
     """
     d22_free: bool = True
     
-    def setup(self):
+    def _error_checking(self):
         if not self.d22_free:
             raise ValueError("Set `d22_free=True` for contracting RENs.")
     
@@ -71,7 +71,7 @@ class LipschitzREN(RENBase):
     """
     gamma: jnp.float32 = 1.0
     
-    def setup(self):
+    def _error_checking(self):
         if self.d22_free:
             raise ValueError("Set `d22_free=False` for Lipschitz RENs.")
     
@@ -135,8 +135,8 @@ class GeneralREN(RENBase):
         >>> R = S @ jnp.linalg.solve(Q, S.T) + Y.T @ Y
         
         >>> # Construct REN and check for valid IQC params
-        >>> model = ren.GeneralREN(nu, nx, nv, ny, qsr=(Q,S,R))
-        >>> model.check_valid_qsr(*model.qsr)
+        >>> model = ren.GeneralREN(nu, nx, nv, ny, Q=Q, S=S, R=R)
+        >>> model.check_valid_qsr()
         
         >>> batches = 5
         >>> states = model.initialize_carry(key1, (batches, nu))
@@ -147,7 +147,9 @@ class GeneralREN(RENBase):
         {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
         
     Attributes::
-        qsr: tuple of IQC matrices (Q, S, R), see Eqn. (5) of Revay et al. (2023).
+        Q: IQC output weight.
+        S: IQC cross input/output weight.
+        R: IQC input weight.
     
     The IQC matrices have the following conditions for a REN with input
     size `nu` and output size `ny`:
@@ -160,28 +162,25 @@ class GeneralREN(RENBase):
     REN, so we leave error checking as a separate API call. Use 
     `model.check_valid_qsr(*model.qsr)` to check for appropriate (Q, S, R) matrices.
     """
-    qsr: Tuple[Array, Array, Array] = (None, None, None)
+    Q: Array = None
+    S: Array = None
+    R: Array = None
     
-    def setup(self):
+    def _error_checking(self):
         if self.d22_free:
             raise ValueError("Set `d22_free=False` for general QSR RENs")
         if (not self.d22_zero) and self.init_output_zero:
             raise ValueError("Cannot have zero output on init without setting `d22_zero=True`.")
-        Q, self.S, R = self.qsr
         
-        # Small delta to help numerical conditioning with cholesky decomposition
-        self.Q = Q - self.eps * jnp.identity(Q.shape[0], Q.dtype)
-        self.R = R + self.eps * jnp.identity(R.shape[0], R.dtype)
-        
-    
     def direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
+        Q, S, R = self._adjust_iqc_params()
         
         # Compute useful decompositions
-        R_temp = self.R - self.S @ jnp.linalg.solve(self.Q, self.S.T)
-        LQ = jnp.linalg.cholesky(-self.Q, upper=True)
+        R_temp = R - S @ jnp.linalg.solve(Q, S.T)
+        LQ = jnp.linalg.cholesky(-Q, upper=True)
         LR = jnp.linalg.cholesky(R_temp, upper=True)
         
         # Implicit params
@@ -201,23 +200,23 @@ class GeneralREN(RENBase):
                 N = jnp.hstack((jnp.linalg.solve((I + M), (I - M)),
                                 jnp.linalg.solve((I + M), -2*ps.Z3.T)))
             
-            D22 = jnp.linalg.solve(-self.Q, self.S.T) + jnp.linalg.solve(LQ, N) @ LR
+            D22 = jnp.linalg.solve(-Q, S.T) + jnp.linalg.solve(LQ, N) @ LR
         
         # Construct H (Eqn. 28 of Revay et al. (2023))
-        C2_imp = (D22.T @ self.Q + self.S) @ ps.C2
-        D21_imp = (D22.T @ self.Q + self.S) @ ps.D21 - D12_imp.T
+        C2_imp = (D22.T @ Q + S) @ ps.C2
+        D21_imp = (D22.T @ Q + S) @ ps.D21 - D12_imp.T
         
-        R1 = self.R + self.S @ D22 + D22.T @ self.S.T + D22.T @ self.Q @ D22
+        R1 = R + S @ D22 + D22.T @ S.T + D22.T @ Q @ D22
         mul_Q = jnp.hstack((ps.C2, ps.D21, jnp.zeros((ny, nx), self.param_dtype)))
         mul_R = jnp.hstack((C2_imp, D21_imp, B2_imp.T))
-        Gamma_Q = mul_Q.T @ self.Q @ mul_Q
+        Gamma_Q = mul_Q.T @ Q @ mul_Q
         Gamma_R = mul_R.T @ jnp.linalg.solve(R1, mul_R)
         
         H = self.x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
         explicit = self.hmatrix_to_explicit(ps, H, D22)
         return explicit
 
-    def check_valid_qsr(self, Q, S, R):
+    def check_valid_qsr(self):
         """Check that the (Q,S,R) matrices are valid.
         
         Example usage:
@@ -229,6 +228,7 @@ class GeneralREN(RENBase):
         """
         nu = self.input_size
         ny = self.output_size
+        Q, S, R = self._adjust_iqc_params()
         
         if not Q.shape == (ny, ny):
             raise ValueError("`Q` should have size `(output_size, output_size)`.")
@@ -245,6 +245,12 @@ class GeneralREN(RENBase):
         R_temp = R - S @ jnp.linalg.solve(Q, S.T)
         if not _check_posdef(R_temp):
             raise ValueError("`R - S @ (inv(Q) @ S.T)` must be positive definite.")
+        
+    def _adjust_iqc_params(self):
+        """Small delta to help numerical conditioning with cholesky decomposition."""
+        Q = self.Q - self.eps * jnp.identity(self.Q.shape[0], self.param_dtype)
+        R = self.R + self.eps * jnp.identity(self.R.shape[0], self.param_dtype)
+        return Q, self.S, R
 
 
 def _check_posdef(A: Array, eps=jnp.finfo(jnp.float32).eps):

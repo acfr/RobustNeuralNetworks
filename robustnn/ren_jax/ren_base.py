@@ -1,11 +1,11 @@
 import jax
 import jax.numpy as jnp
-from dataclasses import dataclass
 from functools import partial
 from typing import Union, Callable, Any, Tuple
 
 from flax import linen as nn
 from flax.linen import initializers as init
+from flax.struct import dataclass
 from flax.typing import Dtype
 
 
@@ -118,14 +118,7 @@ class RENBase(nn.Module):
     abar: jnp.float32 = 1
     
     def setup(self):
-        if not self.input_size > 0:
-            raise ValueError("Input size must be an integer > 0.")
-        if not self.state_size > 0:
-            raise ValueError("State size must be an integer > 0.")
-        if not self.features > 0:
-            raise ValueError("Feature size must be an integer > 0.")
-        if not self.output_size > 0:
-            raise ValueError("Output size must be an integer > 0.")
+        self._error_checking()
     
     @nn.compact
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
@@ -203,6 +196,10 @@ class RENBase(nn.Module):
         y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
         return x1, y
     
+    def _error_checking(self):
+        """Check conditions for REN."""
+        pass
+        
     def direct_to_explicit(self, direct: DirectRENParams) -> ExplicitRENParams:
         """
         Convert direct paremeterization of a REN to explicit form

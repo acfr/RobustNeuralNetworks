@@ -18,8 +18,8 @@ Q = -X.T @ X
 R = S @ jnp.linalg.solve(Q, S.T) + Y.T @ Y
 
 # model = ren.LipschitzREN(nu, nx, nv, ny, gamma=1.0, activation=nn.tanh)
-model = ren.GeneralREN(nu, nx, nv, ny, qsr=(Q,S,R), activation=nn.tanh)
-model.check_valid_qsr(*model.qsr)
+model = ren.GeneralREN(nu, nx, nv, ny, Q=Q, S=S, R=R, activation=nn.tanh)
+model.check_valid_qsr()
 
 batches = 4
 states = model.initialize_carry(key1, (batches, nu)) + 1
