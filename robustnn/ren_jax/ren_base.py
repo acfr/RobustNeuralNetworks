@@ -132,8 +132,8 @@ class RENBase(nn.Module):
         p = self.param("polar", init.constant(l2_norm(X, eps=self.eps)),
                        (1,), self.param_dtype)        
         Y1 = self.param("Y1", self.kernel_init, (nx, nx), self.param_dtype)
-        bx = self.param("bx", self.bias_init, (1, nx), self.param_dtype)
-        bv = self.param("bv", self.bias_init, (1, nv), self.param_dtype)
+        bx = self.param("bx", self.bias_init, (nx,), self.param_dtype)
+        bv = self.param("bv", self.bias_init, (nv,), self.param_dtype)
         
         # Output layer params
         if self.init_output_zero:
@@ -143,7 +143,7 @@ class RENBase(nn.Module):
             out_kernel_init = self.kernel_init
             out_bias_init = self.bias_init
             
-        by = self.param("by", out_bias_init, (1, ny), self.param_dtype)
+        by = self.param("by", out_bias_init, (ny,), self.param_dtype)
         C2 = self.param("C2", out_kernel_init, (ny, nx), self.param_dtype)
         D21 = self.param("D21", out_kernel_init, (ny, nv), self.param_dtype)
         
