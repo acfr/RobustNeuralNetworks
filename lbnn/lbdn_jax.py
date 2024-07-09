@@ -26,7 +26,7 @@ Initializer = Callable[..., Any]
 def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
     """Compute l2 norm of a vector/matrix with JAX.
     This is safe for backpropagation, unlike `jnp.linalg.norm`."""
-    return jnp.sqrt(jnp.maximum(jnp.sum(x**2, **kwargs), eps))
+    return jnp.sqrt(jnp.sum(x**2, **kwargs) + eps)
 
 
 def cayley(W, return_split=False):
@@ -53,8 +53,9 @@ def dot_lax(input1, input2, precision: PrecisionLike = None):
     """Wrapper around lax.dot_general(). Use this instead of `@` for
     more efficient array-matrix multiplication and backpropagation.
     
-    NOTE: `@` might actually just default back to this anyway. Look
-    into this later.
+    NOTE: `@` actually just defaults back to this anyway. This way just
+          avoids having to always write x @ A.T when mathematically we
+          mean matmul(A,x) for x a column vector.
     """
     return lax.dot_general(
         input1,
@@ -69,7 +70,7 @@ class SandwichLayer(nn.Module):
 
     Example usage::
 
-        >>> from liprl.networks.lbdn import SandwichLayer
+        >>> from lbnn.lbdn_jax import SandwichLayer
         >>> import jax, jax.numpy as jnp
 
         >>> layer = SandwichLayer(features=4)
@@ -110,7 +111,7 @@ class SandwichLayer(nn.Module):
                         (jnp.shape(inputs)[-1]+self.features, self.features), 
                         self.param_dtype)
         
-        a = self.param('a', init.constant(jnp.linalg.norm(xy)), (1,), self.param_dtype)
+        a = self.param('a', init.constant(l2_norm(xy)), (1,), self.param_dtype)
         
         if self.use_bias: 
             b = self.param('b', self.bias_init, (self.features,), self.param_dtype)
@@ -129,10 +130,10 @@ class SandwichLayer(nn.Module):
             if self.use_bias:
                 return dot_lax(inputs, B) + b
             else:
-                dot_lax(inputs, B)
+                return dot_lax(inputs, B)
                 
-        # Regular sandwich layer
-        psi_d = jnp.exp(d)
+        # Regular sandwich layer (clip d to avoid over/underflow)
+        psi_d = jnp.exp(jnp.clip(d, a_min=-20.0, a_max=20.0))
         x = jnp.sqrt(2.0) * dot_lax(inputs, ((jnp.diag(1 / psi_d)) @ B))
         if self.use_bias: 
             x += b
@@ -146,7 +147,7 @@ class LBDN(nn.Module):
     
     Example usage::
     
-        >>> from liprl.networks.lbdn import LBDN
+        >>> from lbnn.lbdn_jax import LBDN
         >>> import jax, jax.numpy as jnp
         
         >>> nu, ny = 5, 2
