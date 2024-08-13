@@ -8,10 +8,10 @@ in lbnn/lftn_pytorch.py.
 
 import jax, jax.numpy as jnp
 from flax import linen
-from lbnn.lftn_jax import LFTN as JX_LFTN
+from robustnn.lftn_jax import LFTN as JX_LFTN
 
 import torch
-from lbnn.lftn_pytorch import FTN as PT_LFTN
+from robustnn.lftn_pytorch import FTN as PT_LFTN
 
 nu = 5
 ny = 2

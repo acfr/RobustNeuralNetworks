@@ -1,7 +1,7 @@
 import jax
 from flax import linen
 from jax import numpy as jnp
-from lbnn.lftn_jax import LFTN
+from robustnn.lftn_jax import LFTN
 
 rng = jax.random.PRNGKey(0)
 rng2 = jax.random.PRNGKey(1)
