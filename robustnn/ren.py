@@ -8,8 +8,8 @@ class ContractingREN(RENBase):
     
     Example usage::
 
-        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
+        >>> from robustnn import ren
         
         >>> rng = jax.random.key(0)
         >>> key1, key2 = jax.random.split(rng)
@@ -47,8 +47,8 @@ class LipschitzREN(RENBase):
     
     Example usage::
 
-        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
+        >>> from robustnn import ren
         
         >>> rng = jax.random.key(0)
         >>> key1, key2 = jax.random.split(rng)
@@ -117,8 +117,8 @@ class GeneralREN(RENBase):
     
     Example usage::
 
-        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
+        >>> from robustnn import ren
         
         >>> rng = jax.random.key(0)
         >>> rng, keyX, keyY, keyS, key1, key2 = jax.random.split(rng, 6)

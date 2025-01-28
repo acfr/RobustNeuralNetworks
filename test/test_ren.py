@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import flax.linen as nn
 
-import robustnn.ren_models as ren
+from robustnn import ren
 
 # Random seeds
 rng = jax.random.key(0)
@@ -18,7 +18,7 @@ Q = -X.T @ X
 R = S @ jnp.linalg.solve(Q, S.T) + Y.T @ Y
 
 model = ren.GeneralREN(nu, nx, nv, ny, Q=Q, S=S, R=R, 
-                       activation=nn.tanh)#, init_method="cholesky")
+                       activation=nn.tanh, init_method="cholesky")
 model.check_valid_qsr()
 
 # Dummy inputs and states
