@@ -1,0 +1,4 @@
+flax==0.10.2
+jax==0.5.0
+numpy==2.2.2
+setuptools==59.6.0
