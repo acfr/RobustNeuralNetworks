@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import flax.linen as nn
 
-import robustnn.ren_jax.ren_models as ren
+import robustnn.ren_models as ren
 
 rng = jax.random.key(0)
 rng, keyX, keyY, keyS, key1, key2 = jax.random.split(rng, 6)

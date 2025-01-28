@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from robustnn.ren_jax.ren_base import RENBase, DirectRENParams, ExplicitRENParams
+from robustnn.ren_base import RENBase, DirectRENParams, ExplicitRENParams
 
 from typing import Union, Any, Tuple
 
