@@ -1,12 +1,10 @@
 # Robust Neural Networks
 
-TODO: Edit the README, everything below this line is outdated as of 2025.
+This repository will contain a collection of our robust neural networks, all implemented in Python/JAX. 
 
-This repository containts a collection of Lipschitz bounded networks to use for our research at the ACFR. All networks are implemented in Python/JAX.
+The intention is for this to be the one and only set of implementations for (eg) REN, LBDN, BiLipNet, PLNet, etc. to make sure we all use up-to-date versions of the code. We will also publish this repository and use it to distribute to the community alongside various research papers.
 
-The intention is to have a common library of network implementations so that we can avoid repeated code. This way, we can all contribute to making the networks more efficient and sufficiently modular for use in all of our research projects.
-
-This repository is a work-in-progress.
+This repository and README are a work-in-progress.
 
 ## Installation
 
