@@ -50,12 +50,11 @@ def cayley(W, return_split=False):
 
 
 def dot_lax(input1, input2, precision: PrecisionLike = None):
-    """Wrapper around lax.dot_general(). Use this instead of `@` for
-    more efficient array-matrix multiplication and backpropagation.
+    """
+    Wrapper around lax.dot_general(). Use this instead of `@` for
+    more efficient array-matrix multiplication and backpropagation?
     
-    NOTE: `@` actually just defaults back to this anyway. This way just
-          avoids having to always write x @ A.T when mathematically we
-          mean matmul(A,x) for x a column vector.
+    TODO: Look into whether we actually need this or can just use `x @ A.T`.
     """
     return lax.dot_general(
         input1,
@@ -64,13 +63,12 @@ def dot_lax(input1, input2, precision: PrecisionLike = None):
         precision=precision,
     )
 
-
 class SandwichLayer(nn.Module):
     """A version of linen.Dense with a Lipschitz bound of 1.0.
 
     Example usage::
 
-        >>> from lbnn.lbdn_jax import SandwichLayer
+        >>> from robustnn.networks.lbdn import SandwichLayer
         >>> import jax, jax.numpy as jnp
 
         >>> layer = SandwichLayer(features=4)
@@ -147,7 +145,7 @@ class LBDN(nn.Module):
     
     Example usage::
     
-        >>> from lbnn.lbdn_jax import LBDN
+        >>> from robustnn.lbdn import LBDN
         >>> import jax, jax.numpy as jnp
         
         >>> nu, ny = 5, 2
@@ -164,9 +162,9 @@ class LBDN(nn.Module):
         gamma: Upper bound on the Lipschitz constant (default: inf).
         activation: Activation function to use (default: relu).
         kernel_init: Initialisation function for matrics (default: glorot_normal).
-        activate_final: Whether to apply activation to the final layer (default: False).
         use_bias: Whether to use bias terms (default: True).
         trainable_lipschitz: Make the Lipschitz constant trainable (default: False).
+        init_output_zero: initialize the network so its output is zero (default: False).
     
     Note: Only monotone activations will work. Currently only identity, relu, tanh
           are supported
@@ -175,12 +173,12 @@ class LBDN(nn.Module):
     """
     
     layer_sizes: Sequence[int]
-    gamma: jnp.float32 = 1.0
+    gamma: jnp.float32 = 1.0 # type: ignore
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = init.glorot_normal()
-    activate_final: bool = False
     use_bias: bool = True
     trainable_lipschitz: bool = False
+    init_output_zero: bool = False
     
     def setup(self):
         """Define some common sizes."""
@@ -189,9 +187,6 @@ class LBDN(nn.Module):
         
     @nn.compact
     def __call__(self, inputs : jnp.array) -> jnp.array:
-        if self.activate_final:
-            raise NotImplementedError(
-                "Final-layer activation not yet implemented in LBDN.")
         
         # Set up trainable/constant Lipschitz bound (positive quantity)
         # The learnable parameter is log(gamma), then we take gamma = exp(log_gamma)
@@ -206,17 +201,18 @@ class LBDN(nn.Module):
         x = sqrt_gamma * inputs
         
         # Evaluate the network hidden layers
-        for k, nz in enumerate(self.hidden_sizes):
+        for _, nz in enumerate(self.hidden_sizes):
             x = SandwichLayer(nz, 
                               activation=self.activation,
                               use_bias=self.use_bias,
                               kernel_init=self.kernel_init)(x)
         
         # Treat the output layer separately
+        kinit = init.zeros_init() if self.init_output_zero else self.kernel_init
         x = SandwichLayer(self.output_size, 
                           is_output=True, 
                           use_bias=self.use_bias,
-                          kernel_init=self.kernel_init)(x)
+                          kernel_init=kinit)(x)
         x = sqrt_gamma * x
         
         return x
