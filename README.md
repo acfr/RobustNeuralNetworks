@@ -1,4 +1,6 @@
-# Lipschitz Bounded Networks
+# Robust Neural Networks
+
+TODO: Edit the README, everything below this line is outdated as of 2025.
 
 This repository containts a collection of Lipschitz bounded networks to use for our research at the ACFR. All networks are implemented in Python/JAX.
 
