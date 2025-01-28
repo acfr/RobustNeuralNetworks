@@ -1,18 +1,15 @@
-import jax
 import jax.numpy as jnp
-from robustnn.ren_jax.ren_base import RENBase, DirectRENParams, ExplicitRENParams
+from flax.typing import Array
 
-from typing import Union, Any, Tuple
-
-Array = Union[jax.Array, Any]
+from robustnn.ren_base import RENBase, DirectRENParams, ExplicitRENParams
 
 class ContractingREN(RENBase):
     """Construct a Contracting REN.
     
     Example usage::
 
-        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
+        >>> from robustnn import ren
         
         >>> rng = jax.random.key(0)
         >>> key1, key2 = jax.random.split(rng)
@@ -50,8 +47,8 @@ class LipschitzREN(RENBase):
     
     Example usage::
 
-        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
+        >>> from robustnn import ren
         
         >>> rng = jax.random.key(0)
         >>> key1, key2 = jax.random.split(rng)
@@ -69,7 +66,7 @@ class LipschitzREN(RENBase):
     
     See docs for `RENBase` for full list of arguments.
     """
-    gamma: jnp.float32 = 1.0
+    gamma: jnp.float32 = 1.0 # type: ignore
     
     def _error_checking(self):
         if self.d22_free:
@@ -120,8 +117,8 @@ class GeneralREN(RENBase):
     
     Example usage::
 
-        >>> import robustnn.ren_jax.ren_models as ren
         >>> import jax, jax.numpy as jnp
+        >>> from robustnn import ren
         
         >>> rng = jax.random.key(0)
         >>> rng, keyX, keyY, keyS, key1, key2 = jax.random.split(rng, 6)

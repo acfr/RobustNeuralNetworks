@@ -1,34 +1,15 @@
 import jax
 import jax.numpy as jnp
 from functools import partial
-from typing import Union, Callable, Any, Tuple
+from typing import Tuple
 
 from flax import linen as nn
 from flax.linen import initializers as init
 from flax.struct import dataclass
-from flax.typing import Dtype
+from flax.typing import Dtype, Array
 
-
-ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
-Initializer = Callable[..., Any]
-Array = Union[jax.Array, Any]
-
-
-# (TODO) Avoid code repetition, this is the same as for LBDN
-def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
-    """Compute l2 norm of a vector/matrix with JAX.
-    This is safe for backpropagation, unlike `jnp.linalg.norm`."""
-    return jnp.sqrt(jnp.maximum(jnp.sum(x**2, **kwargs), eps))
-
-
-def identity_init():
-    """Initialize a weight as the identity matrix.
-    
-    Assumes that shape is a tuple (n,n), only uses first element.
-    """
-    def init(key, shape, dtype) -> Array:
-        return jnp.identity(shape[0], dtype)
-    return init
+from robustnn.utils import l2_norm, identity_init
+from robustnn.utils import ActivationFn, Initializer
 
 
 @dataclass
@@ -81,13 +62,16 @@ class RENBase(nn.Module):
         features: the number of (hidden) neurons (nv).
         output_size: the number of output features (ny).
         activation: Activation function to use (default: relu).
-        kernel_init: initializer for weights (default: glorot_normal()).
+        kernel_init: initializer for weights (default: lecun_normal()).
         recurrent_kernel_init: initializer for the REN `X` matrix (default: orthogonal()).
         bias_init: initializer for the bias parameters (default: zeros_init()).
         carry_init: initializer for the internal state vector (default: zeros_init()).
         param_dtype: the dtype passed to parameter initializers (default: float32).
-        init_output_zero: whether to initialize the network so its output is zero 
-                          (default: False).
+        init_method: parameter initialisation method to choose from. Options are:
+            - `"random"` (default): Random sampling with `recurrent_kernel_init`.
+            - `"cholesky"`: Compute `X` with cholesky factorisation of `H`, sets `E,F,P = 
+                            I`. Good for slow/long memory dynamic models.
+        init_output_zero: initialize the network so its output is zero (default: False).
         d22_free: Specify whether to train `D22` as a free parameter (`True`), or construct
                   it separately from `X3, Y3, Z3` (`false`). Typically `True` only for a 
                   contracting REN (default: False).
@@ -106,16 +90,17 @@ class RENBase(nn.Module):
     features: int
     output_size: int
     activation: ActivationFn = nn.relu
-    kernel_init: Initializer = init.glorot_normal()
+    kernel_init: Initializer = init.lecun_normal()
     recurrent_kernel_init: Initializer = init.orthogonal()
     bias_init: Initializer = init.zeros_init()
     carry_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
+    init_method: str = "random"
     init_output_zero: bool = False
     d22_free: bool = False
     d22_zero: bool = False
-    eps: jnp.float32 = jnp.finfo(jnp.float32).eps
-    abar: jnp.float32 = 1
+    eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
+    abar: jnp.float32 = 1 # type: ignore
     
     def setup(self):
         self._error_checking()
@@ -125,10 +110,19 @@ class RENBase(nn.Module):
         ny = self.output_size
         
         # Define direct params for REN
-        B2 = self.param("B2", self.kernel_init, (nx, nu), self.param_dtype)
-        D12 = self.param("D12", self.kernel_init, (nv, nu), self.param_dtype)
-        X = self.param("X", self.recurrent_kernel_init, 
-                       (2 * nx + nv, 2 * nx + nv), self.param_dtype)
+        if self.init_method == "random":
+            B2 = self.param("B2", self.kernel_init, (nx, nu), self.param_dtype)
+            D12 = self.param("D12", self.kernel_init, (nv, nu), self.param_dtype)
+            x_init = self.recurrent_kernel_init
+        elif self.init_method == "cholesky":
+            B2 = self.param("B2", self.kernel_init, (nx, nu), self.param_dtype)
+            D12 = self.param("D12", init.zeros_init(), (nv, nu), self.param_dtype)
+            x_init = self.x_cholesky_init(B2, D12, self.eps)
+        else:
+            raise ValueError("Undefined init method '{}'".format(self.init_method))
+            
+        X = self.param("X", x_init, (2 * nx + nv, 2 * nx + nv), self.param_dtype)
+        
         p = self.param("polar", init.constant(l2_norm(X, eps=self.eps)),
                        (1,), self.param_dtype)        
         Y1 = self.param("Y1", self.kernel_init, (nx, nx), self.param_dtype)
@@ -266,6 +260,65 @@ class RENBase(nn.Module):
         rng, _ = jax.random.split(rng)
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
+    
+    def params_to_explicit(self, ps: dict):
+        """
+        Convert a parameter dictionary returned by the `.init()` method
+        in Flax into an `ExplicitRENParams` instance.
+        
+        The `ps` dictionary must be of the form (with possibly different sizes):
+        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
+        """
+        direct = DirectRENParams(
+            p = ps["params"]["polar"],
+            X = ps["params"]["X"],
+            B2 = ps["params"]["B2"],
+            D12 = ps["params"]["D12"],
+            Y1 = ps["params"]["Y1"],
+            C2 = ps["params"]["C2"],
+            D21 = ps["params"]["D21"],
+            D22 = ps["params"]["D22"],
+            X3 = ps["params"]["X3"],
+            Y3 = ps["params"]["Y3"],
+            Z3 = ps["params"]["Z3"],
+            bx = ps["params"]["bx"],
+            bv = ps["params"]["bv"],
+            by = ps["params"]["by"]
+        )
+        return self.direct_to_explicit(direct)
+    
+    def x_cholesky_init(self, B2, D12, eps):
+        """Initialise the X matrix so E, F, P are identity."""
+        
+        glorot_normal = init.glorot_normal()
+        def init_func(key, shape, dtype) -> Array:
+            
+            key, rng = jax.random.split(key, 2)
+            
+            nx = B2.shape[0]
+            nv = D12.shape[0]
+            
+            E = jnp.identity(nx, dtype)
+            F = jnp.identity(nx, dtype)
+            P = jnp.identity(nx, dtype)
+            
+            B1 = jnp.zeros((nx, nv), dtype)
+            C1 = jnp.zeros((nv, nx), dtype)
+            D11 = glorot_normal(rng, (nv, nv), dtype)
+            
+            eigs, _ = jnp.linalg.eigh(D11 + D11.T)
+            Lambda = (jnp.max(eigs) / 2 + 1e-4) * jnp.identity(nv, dtype)
+            H22 = 2*Lambda - D11 - D11.T
+            
+            H = jnp.block([
+                [(E + E.T - P), -C1.T, F.T],
+                [-C1, H22, B1.T],
+                [F, B1, P]
+            ]) + eps * jnp.identity(shape[0])
+            
+            X = jnp.linalg.cholesky(H, upper=True)
+            return X
+        return init_func
     
 
 @partial(jax.jit, static_argnums=(0,))
