@@ -15,18 +15,10 @@ import jax.numpy as jnp
 from flax import linen as nn
 from flax.linen import initializers as init
 from jax import lax
-from typing import Sequence, Optional, Callable, Any
+from typing import Sequence, Optional
 from flax.typing import Dtype, PrecisionLike
 
-
-ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
-Initializer = Callable[..., Any]
-
-
-def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
-    """Compute l2 norm of a vector/matrix with JAX.
-    This is safe for backpropagation, unlike `jnp.linalg.norm`."""
-    return jnp.sqrt(jnp.sum(x**2, **kwargs) + eps)
+from robustnn.utils import l2_norm, ActivationFn, Initializer
 
 
 def cayley(W, return_split=False):

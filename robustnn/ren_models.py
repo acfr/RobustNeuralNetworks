@@ -1,10 +1,7 @@
-import jax
 import jax.numpy as jnp
+from flax.typing import Array
+
 from robustnn.ren_base import RENBase, DirectRENParams, ExplicitRENParams
-
-from typing import Union, Any, Tuple
-
-Array = Union[jax.Array, Any]
 
 class ContractingREN(RENBase):
     """Construct a Contracting REN.
@@ -69,7 +66,7 @@ class LipschitzREN(RENBase):
     
     See docs for `RENBase` for full list of arguments.
     """
-    gamma: jnp.float32 = 1.0
+    gamma: jnp.float32 = 1.0 # type: ignore
     
     def _error_checking(self):
         if self.d22_free:
