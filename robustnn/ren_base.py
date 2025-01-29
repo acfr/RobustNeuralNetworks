@@ -91,7 +91,7 @@ class RENBase(nn.Module):
     output_size: int
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = init.lecun_normal()
-    recurrent_kernel_init: Initializer = init.orthogonal()
+    recurrent_kernel_init: Initializer = init.lecun_normal()
     bias_init: Initializer = init.zeros_init()
     carry_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
@@ -227,8 +227,7 @@ class RENBase(nn.Module):
         d = min(nu, ny)
         X3 = self.param("X3", identity_init(), (d, d), self.param_dtype)
         Y3 = self.param("Y3", init.zeros_init(), (d, d), self.param_dtype)
-        Z3 = self.param("Z3", init.zeros_init(), (abs(ny - nu), d), 
-                        self.param_dtype)
+        Z3 = self.param("Z3", init.zeros_init(), (abs(ny - nu), d), self.param_dtype)
             
         # Set up the direct parameter struct
         self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
