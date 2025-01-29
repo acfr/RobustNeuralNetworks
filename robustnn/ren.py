@@ -303,7 +303,8 @@ class GeneralREN(RENBase):
             >>> ren = GeneralREN(nu, nx, nv, ny, Q=Q, S=S, R=R)
             >>> ren.check_valid_qsr()
             
-        # TODO: Why can't I have this in the setup function? Check it.
+        This function is NOT run automatically in the `setup()` routine
+        to avoid issues with the JAX tracer.
         """
         nu = self.input_size
         ny = self.output_size
