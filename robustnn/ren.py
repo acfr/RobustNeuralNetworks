@@ -33,9 +33,9 @@ class ContractingREN(RENBase):
         if not self.d22_free:
             raise ValueError("Set `d22_free=True` for contracting RENs.")
     
-    def direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
-        H = self.x_to_h(ps.X, ps.p)
-        explicit = self.hmatrix_to_explicit(ps, H, ps.D22)
+    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+        H = self._x_to_h(ps.X, ps.p)
+        explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
         return explicit
     
     
@@ -72,7 +72,7 @@ class LipschitzREN(RENBase):
         if self.d22_free:
             raise ValueError("Set `d22_free=False` for Lipschitz RENs.")
     
-    def direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
@@ -107,8 +107,8 @@ class LipschitzREN(RENBase):
         Gamma_Q = mul_Q.T @ mul_Q / (-self.gamma)
         Gamma_R = mul_R.T @ jnp.linalg.solve(R, mul_R)
         
-        H = self.x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
-        explicit = self.hmatrix_to_explicit(ps, H, D22)
+        H = self._x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
+        explicit = self._hmatrix_to_explicit(ps, H, D22)
         return explicit
 
 
@@ -169,7 +169,7 @@ class GeneralREN(RENBase):
         if (not self.d22_zero) and self.init_output_zero:
             raise ValueError("Cannot have zero output on init without setting `d22_zero=True`.")
         
-    def direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
@@ -209,8 +209,8 @@ class GeneralREN(RENBase):
         Gamma_Q = mul_Q.T @ Q @ mul_Q
         Gamma_R = mul_R.T @ jnp.linalg.solve(R1, mul_R)
         
-        H = self.x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
-        explicit = self.hmatrix_to_explicit(ps, H, D22)
+        H = self._x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
+        explicit = self._hmatrix_to_explicit(ps, H, D22)
         return explicit
 
     def check_valid_qsr(self):

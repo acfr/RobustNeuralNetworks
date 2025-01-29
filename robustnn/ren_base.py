@@ -103,29 +103,106 @@ class RENBase(nn.Module):
     abar: jnp.float32 = 1 # type: ignore
     
     def setup(self):
+        """
+        Initialise the direct parameters for a REN and perform error checking.
+        """
         self._error_checking()
+        self._init_params()
+
+    def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
+        """
+        Call a REN.
+        
+        This implementation treats the REN as a dynamical system to be evaluated
+        at a single time. The syntax is `state, out = ren(state, in)`.
+        """
+        
+        # Direct parameterisation mapping
+        explicit = self._direct_to_explicit(self.direct)
+        
+        # Call the explicit REN form and return
+        state, out = self.explicit_call(state, inputs, explicit)
+        return state, out
+    
+    def explicit_call(
+        self, x: Array, u: Array, e: ExplicitRENParams
+    ) -> Tuple[Array, Array]:
+        """
+        Evaluate a REN given its explicit parameterization.
+        """
+        b = x @ e.C1.T + u @ e.D12.T + e.bv
+        w = tril_equlibrium_layer(self.activation, e.D11, b)
+        x1 = x @ e.A.T + w @ e.B1.T + u @ e.B2.T + e.bx
+        y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
+        return x1, y
+    
+    def params_to_explicit(self, ps: dict):
+        """
+        Convert a parameter dictionary returned by the `.init()` method
+        in Flax into an `ExplicitRENParams` instance.
+        
+        The `ps` dictionary must be of the form (with possibly different sizes):
+        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
+        """
+        direct = DirectRENParams(
+            p = ps["params"]["polar"],
+            X = ps["params"]["X"],
+            B2 = ps["params"]["B2"],
+            D12 = ps["params"]["D12"],
+            Y1 = ps["params"]["Y1"],
+            C2 = ps["params"]["C2"],
+            D21 = ps["params"]["D21"],
+            D22 = ps["params"]["D22"],
+            X3 = ps["params"]["X3"],
+            Y3 = ps["params"]["Y3"],
+            Z3 = ps["params"]["Z3"],
+            bx = ps["params"]["bx"],
+            bv = ps["params"]["bv"],
+            by = ps["params"]["by"]
+        )
+        return self._direct_to_explicit(direct)
+    
+    @nn.nowrap
+    def initialize_carry(
+        self, rng: jax.Array, input_shape: Tuple[int, ...]
+    ) -> Array:
+        """Initialize the REN state (carry).
+        
+        Args:
+        rng: random number generator passed to the init_fn.
+        input_shape: a tuple providing the shape of the input to the network.
+        
+        Returns:
+        An initialized state (carry) vector for the REN network.
+        """
+        batch_dims = input_shape[:-1]
+        rng, _ = jax.random.split(rng)
+        mem_shape = batch_dims + (self.state_size,)
+        return self.carry_init(rng, mem_shape, self.param_dtype)
+    
+    def _init_params(self):
+        """Initialise all direct params for a REN and store."""
         nu = self.input_size
         nx = self.state_size
         nv = self.features
         ny = self.output_size
         
         # Define direct params for REN
+        B2 = self.param("B2", self.kernel_init, (nx, nu), self.param_dtype)
+        D12 = self.param("D12", self.kernel_init, (nv, nu), self.param_dtype)
+        
         if self.init_method == "random":
-            B2 = self.param("B2", self.kernel_init, (nx, nu), self.param_dtype)
-            D12 = self.param("D12", self.kernel_init, (nv, nu), self.param_dtype)
             x_init = self.recurrent_kernel_init
         elif self.init_method == "cholesky":
-            B2 = self.param("B2", self.kernel_init, (nx, nu), self.param_dtype)
-            D12 = self.param("D12", init.zeros_init(), (nv, nu), self.param_dtype)
-            x_init = self.x_cholesky_init(B2, D12, self.eps)
+            x_init = self._x_cholesky_init(B2, D12, self.eps)
         else:
             raise ValueError("Undefined init method '{}'".format(self.init_method))
             
         X = self.param("X", x_init, (2 * nx + nv, 2 * nx + nv), self.param_dtype)
         
-        p = self.param("polar", init.constant(l2_norm(X, eps=self.eps)),
-                       (1,), self.param_dtype)        
+        p = self.param("polar", init.constant(l2_norm(X, eps=self.eps)), (1,), self.param_dtype)        
         Y1 = self.param("Y1", self.kernel_init, (nx, nx), self.param_dtype)
+        
         bx = self.param("bx", self.bias_init, (nx,), self.param_dtype)
         bv = self.param("bv", self.bias_init, (nv,), self.param_dtype)
         
@@ -156,52 +233,57 @@ class RENBase(nn.Module):
         # Set up the direct parameter struct
         self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
                                       D22, X3, Y3, Z3, bx, bv, by)
-
-    def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
-        """
-        Call an REN.
         
-        This implementation treats the REN as a dynamical system to be evaluated
-        at a single time. The syntax is `state, out = ren(state, in)` where `state` 
-        is an array.
-        """
+    def _x_cholesky_init(self, B2, D12, eps):
+        """Initialise the X matrix so E, F, P are identity."""
         
-        # Direct parameterisation mapping
-        explicit = self.direct_to_explicit(self.direct)
+        def init_func(key, shape, dtype) -> Array:
+            
+            key, rng = jax.random.split(key, 2)
+            
+            nx = B2.shape[0]
+            nv = D12.shape[0]
+            
+            E = jnp.identity(nx, dtype)
+            F = jnp.identity(nx, dtype)
+            P = jnp.identity(nx, dtype)
+            
+            B1 = jnp.zeros((nx, nv), dtype)
+            C1 = jnp.zeros((nv, nx), dtype)
+            D11 = self.kernel_init(rng, (nv, nv), dtype)
+            
+            eigs, _ = jnp.linalg.eigh(D11 + D11.T)
+            Lambda = (jnp.max(eigs) / 2 + 1e-4) * jnp.identity(nv, dtype)
+            H22 = 2*Lambda - D11 - D11.T
+            
+            H = jnp.block([
+                [(E + E.T - P), -C1.T, F.T],
+                [-C1, H22, B1.T],
+                [F, B1, P]
+            ]) + eps * jnp.identity(shape[0])
+            
+            X = jnp.linalg.cholesky(H, upper=True)
+            return X
         
-        # Call the explicit REN form and return
-        state, out = self.explicit_call(state, inputs, explicit)
-        return state, out
-    
-    def explicit_call(
-        self, x: Array, u: Array, e: ExplicitRENParams
-    ) -> Tuple[Array, Array]:
-        """
-        Evaluate a REN given its explicit parameterization.
-        """
-        b = x @ e.C1.T + u @ e.D12.T + e.bv
-        w = tril_equlibrium_layer(self.activation, e.D11, b)
-        x1 = x @ e.A.T + w @ e.B1.T + u @ e.B2.T + e.bx
-        y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
-        return x1, y
+        return init_func
     
     def _error_checking(self):
         """Check conditions for REN."""
-        pass
+        raise NotImplementedError("Each REN parameterisation should have its own version of this function.")
         
-    def direct_to_explicit(self, direct: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, direct: DirectRENParams) -> ExplicitRENParams:
         """
         Convert direct paremeterization of a REN to explicit form
         for evaluation. This depends on the specific REN parameterization.
         """
         raise NotImplementedError("RENBase models should not be called. Choose a REN parameterization instead (eg: `ContractingREN`).")
     
-    def x_to_h(self, X: Array, p: Array) -> Array:
+    def _x_to_h(self, X: Array, p: Array) -> Array:
         """Convert REN X matrix to H matrix using polar parameterization."""
         H = p**2 * (X.T @ X) / (l2_norm(X)**2) + self.eps * jnp.identity(jnp.shape(X)[0])
         return H
     
-    def hmatrix_to_explicit(
+    def _hmatrix_to_explicit(
         self, ps: DirectRENParams, H: Array, D22: Array
     ) -> ExplicitRENParams:
         """Convert REN H matrix to explict form given direct params."""
@@ -242,83 +324,6 @@ class RENBase(nn.Module):
         explicit = ExplicitRENParams(A_e, B1_e, B2_e, C1_e, ps.C2, D11_e, 
                                      D12_e, ps.D21, D22, ps.bx, ps.bv, ps.by)
         return explicit
-    
-    @nn.nowrap
-    def initialize_carry(
-        self, rng: jax.Array, input_shape: Tuple[int, ...]
-    ) -> Array:
-        """Initialize the REN state (carry).
-        
-        Args:
-        rng: random number generator passed to the init_fn.
-        input_shape: a tuple providing the shape of the input to the network.
-        
-        Returns:
-        An initialized state (carry) vector for the REN network.
-        """
-        batch_dims = input_shape[:-1]
-        rng, _ = jax.random.split(rng)
-        mem_shape = batch_dims + (self.state_size,)
-        return self.carry_init(rng, mem_shape, self.param_dtype)
-    
-    def params_to_explicit(self, ps: dict):
-        """
-        Convert a parameter dictionary returned by the `.init()` method
-        in Flax into an `ExplicitRENParams` instance.
-        
-        The `ps` dictionary must be of the form (with possibly different sizes):
-        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
-        """
-        direct = DirectRENParams(
-            p = ps["params"]["polar"],
-            X = ps["params"]["X"],
-            B2 = ps["params"]["B2"],
-            D12 = ps["params"]["D12"],
-            Y1 = ps["params"]["Y1"],
-            C2 = ps["params"]["C2"],
-            D21 = ps["params"]["D21"],
-            D22 = ps["params"]["D22"],
-            X3 = ps["params"]["X3"],
-            Y3 = ps["params"]["Y3"],
-            Z3 = ps["params"]["Z3"],
-            bx = ps["params"]["bx"],
-            bv = ps["params"]["bv"],
-            by = ps["params"]["by"]
-        )
-        return self.direct_to_explicit(direct)
-    
-    def x_cholesky_init(self, B2, D12, eps):
-        """Initialise the X matrix so E, F, P are identity."""
-        
-        glorot_normal = init.glorot_normal()
-        def init_func(key, shape, dtype) -> Array:
-            
-            key, rng = jax.random.split(key, 2)
-            
-            nx = B2.shape[0]
-            nv = D12.shape[0]
-            
-            E = jnp.identity(nx, dtype)
-            F = jnp.identity(nx, dtype)
-            P = jnp.identity(nx, dtype)
-            
-            B1 = jnp.zeros((nx, nv), dtype)
-            C1 = jnp.zeros((nv, nx), dtype)
-            D11 = glorot_normal(rng, (nv, nv), dtype)
-            
-            eigs, _ = jnp.linalg.eigh(D11 + D11.T)
-            Lambda = (jnp.max(eigs) / 2 + 1e-4) * jnp.identity(nv, dtype)
-            H22 = 2*Lambda - D11 - D11.T
-            
-            H = jnp.block([
-                [(E + E.T - P), -C1.T, F.T],
-                [-C1, H22, B1.T],
-                [F, B1, P]
-            ]) + eps * jnp.identity(shape[0])
-            
-            X = jnp.linalg.cholesky(H, upper=True)
-            return X
-        return init_func
     
 
 @partial(jax.jit, static_argnums=(0,))
