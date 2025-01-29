@@ -1,10 +1,19 @@
 import jax.numpy as jnp
-from flax.typing import Array
 
+from flax.linen import initializers as init
+from flax.typing import Array
+from typing import Tuple
+
+from robustnn.utils import l2_norm, identity_init, solve_discrete_lyapunov_direct
 from robustnn.ren_base import RENBase, DirectRENParams, ExplicitRENParams
 
 class ContractingREN(RENBase):
     """Construct a Contracting REN.
+    
+    Attributes::
+        init_as_linear: Tuple of (A, B, C, D) matrices to initialise the contracting REN as
+                        a linear system. The linear system must be stable. Default is `()`, 
+                        which uses the random initialisation outlined in `RENBase`.
     
     Example usage::
 
@@ -28,14 +37,85 @@ class ContractingREN(RENBase):
     See docs for `RENBase` for full list of arguments.
     """
     d22_free: bool = True
+    init_as_linear: Tuple = ()
+    
+    def setup(self):
+        self._error_checking()
+        if not self.init_as_linear:
+            self._init_params()
+        else:
+            self._init_linear_sys()
     
     def _error_checking(self):
         if not self.d22_free:
             raise ValueError("Set `d22_free=True` for contracting RENs.")
-    
-    def direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
-        H = self.x_to_h(ps.X, ps.p)
-        explicit = self.hmatrix_to_explicit(ps, H, ps.D22)
+        
+    def _init_linear_sys(self):
+        """Initialise the contracting REN as a (stable) linear system."""
+        
+        # Extract params and system sizes
+        A, B, C, D = self.init_as_linear
+        nu = self.input_size
+        nx = self.state_size
+        nv = self.features
+        ny = self.output_size
+        
+        # Error checking
+        if not (A.shape[0] == nx and A.shape[1] == nx):
+            raise ValueError("Size of initial A matrix should be `(state_size, state_size)`")
+        if not (B.shape[0] == nx and B.shape[1] == nu):
+            raise ValueError("Size of initial B matrix should be `(state_size, input_size)`")
+        if not (C.shape[0] == ny and C.shape[1] == nx):
+            raise ValueError("Size of initial C matrix should be `(output_size, state_size)`")
+        if not (D.shape[0] == ny and D.shape[1] == nu):
+            raise ValueError("Size of initial D matrix should be `(output_size, input_size)`") 
+        if not self.abar == 1:
+            raise NotImplementedError("Make compatible with abar != 0 (TODO).")
+        
+        # Make sure all the biases are zero
+        bx = self.param("bx", init.zeros_init(), (nx,), self.param_dtype)
+        bv = self.param("bv", init.zeros_init(), (nv,), self.param_dtype)
+        by = self.param("by", init.zeros_init(), (ny,), self.param_dtype)
+        
+        # Set some other params to zero
+        D12 = self.param("D12", init.zeros_init(), (nv, nu), self.param_dtype)
+        D21 = self.param("D21", init.zeros_init(), (ny, nv), self.param_dtype)
+        
+        # Irrelevant params for contracting REN
+        X3 = self.param("X3", init.zeros_init(), (0,), self.param_dtype)
+        Y3 = self.param("Y3", init.zeros_init(), (0,), self.param_dtype)
+        Z3 = self.param("Z3", init.zeros_init(), (0,), self.param_dtype)
+        
+        # Build up the X matrix based on the initial state-space model
+        P = solve_discrete_lyapunov_direct(A, jnp.identity(nx))
+        Lambda = jnp.identity(nv)
+        H = jnp.block([
+            [P, jnp.zeros((nx, nv)), A.T @ P],
+            [jnp.zeros((nv, nx)), 2*Lambda, jnp.zeros((nv, nx))],
+            [P @ A, jnp.zeros((nx, nv)), P]
+        ])
+        H = H + self.eps * jnp.identity(2 * nx + nv) # TODO: Add Wishart?
+        X = jnp.linalg.cholesky(H, upper=True)
+        X = self.param("X", init.constant(X), (2*nx + nv, 2*nx + nv), self.param_dtype)
+        
+        # Other implicit params
+        X_norm = l2_norm(X, eps=self.eps)
+        p = self.param("polar", init.constant(X_norm), (1,), self.param_dtype)        
+        Y1 = self.param("Y1", identity_init(), (nx, nx), self.param_dtype)
+        
+        # Set fixed arrays directly from state matrices
+        B2_imp = P @ B
+        B2 = self.param("B2", init.constant(B2_imp), (nx, nu), self.param_dtype)
+        C2 = self.param("C2", init.constant(C), (ny, nx), self.param_dtype)
+        D22 = self.param("D22", init.constant(D), (ny, nu), self.param_dtype)
+        
+        # Set up the direct parameter struct
+        self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
+                                      D22, X3, Y3, Z3, bx, bv, by)
+        
+    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+        H = self._x_to_h(ps.X, ps.p)
+        explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
         return explicit
     
     
@@ -72,7 +152,7 @@ class LipschitzREN(RENBase):
         if self.d22_free:
             raise ValueError("Set `d22_free=False` for Lipschitz RENs.")
     
-    def direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
@@ -107,8 +187,8 @@ class LipschitzREN(RENBase):
         Gamma_Q = mul_Q.T @ mul_Q / (-self.gamma)
         Gamma_R = mul_R.T @ jnp.linalg.solve(R, mul_R)
         
-        H = self.x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
-        explicit = self.hmatrix_to_explicit(ps, H, D22)
+        H = self._x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
+        explicit = self._hmatrix_to_explicit(ps, H, D22)
         return explicit
 
 
@@ -169,7 +249,7 @@ class GeneralREN(RENBase):
         if (not self.d22_zero) and self.init_output_zero:
             raise ValueError("Cannot have zero output on init without setting `d22_zero=True`.")
         
-    def direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
@@ -209,8 +289,8 @@ class GeneralREN(RENBase):
         Gamma_Q = mul_Q.T @ Q @ mul_Q
         Gamma_R = mul_R.T @ jnp.linalg.solve(R1, mul_R)
         
-        H = self.x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
-        explicit = self.hmatrix_to_explicit(ps, H, D22)
+        H = self._x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
+        explicit = self._hmatrix_to_explicit(ps, H, D22)
         return explicit
 
     def check_valid_qsr(self):
@@ -220,8 +300,11 @@ class GeneralREN(RENBase):
             >>> Q, S, R = ... # Define your matrices here.
             
             >>> nu, nx, nv, ny = 1, 3, 4, 2
-            >>> ren = GeneralREN(nu, nx, nv, ny, qsr=(Q, S, R))
-            >>> ren.check_valid_qsr(*self.qsr)
+            >>> ren = GeneralREN(nu, nx, nv, ny, Q=Q, S=S, R=R)
+            >>> ren.check_valid_qsr()
+            
+        This function is NOT run automatically in the `setup()` routine
+        to avoid issues with the JAX tracer.
         """
         nu = self.input_size
         ny = self.output_size
