@@ -63,7 +63,7 @@ class RENBase(nn.Module):
         output_size: the number of output features (ny).
         activation: Activation function to use (default: relu).
         kernel_init: initializer for weights (default: lecun_normal()).
-        recurrent_kernel_init: initializer for the REN `X` matrix (default: orthogonal()).
+        recurrent_kernel_init: initializer for the REN `X` matrix (default: lecun_normal()).
         bias_init: initializer for the bias parameters (default: zeros_init()).
         carry_init: initializer for the internal state vector (default: zeros_init()).
         param_dtype: the dtype passed to parameter initializers (default: float32).

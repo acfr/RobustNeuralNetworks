@@ -27,7 +27,7 @@ states = model.initialize_carry(key1, (batches, nu)) + 1
 inputs = jnp.ones((batches, nu))
 params = model.init(key2, states, inputs)
 
-# FOrward mode
+# Forward mode
 jit_call = jax.jit(model.apply)
 new_state, out = jit_call(params, states, inputs)
 print(new_state)
