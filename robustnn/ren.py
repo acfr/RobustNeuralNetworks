@@ -87,14 +87,17 @@ class ContractingREN(RENBase):
         Z3 = self.param("Z3", init.zeros_init(), (0,), self.param_dtype)
         
         # Build up the X matrix based on the initial state-space model
-        P = solve_discrete_lyapunov_direct(A, jnp.identity(nx))
+        P = solve_discrete_lyapunov_direct(A.T, jnp.identity(nx))
         Lambda = jnp.identity(nv)
+        PA = P @ A
+        
         H = jnp.block([
-            [P, jnp.zeros((nx, nv)), A.T @ P],
+            [P, jnp.zeros((nx, nv)), PA.T],
             [jnp.zeros((nv, nx)), 2*Lambda, jnp.zeros((nv, nx))],
-            [P @ A, jnp.zeros((nx, nv)), P]
+            [PA, jnp.zeros((nx, nv)), P]
         ])
         H = H + self.eps * jnp.identity(2 * nx + nv) # TODO: Add Wishart?
+        
         X = jnp.linalg.cholesky(H, upper=True)
         X = self.param("X", init.constant(X), (2*nx + nv, 2*nx + nv), self.param_dtype)
         

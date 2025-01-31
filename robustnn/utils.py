@@ -33,7 +33,5 @@ def solve_discrete_lyapunov_direct(a, q):
     lhs = jnp.kron(a, a.conj())
     lhs = jnp.eye(lhs.shape[0]) - lhs
     x = jnp.linalg.solve(lhs, q.flatten())
-    x = jnp.reshape(x, q.shape)
-    
-    # Force symmetric solution in case of numerical error
-    return (x + x.T) / 2
+
+    return jnp.reshape(x, q.shape)
