@@ -61,16 +61,26 @@ class ContractingREN(RENBase):
         ny = self.output_size
         
         # Error checking
-        if not (A.shape[0] == nx and A.shape[1] == nx):
-            raise ValueError("Size of initial A matrix should be `(state_size, state_size)`")
-        if not (B.shape[0] == nx and B.shape[1] == nu):
-            raise ValueError("Size of initial B matrix should be `(state_size, input_size)`")
-        if not (C.shape[0] == ny and C.shape[1] == nx):
-            raise ValueError("Size of initial C matrix should be `(output_size, state_size)`")
+        nx_a = A.shape[0]
+        if not (A.shape[0] <= nx and A.shape[1] == A.shape[0]):
+            raise ValueError("Size of initial A matrix should be `(n, n)` with `n <= state_size`")
+        if not (B.shape[0] == nx_a and B.shape[1] == nu):
+            raise ValueError("Size of initial B matrix should be `(A.shape[0], input_size)`")
+        if not (C.shape[0] == ny and C.shape[1] == nx_a):
+            raise ValueError("Size of initial C matrix should be `(output_size, A.shape[0])`")
         if not (D.shape[0] == ny and D.shape[1] == nu):
             raise ValueError("Size of initial D matrix should be `(output_size, input_size)`") 
         if not self.abar == 1:
             raise NotImplementedError("Make compatible with abar != 0 (TODO).")
+        
+        # Fill out A matrix to match the required number of states
+        dnx = nx - nx_a
+        A = jnp.block([
+            [A, jnp.zeros((nx_a, dnx), self.param_dtype)],
+            [jnp.zeros((dnx, nx_a), self.param_dtype), jnp.zeros((dnx, dnx), self.param_dtype)],
+        ])
+        B = jnp.vstack([B, jnp.zeros((dnx, nu), self.param_dtype)])
+        C = jnp.hstack([C, jnp.zeros((ny, dnx), self.param_dtype)])
         
         # Make sure all the biases are zero
         bx = self.param("bx", init.zeros_init(), (nx,), self.param_dtype)
