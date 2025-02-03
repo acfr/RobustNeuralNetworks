@@ -61,16 +61,26 @@ class ContractingREN(RENBase):
         ny = self.output_size
         
         # Error checking
-        if not (A.shape[0] == nx and A.shape[1] == nx):
-            raise ValueError("Size of initial A matrix should be `(state_size, state_size)`")
-        if not (B.shape[0] == nx and B.shape[1] == nu):
-            raise ValueError("Size of initial B matrix should be `(state_size, input_size)`")
-        if not (C.shape[0] == ny and C.shape[1] == nx):
-            raise ValueError("Size of initial C matrix should be `(output_size, state_size)`")
+        nx_a = A.shape[0]
+        if not (A.shape[0] <= nx and A.shape[1] == A.shape[0]):
+            raise ValueError("Size of initial A matrix should be `(n, n)` with `n <= state_size`")
+        if not (B.shape[0] == nx_a and B.shape[1] == nu):
+            raise ValueError("Size of initial B matrix should be `(A.shape[0], input_size)`")
+        if not (C.shape[0] == ny and C.shape[1] == nx_a):
+            raise ValueError("Size of initial C matrix should be `(output_size, A.shape[0])`")
         if not (D.shape[0] == ny and D.shape[1] == nu):
             raise ValueError("Size of initial D matrix should be `(output_size, input_size)`") 
         if not self.abar == 1:
             raise NotImplementedError("Make compatible with abar != 0 (TODO).")
+        
+        # Fill out A matrix to match the required number of states
+        dnx = nx - nx_a
+        A = jnp.block([
+            [A, jnp.zeros((nx_a, dnx), self.param_dtype)],
+            [jnp.zeros((dnx, nx_a), self.param_dtype), jnp.zeros((dnx, dnx), self.param_dtype)],
+        ])
+        B = jnp.vstack([B, jnp.zeros((dnx, nu), self.param_dtype)])
+        C = jnp.hstack([C, jnp.zeros((ny, dnx), self.param_dtype)])
         
         # Make sure all the biases are zero
         bx = self.param("bx", init.zeros_init(), (nx,), self.param_dtype)
@@ -87,14 +97,17 @@ class ContractingREN(RENBase):
         Z3 = self.param("Z3", init.zeros_init(), (0,), self.param_dtype)
         
         # Build up the X matrix based on the initial state-space model
-        P = solve_discrete_lyapunov_direct(A, jnp.identity(nx))
+        P = solve_discrete_lyapunov_direct(A.T, jnp.identity(nx))
         Lambda = jnp.identity(nv)
+        PA = P @ A
+        
         H = jnp.block([
-            [P, jnp.zeros((nx, nv)), A.T @ P],
+            [P, jnp.zeros((nx, nv)), PA.T],
             [jnp.zeros((nv, nx)), 2*Lambda, jnp.zeros((nv, nx))],
-            [P @ A, jnp.zeros((nx, nv)), P]
+            [PA, jnp.zeros((nx, nv)), P]
         ])
         H = H + self.eps * jnp.identity(2 * nx + nv) # TODO: Add Wishart?
+        
         X = jnp.linalg.cholesky(H, upper=True)
         X = self.param("X", init.constant(X), (2*nx + nv, 2*nx + nv), self.param_dtype)
         
