@@ -62,14 +62,10 @@ def load_f16():
         data = (data - mu) / sigma      # Standardization
         return data[:, :2], data[:, 2:] # Split into the 2 inputs and 3 measurements
     
-    datasets = [process_file(fp) for fp in file_paths]
+    datasets = [process_file(fp) for fp in file_paths] 
+    u_train = jnp.vstack([datasets[i][0] for i in [0, 2, 4, 6]])
+    y_train = jnp.vstack([datasets[i][1] for i in [0, 2, 4, 6]])
+    u_val = jnp.vstack([datasets[i][0] for i in [1, 3, 5]])
+    y_val = jnp.vstack([datasets[i][1] for i in [1, 3, 5]])
     
-    
-    u_train = jnp.hstack([datasets[i][0] for i in [0, 2, 4, 6]])
-    y_train = jnp.hstack([datasets[i][1] for i in [0, 2, 4, 6]])
-    u_val = jnp.hstack([datasets[i][0] for i in [1, 3, 5]])
-    y_val = jnp.hstack([datasets[i][1] for i in [1, 3, 5]])
-    
-    stats = {"mu_u": 0.0, "mu_y": 0.0, "sigma_u": 1.0, "sigma_y": 1.0}
-    
-    return (u_train, y_train), (u_val, y_val), stats
+    return (u_train, y_train), (u_val, y_val)
