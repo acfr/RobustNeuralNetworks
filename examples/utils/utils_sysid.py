@@ -1,3 +1,4 @@
+from datetime import datetime
 import flax.linen as linen
 import jax
 import jax.numpy as jnp
@@ -152,7 +153,6 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
                 params, opt_state, x, u, y
             )
             batch_loss.append(loss_value)
-            # if verbose: print(f"Loss: {loss_value:.2f}")
 
         # Store losses and print training info
         epoch_loss = jnp.mean(jnp.array(batch_loss))
@@ -160,7 +160,10 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
         lr = opt_state[1].hyperparams['learning_rate']
         
         if verbose:
-            print(f"Epoch: {epoch+1}/{epochs}, Loss: {epoch_loss:.4f}, lr: {lr:.3g}")
+            print(f"Epoch: {epoch+1}/{epochs}, " +
+                  f"Loss: {epoch_loss:.4f}, " +
+                  f"lr: {lr:.3g}, " +
+                  f"Time: {datetime.now()}")
     
     return params, jnp.squeeze(jnp.vstack(train_loss_log))
 
