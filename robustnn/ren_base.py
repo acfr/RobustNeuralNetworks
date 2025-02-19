@@ -72,6 +72,7 @@ class RENBase(nn.Module):
             - `"cholesky"`: Compute `X` with cholesky factorisation of `H`, sets `E,F,P = 
                             I`. Good for slow/long memory dynamic models.
         init_output_zero: initialize the network so its output is zero (default: False).
+        do_polar_param: Use the polar parameterization for the H matrix (default: True).
         d22_free: Specify whether to train `D22` as a free parameter (`True`), or construct
                   it separately from `X3, Y3, Z3` (`false`). Typically `True` only for a 
                   contracting REN (default: False).
@@ -97,6 +98,7 @@ class RENBase(nn.Module):
     param_dtype: Dtype = jnp.float32
     init_method: str = "random"
     init_output_zero: bool = False
+    do_polar_param: bool = True
     d22_free: bool = False
     d22_zero: bool = False
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
@@ -304,9 +306,11 @@ class RENBase(nn.Module):
         raise NotImplementedError("RENBase models should not be called. Choose a REN parameterization instead (eg: `ContractingREN`).")
     
     def _x_to_h(self, X: Array, p: Array) -> Array:
-        """Convert REN X matrix to H matrix using polar parameterization."""
-        H = p**2 * (X.T @ X) / (l2_norm(X)**2) + self.eps * jnp.identity(jnp.shape(X)[0])
-        return H
+        """Convert REN X matrix to H matrix (using polar parameterization)."""
+        H = X.T @ X
+        if self.do_polar_param:
+            H = p**2 * H / (l2_norm(X)**2)
+        return H + self.eps * jnp.identity(jnp.shape(X)[0])
     
     def _hmatrix_to_explicit(
         self, ps: DirectRENParams, H: Array, D22: Array

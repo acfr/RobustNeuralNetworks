@@ -30,12 +30,14 @@ def get_mse(y_true, y_pred):
 
 def generate_fname(config):
     """Generate a common file name for results loading/saving."""
-    filename = "{}_nx{}_nv{}_{}_{}_s{}".format(
+    polar_label = "polar" if config["polar"] else "nopolar"
+    filename = "{}_nx{}_nv{}_{}_{}_{}_s{}".format(
         config["experiment"],
         config["nx"],
         config["nv"],
         config["activation"],
         config["init_method"],
+        polar_label,
         config["seed"]
     )
     
@@ -150,7 +152,7 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
                 params, opt_state, x, u, y
             )
             batch_loss.append(loss_value)
-            if verbose: print(f"Loss: {loss_value:.2f}")
+            # if verbose: print(f"Loss: {loss_value:.2f}")
 
         # Store losses and print training info
         epoch_loss = jnp.mean(jnp.array(batch_loss))
@@ -183,8 +185,8 @@ def validate(model: ren.RENBase, params, val_data, washout=100, seed=123):
         
     # Compute model prediction
     key, rng = jax.random.split(rng)
-    x = model.initialize_carry(key, u_val[0].shape)
-    _, y_pred = model.simulate_sequence(params, x, u_val)
+    x0 = model.initialize_carry(key, u_val[0].shape)
+    _, y_pred = model.simulate_sequence(params, x0, u_val)
     
     # Compute metrics
     mse = get_mse(y_val[washout:], y_pred[washout:])

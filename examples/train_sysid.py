@@ -31,6 +31,7 @@ config = {
     "nv": 150,
     "activation": "relu",
     "init_method": "cholesky",
+    "polar": True,
 } 
 
 
@@ -53,7 +54,7 @@ def run_sys_id_test(config):
         config["nv"], 
         ny, 
         activation=utils.get_activation(config["activation"]), 
-        init_method=config["init_method"]
+        init_method=config["init_method"],
     )
 
     # Make training/valudation data sets
@@ -84,33 +85,72 @@ def run_sys_id_test(config):
     return params, results
 
 
-# Train a model
-run_sys_id_test(config)
+def train_and_test(config):
+    
+    # Train the model
+    run_sys_id_test(config)
 
-# Load and test it
-config, params, results = utils.load_results_from_config(config)
-_, fname = utils.generate_fname(config)
+    # Load and test it
+    config, _, results = utils.load_results_from_config(config)
+    _, fname = utils.generate_fname(config)
 
-print("MSE:   ", results["mse"])
-print("NRMSE: ", results["nrmse"])
+    print("MSE:   ", results["mse"])
+    print("NRMSE: ", results["nrmse"])
 
-# Plot some of the validation results to see if it's working
-batch = 0
-indx = 2
-npoints = 3000 #int(results["y"][:,0].shape[0] / 3)
-y_true = results["y"][:npoints, batch, indx]
-y_pred = results["y_pred"][:npoints, batch, indx]
+    # Plot some of the validation results to see if it's working
+    batch = 0
+    indx = 2
+    npoints = 3000
+    y_true = results["y"][:npoints, batch, indx]
+    y_pred = results["y_pred"][:npoints, batch, indx]
 
-plt.figure(1)
-plt.plot(results["train_loss"])
-plt.xlabel("Training epochs")
-plt.ylabel("Training loss")
-plt.ylim(0.5, 11.1)
-plt.yscale('log')
-plt.savefig(dirpath / f"../results/f16/{fname}_loss.pdf")
+    plt.figure(1)
+    plt.plot(results["train_loss"])
+    plt.xlabel("Training epochs")
+    plt.ylabel("Training loss")
+    plt.ylim(0.5, 11.1)
+    plt.yscale('log')
+    plt.savefig(dirpath / f"../results/f16/{fname}_loss.pdf")
 
-plt.figure(2)
-plt.plot(y_true - y_pred)
-plt.xlabel("Time steps")
-plt.ylabel("Acceleration")
-plt.savefig(dirpath / f"../results/f16/{fname}_output_dif.pdf")
+    plt.figure(2)
+    plt.plot(y_true - y_pred)
+    plt.xlabel("Time steps")
+    plt.ylabel("Acceleration")
+    plt.savefig(dirpath / f"../results/f16/{fname}_output_dif.pdf")
+
+
+# Run it all for a few different configs
+config["polar"] = True
+config["activation"] = "relu"
+config["init_method"] = "cholesky"
+train_and_test(config)
+
+config["activation"] = "tanh"
+config["init_method"] = "cholesky"
+train_and_test(config)
+
+config["activation"] = "relu"
+config["init_method"] = "random"
+train_and_test(config)
+
+config["activation"] = "tanh"
+config["init_method"] = "random"
+train_and_test(config)
+
+# Try it all again without the polar parameterisation
+config["polar"] = False
+config["activation"] = "relu"
+config["init_method"] = "cholesky"
+train_and_test(config)
+
+config["activation"] = "tanh"
+config["init_method"] = "cholesky"
+train_and_test(config)
+
+config["activation"] = "relu"
+config["init_method"] = "random"
+train_and_test(config)
+
+config["activation"] = "tanh"
+config["init_method"] = "random"
+train_and_test(config)
