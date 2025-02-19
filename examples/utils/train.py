@@ -5,6 +5,8 @@ import optax
 import pickle
 from pathlib import Path
 
+from robustnn import ren_base as ren
+
 dirpath = Path(__file__).resolve().parent
 
 
@@ -80,13 +82,13 @@ def setup_optimizer(config, n_segments):
         staircase=True
     )
     optimizer = optax.chain(
-        optax.clip(config["clip_grad"]), #TODO: By global norm...?
+        optax.clip(config["clip_grad"]),
         optax.inject_hyperparams(optax.adam)(learning_rate=scheduler)
     )
     return optimizer
+
     
-    
-def train(train_data, model, optimizer, epochs=200, seed=123, verbose=True):
+def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbose=True):
     """Train model for system identification.
 
     Args:
@@ -104,12 +106,12 @@ def train(train_data, model, optimizer, epochs=200, seed=123, verbose=True):
     
     def loss_fn(params, x, u, y):
         """
-        Computes loss and returns updated model state.
+        Computes loss (l2 norm of simulation error) and returns
+        updated model state.
         """
-        new_x, y_pred = model.apply(params, x, u)
-        return jnp.mean(jnp.sum((y - y_pred) ** 2, axis=-1)), new_x
-        # TODO: Loss doesn't seem correct at the moment!!
-        # return jnp.mean(jnp.square(y - y_pred)), new_x
+        new_x, y_pred = model.simulate_sequence(params, x, u)
+        loss = jnp.mean(l2_norm(y - y_pred, axis=(-2, -1))**2)
+        return loss, new_x
     
     grad_loss = jax.jit(jax.value_and_grad(loss_fn, has_aux=True))
 
@@ -128,7 +130,7 @@ def train(train_data, model, optimizer, epochs=200, seed=123, verbose=True):
     key1, key2, rng = jax.random.split(rng, 3)
 
     # Initialize model parameters and optimizer state
-    init_u = train_data[0][0]
+    init_u = train_data[0][0][0] # (u, sequence 0, time 0)
     init_x = model.initialize_carry(key1, init_u.shape)
     params = model.init(key2, init_x, init_u)
     opt_state = optimizer.init(params)
@@ -148,6 +150,7 @@ def train(train_data, model, optimizer, epochs=200, seed=123, verbose=True):
                 params, opt_state, x, u, y
             )
             batch_loss.append(loss_value)
+            if verbose: print(f"Loss: {loss_value:.2f}")
 
         # Store losses and print training info
         epoch_loss = jnp.mean(jnp.array(batch_loss))
@@ -160,7 +163,7 @@ def train(train_data, model, optimizer, epochs=200, seed=123, verbose=True):
     return params, jnp.squeeze(jnp.vstack(train_loss_log))
 
 
-def validate(model, params, val_data, washout=100, seed=123):
+def validate(model: ren.RENBase, params, val_data, washout=100, seed=123):
     """Test SysID model on validation set(s).
 
     Args:
@@ -180,8 +183,8 @@ def validate(model, params, val_data, washout=100, seed=123):
         
     # Compute model prediction
     key, rng = jax.random.split(rng)
-    x = model.initialize_carry(key, u_val.shape)
-    _, y_pred = model.apply(params, x, u_val)
+    x = model.initialize_carry(key, u_val[0].shape)
+    _, y_pred = model.simulate_sequence(params, x, u_val)
     
     # Compute metrics
     mse = get_mse(y_val[washout:], y_pred[washout:])

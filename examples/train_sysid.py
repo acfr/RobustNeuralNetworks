@@ -86,6 +86,8 @@ def run_sys_id_test(config):
 
 # Train a model
 run_sys_id_test(config)
+
+# Load and test it
 config, params, results = utils.load_results_from_config(config)
 _, fname = utils.generate_fname(config)
 
@@ -93,15 +95,18 @@ print("MSE:   ", results["mse"])
 print("NRMSE: ", results["nrmse"])
 
 # Plot some of the validation results to see if it's working
+batch = 0
 indx = 2
 npoints = 3000 #int(results["y"][:,0].shape[0] / 3)
-y_true = results["y"][:npoints,indx]
-y_pred = results["y_pred"][:npoints,indx]
+y_true = results["y"][:npoints, batch, indx]
+y_pred = results["y_pred"][:npoints, batch, indx]
 
 plt.figure(1)
 plt.plot(results["train_loss"])
 plt.xlabel("Training epochs")
 plt.ylabel("Training loss")
+plt.ylim(0.5, 11.1)
+plt.yscale('log')
 plt.savefig(dirpath / f"../results/f16/{fname}_loss.pdf")
 
 plt.figure(2)
