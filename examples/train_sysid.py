@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from robustnn import ren
-from utils import data_handling as handler
-from utils import train as utils
 from utils.plot_utils import startup_plotting
+from utils import data_handling as handler
+from utils import utils_sysid as utils
 
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
@@ -55,6 +55,7 @@ def run_sys_id_test(config):
         ny, 
         activation=utils.get_activation(config["activation"]), 
         init_method=config["init_method"],
+        do_polar_param=config["polar"]
     )
 
     # Make training/valudation data sets
@@ -117,6 +118,7 @@ def train_and_test(config):
     plt.xlabel("Time steps")
     plt.ylabel("Acceleration")
     plt.savefig(dirpath / f"../results/f16/{fname}_output_dif.pdf")
+    plt.close()
 
 
 # Run it all for a few different configs
@@ -125,15 +127,7 @@ config["activation"] = "relu"
 config["init_method"] = "cholesky"
 train_and_test(config)
 
-config["activation"] = "tanh"
-config["init_method"] = "cholesky"
-train_and_test(config)
-
 config["activation"] = "relu"
-config["init_method"] = "random"
-train_and_test(config)
-
-config["activation"] = "tanh"
 config["init_method"] = "random"
 train_and_test(config)
 
@@ -143,14 +137,7 @@ config["activation"] = "relu"
 config["init_method"] = "cholesky"
 train_and_test(config)
 
-config["activation"] = "tanh"
-config["init_method"] = "cholesky"
-train_and_test(config)
-
 config["activation"] = "relu"
 config["init_method"] = "random"
 train_and_test(config)
 
-config["activation"] = "tanh"
-config["init_method"] = "random"
-train_and_test(config)
