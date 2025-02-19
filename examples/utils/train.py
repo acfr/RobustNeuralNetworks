@@ -1,12 +1,18 @@
 import flax.linen as linen
 import jax
 import jax.numpy as jnp
-import numpy as np
 import optax
 import pickle
 from pathlib import Path
 
 dirpath = Path(__file__).resolve().parent
+
+
+def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
+    """Compute l2 norm of a vector/matrix with JAX.
+    This is safe for backpropagation, unlike `jnp.linalg.norm`."""
+    return jnp.sqrt(jnp.sum(x**2, **kwargs) + eps)
+
 
 def get_activation(s: str):
     """Get activation function from flax.linen via string."""
@@ -22,7 +28,7 @@ def get_mse(y_true, y_pred):
 
 def generate_fname(config):
     """Generate a common file name for results loading/saving."""
-    filename = "{}_nx{}_nv{}_{}_{}_s{}.pickle".format(
+    filename = "{}_nx{}_nv{}_{}_{}_s{}".format(
         config["experiment"],
         config["nx"],
         config["nv"],
@@ -35,12 +41,12 @@ def generate_fname(config):
     if not filepath.exists():
         filepath.mkdir(parents=True)
         
-    return filepath / filename
+    return filepath / f"{filename}.pickle", filename
 
 
 def save_results(config, params, results):
     """Save results from sysID experiments."""
-    filepath = generate_fname(config)
+    filepath, _ = generate_fname(config)
     data = (config, params, results)
     with filepath.open('wb') as fout:
         pickle.dump(data, fout)
@@ -54,7 +60,7 @@ def load_results(filepath):
 
 def load_results_from_config(config):
     """Short-cut to load from config dictionary."""
-    filepath = generate_fname(config)
+    filepath, _ = generate_fname(config)
     return load_results(filepath)
 
 
@@ -98,12 +104,12 @@ def train(train_data, model, optimizer, epochs=200, seed=123, verbose=True):
     
     def loss_fn(params, x, u, y):
         """
-        Loss function.
-        
-        Computes MSE and returns updated model state.
+        Computes loss and returns updated model state.
         """
         new_x, y_pred = model.apply(params, x, u)
-        return jnp.mean(jnp.square(y - y_pred)), new_x
+        return jnp.mean(jnp.sum((y - y_pred) ** 2, axis=-1)), new_x
+        # TODO: Loss doesn't seem correct at the moment!!
+        # return jnp.mean(jnp.square(y - y_pred)), new_x
     
     grad_loss = jax.jit(jax.value_and_grad(loss_fn, has_aux=True))
 
@@ -160,7 +166,7 @@ def validate(model, params, val_data, washout=100, seed=123):
     Args:
         model (RENBase): REN model for system identification
         params: Parameters of trained model.
-        val_data (list): List of tuples (u,y) with validation data arrays.
+        val_data (tuple): Tuple (u,y) with validation data arrays.
         washout (int, optional): Ignore the first few time-steps. Defaults to 100.
         seed (int, optional): Default random seed. Defaults to 123.
 
@@ -168,32 +174,26 @@ def validate(model, params, val_data, washout=100, seed=123):
         dict: Dictionary of results.
     """
 
-    results = []
     rng = jax.random.PRNGKey(seed)
     key, rng = jax.random.split(rng)
+    u_val, y_val = val_data
+        
+    # Compute model prediction
+    key, rng = jax.random.split(rng)
+    x = model.initialize_carry(key, u_val.shape)
+    _, y_pred = model.apply(params, x, u_val)
     
-    # Allow for multiple validation sets (F16 only has 1 though, so loop has 1 iter)
-    for u_val, y_val in val_data:
-        
-        # Compute model prediction
-        key, rng = jax.random.split(rng)
-        x = model.initialize_carry(key, u_val.shape)
-        _, y_pred = model.apply(params, x, u_val)
-        
-        # Compute metrics
-        mse = get_mse(y_val[washout:], y_pred[washout:])
-        mean_y = jnp.mean(y_val)
-        nrmse = jnp.sqrt(mse / get_mse(y_val[washout:], mean_y))
-        
-        # Store results
-        results.append({
-            "u": u_val, 
-            "y": y_val, 
-            "y_pred": y_pred, 
-            "mse": mse,
-            "nrmse": nrmse, 
-            "washout": washout
-        })
+    # Compute metrics
+    mse = get_mse(y_val[washout:], y_pred[washout:])
+    mean_y = jnp.mean(y_val)
+    nrmse = jnp.sqrt(mse / get_mse(y_val[washout:], mean_y))
     
-    # Convert to dict of arrays
-    return {key: np.array([d[key] for d in results]) for key in results[0]}
+    # Return results
+    return {
+        "u": u_val, 
+        "y": y_val, 
+        "y_pred": y_pred, 
+        "mse": mse,
+        "nrmse": nrmse, 
+        "washout": washout
+    }

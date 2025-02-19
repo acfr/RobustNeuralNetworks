@@ -1,9 +1,18 @@
+import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
+from pathlib import Path
 
 from robustnn import ren
 from utils import data_handling as handler
 from utils import train as utils
+from utils.plot_utils import startup_plotting
 
+startup_plotting()
+dirpath = Path(__file__).resolve().parent
+
+# Need this to avoid matrix multiplication discrepancy
+jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
 config = {
@@ -11,7 +20,7 @@ config = {
     "seq_len": 1024,
     "epochs": 70,
     "clip_grad": 1e-1,
-    "seed": 123,
+    "seed": 0,
     "schedule": {
         "init_value": 1e-3,
         "decay_steps": 20,
@@ -21,7 +30,7 @@ config = {
     "nx": 75,
     "nv": 150,
     "activation": "relu",
-    "init_method": "random",
+    "init_method": "cholesky",
 } 
 
 
@@ -52,7 +61,7 @@ def run_sys_id_test(config):
     u_train = jnp.array_split(train[0], n_segments)
     y_train = jnp.array_split(train[1], n_segments)
     train_data = list(zip(u_train, y_train))
-    val_data = [val]
+    val_data = val
     
     # Set up the optimizer
     optimizer = utils.setup_optimizer(config, len(u_train))
@@ -77,4 +86,26 @@ def run_sys_id_test(config):
 
 # Train a model
 run_sys_id_test(config)
-params, results = utils.load_results_from_config(config)
+config, params, results = utils.load_results_from_config(config)
+_, fname = utils.generate_fname(config)
+
+print("MSE:   ", results["mse"])
+print("NRMSE: ", results["nrmse"])
+
+# Plot some of the validation results to see if it's working
+indx = 2
+npoints = 3000 #int(results["y"][:,0].shape[0] / 3)
+y_true = results["y"][:npoints,indx]
+y_pred = results["y_pred"][:npoints,indx]
+
+plt.figure(1)
+plt.plot(results["train_loss"])
+plt.xlabel("Training epochs")
+plt.ylabel("Training loss")
+plt.savefig(dirpath / f"../results/f16/{fname}_loss.pdf")
+
+plt.figure(2)
+plt.plot(y_true - y_pred)
+plt.xlabel("Time steps")
+plt.ylabel("Acceleration")
+plt.savefig(dirpath / f"../results/f16/{fname}_output_dif.pdf")

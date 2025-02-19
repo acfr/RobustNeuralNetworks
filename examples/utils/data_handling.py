@@ -14,7 +14,7 @@ def download_and_extract_f16():
     os.makedirs(data_dir, exist_ok=True)
     
     if os.path.exists(extracted_folder):
-        print("File already exists.")
+        print("Data alread loaded.")
         return extracted_folder
     
     print(f"Downloading data from {url}...")
