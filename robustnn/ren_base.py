@@ -162,6 +162,32 @@ class RENBase(nn.Module):
         )
         return self._direct_to_explicit(direct)
     
+    def simulate_sequence(self, params, x0, u):
+        """Simulate a REN over a sequence of inputs.
+
+        Args:
+            params: the usual model parameters dict.
+            x0: array of initial states, shape is (batches, ...).
+            u: array of inputs as a sequence, shape is (time, batches, ...).
+            
+        Returns:
+            x1: internal state at the end of the sequence.
+            y: array of outputs as a sequence, shape is (time, batches, ...).
+            
+        Note:
+            - Use this if you would otherwise do `model.apply()` in a loop.
+            - The direct -> explicit map is only called once, at the start
+            of the sequence. This avoids unnecessary calls to the parameter
+            mapping and should speed up your code :)
+        """
+        explicit = self.params_to_explicit(params)
+        def rollout(carry, ut):
+            xt, = carry
+            xt1, yt = self.explicit_call(xt, ut, explicit)
+            return (xt1,), yt
+        (x1, ), y = jax.lax.scan(rollout, (x0,), u)
+        return x1, y
+    
     @nn.nowrap
     def initialize_carry(
         self, rng: jax.Array, input_shape: Tuple[int, ...]
