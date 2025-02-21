@@ -17,7 +17,7 @@ jax.config.update("jax_default_matmul_precision", "highest")
 # Training hyperparameters
 config = {
     "experiment": "f16",
-    "seq_len": 1024,
+    "seq_len": 1024,            # TODO: Worth tuning this. Smaller better?
     "epochs": 70,
     "clip_grad": 1e-1,
     "seed": 0,
