@@ -58,7 +58,7 @@ def run_sys_id_test(config):
         do_polar_param=config["polar"]
     )
 
-    # Make training/valudation data sets
+    # Make training/validation data sets
     n_segments = train[0].shape[0] / config["seq_len"]
     u_train = jnp.array_split(train[0], n_segments)
     y_train = jnp.array_split(train[1], n_segments)
