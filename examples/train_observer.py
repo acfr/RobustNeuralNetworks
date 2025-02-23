@@ -181,5 +181,10 @@ train_and_test(config)
 
 # Change polar param
 config = deepcopy(default_config)
-config["polar"] = False
+config["polar"] = True
+train_and_test(config)
+
+# Change seed
+config = deepcopy(default_config)
+config["seed"] = 42
 train_and_test(config)
