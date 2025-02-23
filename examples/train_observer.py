@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from pathlib import Path
+from copy import deepcopy
 
 from robustnn import ren
 from utils.plot_utils import startup_plotting
@@ -16,9 +17,9 @@ jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
 # TODO: Tune these. 1e-5 is the benchmark tolerance
-config = {
+default_config = {
     "experiment": "pde",
-    "epochs": 50,
+    "epochs": 100,
     "lr": 1e-3,
     "min_lr": 1e-6,
     "batches": 200,
@@ -27,7 +28,7 @@ config = {
     "nx": 51,
     "nv": 200,
     "activation": "tanh",
-    "init_method": "cholesky",
+    "init_method": "random",
     "polar": False,
     
     "seed": 0,
@@ -147,8 +148,16 @@ def train_and_test(config):
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_heatmap.pdf")
     plt.close(fig)
     
+    # Plot estiamated state at a particular spot
+    indx = 12
+    plt.plot(x_true[:,indx], label="True")
+    plt.plot(xhat[:,indx], label="Observer")
+    plt.xlabel("Time steps")
+    plt.ylabel(f"State at site {indx}")
+    plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_trajectory.pdf")
+    plt.close()
+    
     # Also plot training loss
-    plt.figure(1)
     plt.plot(results["mean_loss"])
     plt.xlabel("Training epochs")
     plt.ylabel("Training loss")
@@ -158,4 +167,19 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
+train_and_test(default_config)
+
+# Change initialisation
+config = deepcopy(default_config)
+config["init_method"] = "cholesky"
+train_and_test(config)
+
+# Change activation
+config = deepcopy(default_config)
+config["activation"] = "relu"
+train_and_test(config)
+
+# Change polar param
+config = deepcopy(default_config)
+config["polar"] = False
 train_and_test(config)

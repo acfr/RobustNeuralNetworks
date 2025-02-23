@@ -177,5 +177,5 @@ def train_observer(
             updates=params, state=scheduler_state, value=mean_loss[-1]
         )
     
-    results = {"mean_loss": jnp.array(mean_loss), "std_loss": jnp.array(loss_std)}
+    results = {"mean_loss": jnp.array(mean_loss[1:]), "std_loss": jnp.array(loss_std)}
     return params, results
