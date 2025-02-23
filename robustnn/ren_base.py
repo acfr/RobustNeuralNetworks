@@ -72,10 +72,9 @@ class RENBase(nn.Module):
             - `"cholesky"`: Compute `X` with cholesky factorisation of `H`, sets `E,F,P = 
                             I`. Good for slow/long memory dynamic models.
         init_output_zero: initialize the network so its output is zero (default: False).
+        identity_output: Include output layer ``y_t = C_2 x_t + D_{21} w_t + D_{22} u_t + 
+                         b_y``. Otherwise, output is just ``y_t = x_t``. (default: True).
         do_polar_param: Use the polar parameterization for the H matrix (default: True).
-        d22_free: Specify whether to train `D22` as a free parameter (`True`), or construct
-                  it separately from `X3, Y3, Z3` (`false`). Typically `True` only for a 
-                  contracting REN (default: False).
         d22_zero: Fix `D22 = 0` to remove any feedthrough in the REN (default: False).
         eps: Regularising parameter for positive-definite matrices (default: machine 
              precision for `jnp.float32`).
@@ -98,8 +97,8 @@ class RENBase(nn.Module):
     param_dtype: Dtype = jnp.float32
     init_method: str = "random"
     init_output_zero: bool = False
+    identity_output: bool = True
     do_polar_param: bool = True
-    d22_free: bool = False
     d22_zero: bool = False
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
     abar: jnp.float32 = 1 # type: ignore
@@ -108,6 +107,7 @@ class RENBase(nn.Module):
         """
         Initialise the direct parameters for a REN and perform error checking.
         """
+        self._error_check_output_layer()
         self._error_checking()
         self._init_params()
 
@@ -241,21 +241,27 @@ class RENBase(nn.Module):
         else:
             out_kernel_init = self.kernel_init
             out_bias_init = self.bias_init
+        
+        if self.identity_output:
+            C2 = jnp.identity(nx)
+            D21 = jnp.zeros((ny, nv))
+            D22 = jnp.zeros((ny, nu))
+            by = jnp.zeros((ny,))
+        else:
+            by = self.param("by", out_bias_init, (ny,), self.param_dtype)
+            C2 = self.param("C2", out_kernel_init, (ny, nx), self.param_dtype)
+            D21 = self.param("D21", out_kernel_init, (ny, nv), self.param_dtype)
             
-        by = self.param("by", out_bias_init, (ny,), self.param_dtype)
-        C2 = self.param("C2", out_kernel_init, (ny, nx), self.param_dtype)
-        D21 = self.param("D21", out_kernel_init, (ny, nv), self.param_dtype)
-        
-        # The rest is for the feedthrough term D22
-        D22 = self.param("D22", init.zeros_init(), (ny, nu), self.param_dtype)
-        if self.d22_zero:
-            _rng = jax.random.PRNGKey(0)
-            D22 = init.zeros(_rng, (ny, nu), self.param_dtype)
-        
-        d = min(nu, ny)
-        X3 = self.param("X3", identity_init(), (d, d), self.param_dtype)
-        Y3 = self.param("Y3", init.zeros_init(), (d, d), self.param_dtype)
-        Z3 = self.param("Z3", init.zeros_init(), (abs(ny - nu), d), self.param_dtype)
+            # The rest is for the feedthrough term D22
+            D22 = self.param("D22", init.zeros_init(), (ny, nu), self.param_dtype)
+            if self.d22_zero:
+                _rng = jax.random.PRNGKey(0)
+                D22 = init.zeros(_rng, (ny, nu), self.param_dtype)
+            
+            d = min(nu, ny)
+            X3 = self.param("X3", identity_init(), (d, d), self.param_dtype)
+            Y3 = self.param("Y3", init.zeros_init(), (d, d), self.param_dtype)
+            Z3 = self.param("Z3", init.zeros_init(), (abs(ny - nu), d), self.param_dtype)
             
         # Set up the direct parameter struct
         self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
@@ -353,6 +359,18 @@ class RENBase(nn.Module):
         explicit = ExplicitRENParams(A_e, B1_e, B2_e, C1_e, ps.C2, D11_e, 
                                      D12_e, ps.D21, D22, ps.bx, ps.bv, ps.by)
         return explicit
+    
+    def _error_check_output_layer(self):
+        """Error checking for options on the output layer."""
+        
+        if self.init_output_zero and self.identity_output:
+            raise ValueError("Cannot have zero output if identity output y_t = x_t is requested.")
+        
+        if self.identity_output:
+            if self.state_size != self.output_size:
+                raise ValueError(
+                    "When output layer is identity map, need state_size == output_size."
+                )
     
 
 @partial(jax.jit, static_argnums=(0,))
