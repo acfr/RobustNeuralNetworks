@@ -36,7 +36,6 @@ class ContractingREN(RENBase):
     
     See docs for `RENBase` for full list of arguments.
     """
-    d22_free: bool = True
     init_as_linear: Tuple = ()
     
     def setup(self):
@@ -47,8 +46,7 @@ class ContractingREN(RENBase):
             self._init_linear_sys()
     
     def _error_checking(self):
-        if not self.d22_free:
-            raise ValueError("Set `d22_free=True` for contracting RENs.")
+        pass
         
     def _init_linear_sys(self):
         """Initialise the contracting REN as a (stable) linear system."""
@@ -162,8 +160,8 @@ class LipschitzREN(RENBase):
     gamma: jnp.float32 = 1.0 # type: ignore
     
     def _error_checking(self):
-        if self.d22_free:
-            raise ValueError("Set `d22_free=False` for Lipschitz RENs.")
+        if self.identity_output:
+            raise NotImplementedError("Currently no support for identitiy output with Lipschitz-bounded RENs. TODO.")
     
     def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
         nu = self.input_size
@@ -257,10 +255,10 @@ class GeneralREN(RENBase):
     R: Array = None
     
     def _error_checking(self):
-        if self.d22_free:
-            raise ValueError("Set `d22_free=False` for general QSR RENs")
         if (not self.d22_zero) and self.init_output_zero:
             raise ValueError("Cannot have zero output on init without setting `d22_zero=True`.")
+        if self.identity_output:
+            raise NotImplementedError("Currently no support for identitiy output with QSR RENs. TODO.")
         
     def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
         nu = self.input_size

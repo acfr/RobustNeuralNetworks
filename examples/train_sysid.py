@@ -5,8 +5,9 @@ from pathlib import Path
 
 from robustnn import ren
 from utils.plot_utils import startup_plotting
+from utils import utils
+from utils import sysid
 from utils import data_handling as handler
-from utils import utils_sysid as utils
 
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
@@ -58,7 +59,7 @@ def run_sys_id_test(config):
         do_polar_param=config["polar"]
     )
 
-    # Make training/valudation data sets
+    # Make training/validation data sets
     n_segments = train[0].shape[0] / config["seq_len"]
     u_train = jnp.array_split(train[0], n_segments)
     y_train = jnp.array_split(train[1], n_segments)
@@ -66,10 +67,10 @@ def run_sys_id_test(config):
     val_data = val
     
     # Set up the optimizer
-    optimizer = utils.setup_optimizer(config, len(u_train))
+    optimizer = sysid.setup_optimizer(config, len(u_train))
 
     # Run the training loop
-    params, train_loss = utils.train(
+    params, train_loss = sysid.train(
         train_data, 
         model, 
         optimizer, 
@@ -78,7 +79,7 @@ def run_sys_id_test(config):
     )
 
     # Test on validation data
-    results = utils.validate(model, params, val_data, seed=config["seed"])
+    results = sysid.validate(model, params, val_data, seed=config["seed"])
     results["train_loss"] = train_loss
 
     # Save results for later evaluation
@@ -111,13 +112,14 @@ def train_and_test(config):
     plt.ylabel("Training loss")
     plt.ylim(0.5, 11.1)
     plt.yscale('log')
-    plt.savefig(dirpath / f"../results/f16/{fname}_loss.pdf")
+    plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_loss.pdf")
+    plt.close()
 
     plt.figure(2)
     plt.plot(y_true - y_pred)
     plt.xlabel("Time steps")
     plt.ylabel("Acceleration")
-    plt.savefig(dirpath / f"../results/f16/{fname}_output_dif.pdf")
+    plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_output_dif.pdf")
     plt.close()
 
 
