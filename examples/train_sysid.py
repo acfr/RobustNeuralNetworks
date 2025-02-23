@@ -5,8 +5,9 @@ from pathlib import Path
 
 from robustnn import ren
 from utils.plot_utils import startup_plotting
+from utils import utils
+from utils import sysid
 from utils import data_handling as handler
-from utils import utils_sysid as utils
 
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
@@ -66,10 +67,10 @@ def run_sys_id_test(config):
     val_data = val
     
     # Set up the optimizer
-    optimizer = utils.setup_optimizer(config, len(u_train))
+    optimizer = sysid.setup_optimizer(config, len(u_train))
 
     # Run the training loop
-    params, train_loss = utils.train(
+    params, train_loss = sysid.train(
         train_data, 
         model, 
         optimizer, 
@@ -78,7 +79,7 @@ def run_sys_id_test(config):
     )
 
     # Test on validation data
-    results = utils.validate(model, params, val_data, seed=config["seed"])
+    results = sysid.validate(model, params, val_data, seed=config["seed"])
     results["train_loss"] = train_loss
 
     # Save results for later evaluation
