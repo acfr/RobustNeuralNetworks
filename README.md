@@ -13,7 +13,7 @@ First, [create a virtual environment](https://docs.python.org/3/library/venv.htm
     python -m pip install -r requirements.txt
     pip install -e .
 
-The second line installs the local package `lbnn` itself. For Mac, you may need to use `python3` instead of `python` here. The `requirements.txt` file was generated with [`pipreqs`](https://github.com/bndr/pipreqs). If you want to run JAX on an NVIDIA GPU, you'll also need to do the following:
+The second line installs the local package `lbnn` itself. The `requirements.txt` file was generated with [`pipreqs`](https://github.com/bndr/pipreqs). If you want to run JAX on an NVIDIA GPU, you'll also need to do the following:
 
     pip install -U "jax[cuda12_pip]"
 
