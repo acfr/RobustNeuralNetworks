@@ -15,6 +15,7 @@ dirpath = Path(__file__).resolve().parent
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
+# TODO: Tune these. 1e-5 is the benchmark tolerance
 config = {
     "experiment": "pde",
     "epochs": 50,
@@ -56,6 +57,7 @@ def run_observer_training(config):
     """
     
     # Get simulated PDE data
+    print("Getting observer data...")
     X, U = obsv.get_data(
         time_steps=config["time_steps"], 
         nx=config["nx"],
@@ -74,6 +76,7 @@ def run_observer_training(config):
         batches=config["batches"], 
         seed=config["seed"]
     )
+    print("Done!")
 
     # Create a REN model for the observer
     model = build_pde_obsv_ren(input_data, config)
@@ -95,8 +98,8 @@ def run_observer_training(config):
 
 def train_and_test(config):
     
-    # Train the model
-    run_observer_training(config)
+    # # Train the model
+    # run_observer_training(config)
 
     # Load for testing
     config, params, results = utils.load_results_from_config(config)
@@ -104,7 +107,7 @@ def train_and_test(config):
 
     # Generate test data
     def init_u_func(*args, **kwargs):
-        0.5*jnp.ones(*args, **kwargs)
+        return 0.5*jnp.ones(*args, **kwargs)
         
     x_true, u = obsv.get_data(
         time_steps=2000,
@@ -121,7 +124,7 @@ def train_and_test(config):
     # Simulate the observer through time
     key = jax.random.PRNGKey(config["seed"])
     x0 = model.initialize_carry(key, y[0].shape)
-    xhat = model.simulate_sequence(params, x0, y)
+    xhat, _ = model.simulate_sequence(params, x0, y)
     
     # Function for plotting the heat maps
     def plot_heatmap(data, i, ax):

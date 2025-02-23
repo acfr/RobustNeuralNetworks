@@ -5,7 +5,7 @@ import optax
 from optax import tree_utils as otu
 
 from robustnn import ren_base as ren
-from utils import l2_norm
+from .utils import l2_norm
 
 
 def dynamics(X0, U, steps=5, L=10.0, sigma=0.1):
@@ -29,15 +29,16 @@ def dynamics(X0, U, steps=5, L=10.0, sigma=0.1):
         laplacian = (X[:-2] + X[2:] - 2 * X[1:-1]) / dx**2
         
         Xn = Xn.at[1:-1].set(X[1:-1] + dt * (laplacian + R / 2))
-        Xn = Xn.at[0].set(U)
-        Xn = Xn.at[-1].set(U)
+        Xn = Xn.at[:1].set(U)
+        Xn = Xn.at[-1:].set(U)
     
     return X
 
 
 def measure(X, U):
     """Measure input value b(t) at endpoints and X(t) in the middle."""
-    return jnp.hstack((U, X[..., X.shape[-1] // 2]))
+    indx_middle = X.shape[-1] // 2
+    return jnp.hstack((U, X[..., indx_middle:indx_middle+1]))
 
 
 def get_data(
@@ -53,22 +54,24 @@ def get_data(
     Option to initialise the states/inputs however you like.
     """
     
-    # Set up states and input (at boundaries)
-    X = init_x_func((time_steps, nx))        # State array xi(t)
-    U = init_u_func((time_steps, n_in))      # Input array b(t)
+    # Initial states and inputs
+    X0 = init_x_func((nx,))     # Initial state
+    U0 = init_u_func((n_in,))   # Initial input
     
     # Random perturbations
-    ws = 0.05 * jax.random.normal(jax.random.PRNGKey(seed), time_steps-1)
+    ws = 0.05 * jax.random.normal(jax.random.PRNGKey(seed), (time_steps-1, n_in))
     
     # Simulate discretised PDE through time with Euler integration
     # Input is normally distributed but clamped to [0,1]
-    for t in range(time_steps - 1):
-        X = X.at[t + 1].set(dynamics(X[t], U[t]))
-        u_next = U[t] + ws[t]
-        u_next = jnp.clip(u_next, 0, 1)
-        U = U.at[t + 1].set(u_next)
+    def step(carry, w_t):
+        X_t, U_t = carry
+        X_next = dynamics(X_t, U_t)
+        U_next = jnp.clip(U_t + w_t, 0, 1)
+        return (X_next, U_next), (X_next, U_next)
     
-    return X, U
+    _, (X, U) = jax.lax.scan(step, (X0, U0), ws)
+    
+    return jnp.vstack([X0, X]), jnp.vstack([U0, U])
 
 
 def batch_data(xn, xt, input_data, batches, seed):
@@ -82,9 +85,9 @@ def batch_data(xn, xt, input_data, batches, seed):
     # Shuffle batches
     key = jax.random.PRNGKey(seed)
     shuffle_indices = jax.random.permutation(key, len(xt))
-    xt = xt[shuffle_indices]
-    xn = xn[shuffle_indices]
-    input_data = input_data[shuffle_indices]
+    xt = [xt[i] for i in shuffle_indices]
+    xn = [xn[i] for i in shuffle_indices]
+    input_data = [input_data[i] for i in shuffle_indices]
     return list(zip(xn, xt, input_data))
 
 
@@ -117,7 +120,7 @@ def train_observer(
     @jax.jit
     def train_step(params, opt_state, scheduler_state, xn, x, u):
         """Run a single SGD training step."""
-        loss_value, grads = grad_loss(model, xn, x, u)
+        loss_value, grads = grad_loss(params, xn, x, u)
         updates, opt_state = optimizer.update(grads, opt_state)
         updates = otu.tree_scalar_mul(scheduler_state.scale, updates)
         params = optax.apply_updates(params, updates)
@@ -163,17 +166,15 @@ def train_observer(
         # Print results for the user
         if verbose:
             current_lr = lr * scheduler_state.scale
-            print("--------------------------------------------------------------------")
-            print(f"Epoch: {epoch + 1:2d}\t " +
-                  f"mean loss: {mean_loss[-1]:.4E}\t " +
-                  f"std: {jnp.std(jnp.array(batch_loss)):.4E}\t" +
-                  f"lr: {current_lr:.2g}\t" +
+            print(f"Epoch: {epoch + 1:2d}, " +
+                  f"mean loss: {mean_loss[-1]:.4E}, " +
+                  f"std: {jnp.std(jnp.array(batch_loss)):.4E}, " +
+                  f"lr: {current_lr:.2g}, " +
                   f"Time: {datetime.now()}")
-            print("--------------------------------------------------------------------")
         
         # Update the learning rate scaling factor
         _, scheduler_state = scheduler.update(
-            updates=params, state=scheduler_state, value=mean_loss
+            updates=params, state=scheduler_state, value=mean_loss[-1]
         )
     
     results = {"mean_loss": jnp.array(mean_loss), "std_loss": jnp.array(loss_std)}

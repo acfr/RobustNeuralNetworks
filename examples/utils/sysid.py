@@ -5,7 +5,7 @@ import optax
 from pathlib import Path
 
 from robustnn import ren_base as ren
-from utils import l2_norm
+from .utils import l2_norm
 
 dirpath = Path(__file__).resolve().parent
 
