@@ -146,21 +146,39 @@ class RENBase(nn.Module):
         The `ps` dictionary must be of the form (with possibly different sizes):
         {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
         """
+        
+        # Special handling for identity output layer for now.
+        # Should make this more streamlined (TODO)
+        if self.identity_output:
+            nu = self.input_size
+            nx = self.state_size
+            nv = self.features
+            ny = self.output_size
+            C2 = jnp.identity(nx)
+            D21 = jnp.zeros((ny, nv), self.param_dtype)
+            D22 = jnp.zeros((ny, nu), self.param_dtype)
+            by = jnp.zeros((ny,), self.param_dtype)
+        else:
+            C2 = ps["params"]["C2"]
+            D21 = ps["params"]["D21"]
+            D22 = ps["params"]["D22"]
+            by = ps["params"]["by"]
+        
         direct = DirectRENParams(
             p = ps["params"]["polar"],
             X = ps["params"]["X"],
             B2 = ps["params"]["B2"],
             D12 = ps["params"]["D12"],
             Y1 = ps["params"]["Y1"],
-            C2 = ps["params"]["C2"],
-            D21 = ps["params"]["D21"],
-            D22 = ps["params"]["D22"],
             X3 = ps["params"]["X3"],
             Y3 = ps["params"]["Y3"],
             Z3 = ps["params"]["Z3"],
             bx = ps["params"]["bx"],
             bv = ps["params"]["bv"],
-            by = ps["params"]["by"]
+            C2 = C2,
+            D21 = D21,
+            D22 = D22,
+            by = by,
         )
         return self._direct_to_explicit(direct)
     
@@ -244,24 +262,23 @@ class RENBase(nn.Module):
         
         if self.identity_output:
             C2 = jnp.identity(nx)
-            D21 = jnp.zeros((ny, nv))
-            D22 = jnp.zeros((ny, nu))
-            by = jnp.zeros((ny,))
+            D21 = jnp.zeros((ny, nv), self.param_dtype)
+            by = jnp.zeros((ny,), self.param_dtype)
         else:
             by = self.param("by", out_bias_init, (ny,), self.param_dtype)
             C2 = self.param("C2", out_kernel_init, (ny, nx), self.param_dtype)
             D21 = self.param("D21", out_kernel_init, (ny, nv), self.param_dtype)
-            
-            # The rest is for the feedthrough term D22
             D22 = self.param("D22", init.zeros_init(), (ny, nu), self.param_dtype)
-            if self.d22_zero:
-                _rng = jax.random.PRNGKey(0)
-                D22 = init.zeros(_rng, (ny, nu), self.param_dtype)
+                
+        if self.identity_output or self.d22_zero:
+            D22 = jnp.zeros((ny, nu), self.param_dtype)
             
-            d = min(nu, ny)
-            X3 = self.param("X3", identity_init(), (d, d), self.param_dtype)
-            Y3 = self.param("Y3", init.zeros_init(), (d, d), self.param_dtype)
-            Z3 = self.param("Z3", init.zeros_init(), (abs(ny - nu), d), self.param_dtype)
+        # These parameters are used to construct D22 instead of the above for most RENs.
+        # Could tidy up the code a little here by not initialising D22 at all.
+        d = min(nu, ny)
+        X3 = self.param("X3", identity_init(), (d, d), self.param_dtype)
+        Y3 = self.param("Y3", init.zeros_init(), (d, d), self.param_dtype)
+        Z3 = self.param("Z3", init.zeros_init(), (abs(ny - nu), d), self.param_dtype)
             
         # Set up the direct parameter struct
         self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 

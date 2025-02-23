@@ -44,8 +44,7 @@ def build_pde_obsv_ren(input_data, config):
         activation=utils.get_activation(config["activation"]),
         init_method=config["init_method"],
         do_polar_param=config["polar"],
-        # TODO: Remove output layer for observer example!!
-        # It's not actually used and shouldn't be trainable.
+        identity_output=True
     )
 
 
@@ -98,8 +97,8 @@ def run_observer_training(config):
 
 def train_and_test(config):
     
-    # # Train the model
-    # run_observer_training(config)
+    # Train the model
+    run_observer_training(config)
 
     # Load for testing
     config, params, results = utils.load_results_from_config(config)
@@ -110,7 +109,7 @@ def train_and_test(config):
         return 0.5*jnp.ones(*args, **kwargs)
         
     x_true, u = obsv.get_data(
-        time_steps=2000,
+        time_steps=2001,
         init_u_func=init_u_func,
         init_x_func=jnp.ones,
         nx=config["nx"],
@@ -124,7 +123,7 @@ def train_and_test(config):
     # Simulate the observer through time
     key = jax.random.PRNGKey(config["seed"])
     x0 = model.initialize_carry(key, y[0].shape)
-    xhat, _ = model.simulate_sequence(params, x0, y)
+    _, xhat = model.simulate_sequence(params, x0, y)
     
     # Function for plotting the heat maps
     def plot_heatmap(data, i, ax):
@@ -140,16 +139,17 @@ def train_and_test(config):
         return im
     
     # Plot the heat map
-    fig, axes = plt.subplots(1, 3, figsize=(10, 4))
-    plot_heatmap(x_true, 1, axes[0])
-    plot_heatmap(xhat, 2, axes[1])
-    plot_heatmap(jnp.abs(x_true - xhat), 3, axes[2])
+    fig, axes = plt.subplots(3, 1, figsize=(6, 4.2))
+    im1 = plot_heatmap(x_true.T, 1, axes[0])
+    plot_heatmap(xhat.T, 2, axes[1])
+    plot_heatmap(jnp.abs(x_true - xhat).T, 3, axes[2])
+    fig.colorbar(im1, ax=axes, orientation='vertical', fraction=0.1, pad=0.04)
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_heatmap.pdf")
     plt.close(fig)
     
     # Also plot training loss
     plt.figure(1)
-    plt.plot(results["train_loss"])
+    plt.plot(results["mean_loss"])
     plt.xlabel("Training epochs")
     plt.ylabel("Training loss")
     plt.yscale('log')
