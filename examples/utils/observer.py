@@ -92,7 +92,8 @@ def batch_data(xn, xt, input_data, batches, seed):
 
 
 def train_observer(
-    model: ren.RENBase, data, epochs=50, lr=1e-3, min_lr=1e-7, seed=0, verbose=True
+    model: ren.RENBase, data, epochs=50, lr=1e-3, min_lr=1e-7, seed=0, verbose=True,
+    lr_patience=1
 ):
     """Train a REN to be an observer.
     
@@ -102,6 +103,7 @@ def train_observer(
         epochs (int, optional): Number of training epochs. Defaults to 50.
         lr: Initial learning rate. Defaults to 1e-3.
         min_lr: Minimum learning rate after decay. Defaults to 1e-7.
+        lr_patience: How many steps mean loss can increase before decay imposed. Defaults to 1.
         seed (int, optional): Default random seed. Defaults to 123.
         verbose (bool, optional): Whether to print. Defaults to True.
         
@@ -136,7 +138,7 @@ def train_observer(
     scheduler = optax.contrib.reduce_on_plateau(
         factor=0.1,
         min_scale=min_lr,
-        patience=1          # Decay if no improvement after this many steps
+        patience=lr_patience        # Decay if no improvement after this many steps
     )
     
     # Initialise the REN and optimizer/scheduler states

@@ -19,9 +19,10 @@ jax.config.update("jax_default_matmul_precision", "highest")
 # TODO: Tune these. 1e-5 is the benchmark tolerance
 default_config = {
     "experiment": "pde",
-    "epochs": 100,
+    "epochs": 100,              # TODO: Tune this
     "lr": 1e-3,
-    "min_lr": 1e-6,
+    "min_lr": 1e-6,             # TODO: Tune this
+    "lr_patience": 1,           # TODO: Tune this
     "batches": 200,
     "time_steps": 100_000,
     
@@ -29,7 +30,7 @@ default_config = {
     "nv": 200,
     "activation": "tanh",
     "init_method": "random",
-    "polar": False,
+    "polar": True,
     
     "seed": 0,
 }
@@ -88,6 +89,7 @@ def run_observer_training(config):
         epochs=config["epochs"], 
         lr=config["lr"],
         min_lr=config["min_lr"],
+        lr_patience=config["lr_patience"],
         seed=config["seed"]
     )
 
@@ -181,7 +183,7 @@ train_and_test(config)
 
 # Change polar param
 config = deepcopy(default_config)
-config["polar"] = True
+config["polar"] = not config["polar"]
 train_and_test(config)
 
 # Change seed
