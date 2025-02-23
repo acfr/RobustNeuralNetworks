@@ -112,13 +112,14 @@ def train_and_test(config):
     plt.ylabel("Training loss")
     plt.ylim(0.5, 11.1)
     plt.yscale('log')
-    plt.savefig(dirpath / f"../results/f16/{fname}_loss.pdf")
+    plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_loss.pdf")
+    plt.close()
 
     plt.figure(2)
     plt.plot(y_true - y_pred)
     plt.xlabel("Time steps")
     plt.ylabel("Acceleration")
-    plt.savefig(dirpath / f"../results/f16/{fname}_output_dif.pdf")
+    plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_output_dif.pdf")
     plt.close()
 
 
