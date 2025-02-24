@@ -1,5 +1,7 @@
 import jax
 import jax.numpy as jnp
+import cvxpy as cp
+
 from functools import partial
 from typing import Tuple
 
@@ -319,14 +321,41 @@ class RENBase(nn.Module):
     
     def _error_checking(self):
         """Check conditions for REN."""
-        raise NotImplementedError("Each REN parameterisation should have its own version of this function.")
+        raise NotImplementedError(
+            "Each REN parameterisation should have its own version of this function."
+        )
         
     def _direct_to_explicit(self, direct: DirectRENParams) -> ExplicitRENParams:
         """
         Convert direct paremeterization of a REN to explicit form
         for evaluation. This depends on the specific REN parameterization.
         """
-        raise NotImplementedError("RENBase models should not be called. Choose a REN parameterization instead (eg: `ContractingREN`).")
+        raise NotImplementedError(
+            "RENBase models should not be called. " +
+            "Choose a REN parameterization instead (eg: `ContractingREN`)."
+        )
+    
+    def _explicit_to_sdp(self, e: ExplicitRENParams, P, Lambda):
+        raise NotImplementedError(
+            "This function is called within the `_explicit_to_direct` method. " +
+            "Each REN parameterization will have a different implementation. See " +
+            "Eqns. (15) - (16) of the REN paper."
+        )
+    
+    def _explicit_to_direct(self, explicit: ExplicitRENParams) -> DirectRENParams:
+        """TODO: Add docstring once complete!"""
+        
+        P = cp.Variable()           # TODO: Needs to be positive definite
+        Lambda = cp.Variable()      # TODO: Diagonal matrix
+        lhs = self._explicit_to_sdp(explicit, P, Lambda)
+        
+        # TODO: Example for cvxpy here: https://www.cvxpy.org/examples/basic/sdp.html
+        
+        # TODO: Add constraints for LHS and P >> 0
+        # TODO: Solve SDP
+        # TODO: Revert back to implicit params
+        # TODO: Choose X from H
+        # TODO: Test it out
     
     def _x_to_h(self, X: Array, p: Array) -> Array:
         """Convert REN X matrix to H matrix (using polar parameterization)."""

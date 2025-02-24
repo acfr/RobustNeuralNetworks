@@ -1,3 +1,4 @@
+import numpy as np
 import jax.numpy as jnp
 
 from flax.linen import initializers as init
@@ -47,6 +48,18 @@ class ContractingREN(RENBase):
     
     def _error_checking(self):
         pass
+    
+    def _explicit_to_sdp(self, e: ExplicitRENParams, P, Lambda):
+        """TODO: Add docstring"""
+        W = 2*Lambda - Lambda @ e.D11 - e.D11.T @ Lambda
+        AB = np.block([[e.A, e.B1]])
+        H = np.block([
+            [self.abar**2 * P, e.C1.T @ Lambda],
+            [-Lambda @ e.C1.T, W]
+        ])
+        H = H - AB.T @ P @ AB
+        return H
+        
         
     def _init_linear_sys(self):
         """Initialise the contracting REN as a (stable) linear system."""
