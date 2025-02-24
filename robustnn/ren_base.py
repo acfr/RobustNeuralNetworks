@@ -72,8 +72,8 @@ class RENBase(nn.Module):
             - `"cholesky"`: Compute `X` with cholesky factorisation of `H`, sets `E,F,P = 
                             I`. Good for slow/long memory dynamic models.
         init_output_zero: initialize the network so its output is zero (default: False).
-        identity_output: Include output layer ``y_t = C_2 x_t + D_{21} w_t + D_{22} u_t + 
-                         b_y``. Otherwise, output is just ``y_t = x_t``. (default: True).
+        identity_output: Exclude output layer ``y_t = C_2 x_t + D_{21} w_t + D_{22} u_t + 
+                         b_y``. Otherwise, output is just ``y_t = x_t``. (default: False).
         do_polar_param: Use the polar parameterization for the H matrix (default: True).
         d22_zero: Fix `D22 = 0` to remove any feedthrough in the REN (default: False).
         eps: Regularising parameter for positive-definite matrices (default: machine 
@@ -97,7 +97,7 @@ class RENBase(nn.Module):
     param_dtype: Dtype = jnp.float32
     init_method: str = "random"
     init_output_zero: bool = False
-    identity_output: bool = True
+    identity_output: bool = False
     do_polar_param: bool = True
     d22_zero: bool = False
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
