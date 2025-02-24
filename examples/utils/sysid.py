@@ -42,7 +42,7 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
 
     Args:
         train_data (list): List of tuples (u,y) with training data arrays.
-        model (RENBase): REN model to train.
+        model (ren.RENBase): REN model to train.
         optimizer: Optimizer for training.
         epochs (int, optional): Number of training epochs. Defaults to 200.
         seed (int, optional): Default random seed. Defaults to 123.
@@ -118,7 +118,7 @@ def validate(model: ren.RENBase, params, val_data, washout=100, seed=123):
     """Test SysID model on validation set(s).
 
     Args:
-        model (RENBase): REN model for system identification
+        model (ren.RENBase): REN model for system identification
         params: Parameters of trained model.
         val_data (tuple): Tuple (u,y) with validation data arrays.
         washout (int, optional): Ignore the first few time-steps. Defaults to 100.
