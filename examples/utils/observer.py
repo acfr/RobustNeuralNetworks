@@ -25,7 +25,7 @@ def dynamics(X0, U, steps=5, L=10.0, sigma=0.1):
     for _ in range(steps):
         
         X = Xn
-        R = X[1:-1] * (1 - X[1:-1]) * (X[1:-1] - 0.5) # TODO: *0.5?
+        R = X[1:-1] * (1 - X[1:-1]) * (X[1:-1] - 0.5)
         laplacian = (X[:-2] + X[2:] - 2 * X[1:-1]) / dx**2
         
         Xn = Xn.at[1:-1].set(X[1:-1] + dt * (laplacian + R / 2))
@@ -98,18 +98,18 @@ def train_observer(
     """Train a REN to be an observer.
     
     Args:
-        model (RENBase): REN model to train.
+        model (ren.RENBase): REN model to train.
         data (list): Training data in batches. Each element should be `(xn, xt, input_data)`.
         epochs (int, optional): Number of training epochs. Defaults to 50.
         lr: Initial learning rate. Defaults to 1e-3.
         min_lr: Minimum learning rate after decay. Defaults to 1e-7.
         lr_patience: How many steps mean loss can increase before decay imposed. Defaults to 1.
-        seed (int, optional): Default random seed. Defaults to 123.
+        seed (int, optional): Default random seed. Defaults to 0.
         verbose (bool, optional): Whether to print. Defaults to True.
         
     Returns:
         params: Parameters of trained model.
-        mean_loss (list): List of training losses for each epoch.
+        results (dict): Dictionary of training losses (mean, std).
     """
     
     def loss_fn(params, xn, x, u):
@@ -137,7 +137,7 @@ def train_observer(
     optimizer = optax.adam(lr)
     scheduler = optax.contrib.reduce_on_plateau(
         factor=0.1,
-        min_scale=min_lr,
+        min_scale=min_lr / lr,
         patience=lr_patience        # Decay if no improvement after this many steps
     )
     

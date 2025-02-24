@@ -12,6 +12,10 @@ def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
     return jnp.sqrt(jnp.sum(x**2, **kwargs) + eps)
 
 
+def l1_norm(x, **kwargs):
+    return jnp.sum(jnp.abs(x), **kwargs)
+
+
 def get_activation(s: str):
     """Get activation function from flax.linen via string."""
     if s == "identity":
