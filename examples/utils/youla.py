@@ -134,14 +134,19 @@ def rollout(
         """Single timestep of closed-loop system."""
         xt, qt = carry
         
+        # Get measurements
         env_out = env.measure(xt)
         z = env_out[..., :env.nz]
         y_tilde = env_out[..., env.nz:]
         
-        # TODO: Add tanh() and sclaing to model output?
+        # Compute controls with Youl param
+        # We clip states here just for convenience in plotting/costs, 
+        # they're already clipped in the dynamics() function
         q_next, u_tilde = model.explicit_call(qt, y_tilde, explicit)
-        x_next = env.dynamics(xt, wt, u_tilde)
+        u_tilde = jnp.clip(u_tilde, min=-env.max_u, max=env.max_u)
         
+        # Update environment state and return
+        x_next = env.dynamics(xt, wt, u_tilde)
         return (x_next, q_next), (z, u_tilde)
     
     init_carry = (env_state, ren_state)
@@ -155,7 +160,8 @@ def train_yoularen(
     min_lr = 1e-6,
     lr_patience = 10,
     epochs: int = 100, 
-    batches: int = 32, 
+    batches: int = 32,
+    test_batches: int = 32,
     rollout_length: int = 100, 
     max_steps: int = 200, 
     verbose: bool = True,
@@ -171,6 +177,7 @@ def train_yoularen(
         lr_patience: How many steps loss can increase before decay imposed. Defaults to 1.
         epochs (int, optional):  Number of training epochs. Defaults to 100.
         batches (int, optional):  Number of training batches. Defaults to 32.
+        test_batches (int, optional):  Number of test batches. Defaults to 32.
         rollout_length (int, optional):  Number of timesteps per epoch. Defaults to 100.
         max_steps (int, optional):  Number of timesteps before reset. Defaults to 200.
             Must be integer multiple of rollout_length.
@@ -182,6 +189,7 @@ def train_yoularen(
         results (dict): Dictionary of training losses (mean, std).
     """
     
+    @jax.jit
     def loss_fn(params, x, q, w):
         """Loss function rolls out the policy for some time."""
         (x_next, q_next), (z, u_tilde) = rollout(env, model, params, x, q, w)
@@ -209,7 +217,7 @@ def train_yoularen(
     
     # Random seeds
     rng = jax.random.PRNGKey(seed)
-    key1, key2, rng = jax.random.split(rng, 3)
+    key1, key2, key3, key4, rng = jax.random.split(rng, 5)
     
     # Set up optimizer and learning rate scheduler
     optimizer = optax.adam(lr)
@@ -229,9 +237,20 @@ def train_yoularen(
     opt_state = optimizer.init(params)
     scheduler_state = scheduler.init(params)
     
+    # Test dataset
+    test_x0 = env.init_state(test_batches)
+    test_q0 = model.initialize_carry(key4, (test_batches, y_tilde.shape[-1]))
+    test_disturbances = generate_disturbance(key3, max_steps, batches)
+    
     # Loop through for training
+    test_loss = []
     train_loss = []
     for epoch in range(epochs):
+        
+        # Evaluate test loss for logging
+        test_loss.append(
+            loss_fn(params, test_x0, test_q0, test_disturbances)[0]
+        )
             
         # Reset the environment, policy states,
         key1, key2, rng = jax.random.split(rng, 3)
@@ -260,18 +279,19 @@ def train_yoularen(
         train_loss.append(jnp.array(batch_loss).mean())
         current_lr = lr * scheduler_state.scale
         
-        # TODO: Evaluate test cost during training!!
-        
         if verbose:
             print(f"epoch: {epoch+1}/{epochs}, " +
-                  f"cost: {train_loss[-1]:.4f}, " +
+                  f"train_cost: {train_loss[-1]:.4f}, " +
+                  f"test_cost: {test_loss[-1]:.4f}, " +
                   f"lr: {current_lr:.3g}, " +
                   f"Time: {datetime.now()}")
             
         # Update the learning rate scaling factor
         _, scheduler_state = scheduler.update(
-            updates=params, state=scheduler_state, value=train_loss[-1]
+            updates=params, state=scheduler_state, value=test_loss[-1]
         )
     
-    results = {"train_loss": jnp.array(train_loss)}
+    # Final test cost, store results, return
+    test_loss.append(loss_fn(params, test_x0, test_q0, test_disturbances)[0])
+    results = {"train_loss": jnp.array(train_loss), "test_loss": jnp.array(test_loss)}
     return params, results

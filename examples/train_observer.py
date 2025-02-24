@@ -156,6 +156,7 @@ def train_and_test(config):
     plt.plot(xhat[:,indx], label="Observer")
     plt.xlabel("Time steps")
     plt.ylabel(f"State at site {indx}")
+    plt.legend()
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_trajectory.pdf")
     plt.close()
     
