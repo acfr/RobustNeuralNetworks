@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
+from copy import deepcopy
 from pathlib import Path
 
 from robustnn import ren
@@ -15,7 +16,8 @@ dirpath = Path(__file__).resolve().parent
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
-config = {
+# Slightly better results with (nx, nv) = (50, 500), but not worth computation time
+default_config = {
     "experiment": "youla",
     "epochs": 100,
     "lr": 1e-3,
@@ -26,8 +28,8 @@ config = {
     "max_steps": 800,   
     "rollout_length": 200,
     
-    "nx": 10, # 50
-    "nv": 100, # 500
+    "nx": 10,
+    "nv": 100,
     "activation": "tanh",
     "init_method": "cholesky",
     "polar": True,
@@ -147,5 +149,25 @@ def train_and_test(config):
     plt.close()
     
 
-# Test it out
+# Test it out on nominal config
+train_and_test(default_config)
+
+# Change initialisation
+config = deepcopy(default_config)
+config["init_method"] = "cholesky"
+train_and_test(config)
+
+# Change activation
+config = deepcopy(default_config)
+config["activation"] = "relu"
+train_and_test(config)
+
+# Change polar param
+config = deepcopy(default_config)
+config["polar"] = not config["polar"]
+train_and_test(config)
+
+# Change seed
+config = deepcopy(default_config)
+config["seed"] = 42
 train_and_test(config)
