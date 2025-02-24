@@ -16,7 +16,8 @@ dirpath = Path(__file__).resolve().parent
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
-# Slightly better results with (nx, nv) = (50, 500), but not worth computation time
+# Slightly better results with (nx, nv) = (50, 500), 
+# but not worth computation time
 default_config = {
     "experiment": "youla",
     "epochs": 100,
@@ -30,7 +31,7 @@ default_config = {
     
     "nx": 10,
     "nv": 100,
-    "activation": "tanh",
+    "activation": "relu",
     "init_method": "cholesky",
     "polar": True,
     
