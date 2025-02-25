@@ -101,12 +101,12 @@ class ContractingREN(ren.RENBase):
         )
         self.explicit_init = explicit
     
-    def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda) -> Array:
+    def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda, C1_imp) -> Array:
         W = 2*Lambda - Lambda @ e.D11 - e.D11.T @ Lambda
         AB = np.block([[e.A, e.B1]])
         H = cp.bmat([
-            [self.abar**2 * P, -e.C1.T @ Lambda],
-            [-Lambda @ e.C1, W]
+            [self.abar**2 * P, -C1_imp.T],
+            [-C1_imp, W]
         ])
         H = H - AB.T @ P @ AB
         return H
@@ -150,18 +150,17 @@ class ContractingREN(ren.RENBase):
         elif self.init_method == "long_memory_explicit":
             D = 1 - 0.01*jax.random.uniform(keys[0], nx)
         U = init.orthogonal()(keys[1], (nx,nx), dtype)
-        A = U @ jnp.diag(D) @ U.T
-        
-        # D11 always lower-triangular
-        D11 = jnp.tril(self.kernel_init(keys[5], (nv, nv), dtype), k=-1)
+        V = init.orthogonal()(keys[2], (nx,nx), dtype)
         
         # Randomly generate explicit params
+        # C1 will be chosen so that the contraction LMI is feasible,
+        # so it is actually ignored. D11 is always lower-triangular.
         return ren.ExplicitRENParams(
-            A = A,
-            B1 = self.kernel_init(keys[2], (nx, nv), dtype),
-            B2 = self.kernel_init(keys[3], (nx, nu), dtype),
-            C1 = 0.01*self.kernel_init(keys[4], (nv, nx), dtype), # TODO: Why does this fail
-            D11 = D11,
+            A = V @ jnp.diag(D) @ U.T,
+            B1 = self.kernel_init(keys[3], (nx, nv), dtype),
+            B2 = self.kernel_init(keys[4], (nx, nu), dtype),
+            C1 = self.kernel_init(keys[0], (nv, nx), dtype),
+            D11 = jnp.tril(self.kernel_init(keys[5], (nv, nv), dtype), k=-1),
             D12 = self.kernel_init(keys[6], (nv, nu), dtype),
             C2 = self.kernel_init(keys[7], (ny, nx), dtype),
             D21 = self.kernel_init(keys[8], (ny, nv), dtype),

@@ -530,9 +530,10 @@ class RENBase(nn.Module):
         # Create the variables
         P = cp.Variable((nx, nx), symmetric=True)
         Lambda = cp.diag(cp.Variable((nv,), nonneg=True))
+        C1_imp = cp.Variable((nv, nx))
         
         # Generate constraints
-        lhs = self._explicit_to_sdp(e, P, Lambda)
+        lhs = self._explicit_to_sdp(e, P, Lambda, C1_imp)
         constraints = [
             lhs >> 0,
             P >> np.identity(nx)
@@ -553,7 +554,7 @@ class RENBase(nn.Module):
         B1_imp = E @ e.B1
         B2_imp = E @ e.B2
         
-        C1_imp = Lambda @ e.C1
+        C1_imp = C1_imp.value
         D11_imp = Lambda @ e.D11
         D12_imp = Lambda @ e.D12
         
@@ -629,16 +630,12 @@ class RENBase(nn.Module):
             "from a random explicit model."
         )
     
-    def _explicit_to_sdp(self, e: ExplicitRENParams, P: cp.Variable, Lambda: cp.Variable):
+    def _explicit_to_sdp(self, e: ExplicitRENParams, *args):
         """Set up the LHS of the SDP used to solve for P, Lambda using CVXPY.
 
         Args:
             e (ExplicitRENParams): Explicit REN params.
-            P (cp.Variable): P matrix to solve for (pos def).
-            Lambda (cp.Variable): Lambda matrix to solve for (nonneg, diag).
-
-        Raises:
-            NotImplementedError: _description_
+            Other args are variables used to construct the SDP.
         """
         raise NotImplementedError(
             "This function is called within the `_explicit_to_direct` method. " +

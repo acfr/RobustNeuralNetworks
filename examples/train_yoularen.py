@@ -33,7 +33,7 @@ default_config = {
     "nv": 100,
     "activation": "relu",
     # "init_method": "long_memory",
-    "init_method": "random_explicit", # TODO: explicit init needs 0 output init!
+    "init_method": "long_memory_explicit", # TODO: explicit init needs 0 output init!
     "polar": True,
     
     "seed": 0,
