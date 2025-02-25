@@ -174,13 +174,6 @@ class RENBase(nn.Module):
         # Error checking
         self._error_check_output_layer()
         self._error_checking()
-        
-        # Initialise from explicit model if provided
-        if self.explicit_init is not None:
-            self._init_from_explicit(self.explicit_init)
-            return None
-        
-        # Otherwise, random initialisation
         self._init_params()
 
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
@@ -335,9 +328,14 @@ class RENBase(nn.Module):
         D11_e = (Lambda_inv * D11_imp.T).T
         D12_e = (Lambda_inv * ps.D12.T).T
         
+        # Biases can go unchanged
+        bx_e = ps.bx
+        bv_e = ps.bv
+        by_e = ps.by
+        
         # Remaining explicit params are biases/in the output layer (unchanged)
         explicit = ExplicitRENParams(A_e, B1_e, B2_e, C1_e, ps.C2, D11_e, 
-                                     D12_e, ps.D21, D22, ps.bx, ps.bv, ps.by)
+                                     D12_e, ps.D21, D22, bx_e, bv_e, by_e)
         return explicit
     
     def _x_to_h_contracting(self, X: Array, p: Array) -> Array:
@@ -354,6 +352,11 @@ class RENBase(nn.Module):
     #################### Initialization Functions ####################
     
     def _init_params(self):
+        
+        # Initialise from explicit if provided
+        if self.explicit_init is not None:
+            self._init_from_explicit(self.explicit_init)
+            return None
         
         # Error checking
         if self.init_method not in get_valid_init():
@@ -462,8 +465,7 @@ class RENBase(nn.Module):
         """Initialise direct params from an existing explicit REN model."""
         
         # Double-check valid sizes
-        self._check_explicit_sizes(explicit)
-        nx = self.state_size
+        self._check_explicit(explicit)
         
         # Compute direct params matching this explicit model
         direct = self._explicit_to_direct(explicit)
@@ -471,30 +473,15 @@ class RENBase(nn.Module):
         
         # Initialise learnable params as these values
         ps = {}
-        for field in direct.__dataclass_fields__:
-            
-            # Handle Y1 separately (independent of H)
-            if field == "Y1":
-                ps["Y1"] = self.param("Y1", self.kernel_init, (nx, nx), dtype)
-                continue
-            
-            # Sort the rest automatically
+        for field in direct.__dataclass_fields__:           
             val = getattr(direct, field)
             if val is None:
-                ps[field] = self.param(field, self.kernel_init, (0,), dtype)
+                ps[field] = self.param(field, init.zeros_init(), (0,), dtype)
             else:
                 ps[field] = self.param(field, init.constant(val), val.shape, dtype)
             
         # Store learnable params
         self.direct = DirectRENParams(**ps)
-    
-    def _h_contracting_to_x(self, H: Array) -> Array:
-        """
-        Convert part of H matrix used in the contraction setup
-        to REN X matrix (if using polar parameterization, set p = norm(X)).
-        """
-        # TODO: Can we do something better than cholesky?
-        return jnp.linalg.cholesky(H, upper=True)
     
     def _explicit_to_direct(self, e: ExplicitRENParams) -> DirectRENParams:
         """Find direct REN parameterisation that admits the given explicit params.
@@ -533,17 +520,18 @@ class RENBase(nn.Module):
         E = P
         F = E @ e.A
         B1_imp = E @ e.B1
-        B2_imp = E @ e.B1
-        bx_imp = E @ e.bx
+        B2_imp = E @ e.B2
         
         C1_imp = Lambda @ e.C1
         D11_imp = Lambda @ e.D11
         D12_imp = Lambda @ e.D12
-        bv_imp = Lambda @ e.bv
         
         C2_imp = e.C2
-        D21_imp = e.D12
+        D21_imp = e.D21
         D22_imp = e.D22
+        
+        bx_imp = e.bx
+        bv_imp = e.bv
         by_imp = e.by
         
         implicit = ImplicitRENParams(
@@ -553,7 +541,7 @@ class RENBase(nn.Module):
         )
         
         # Build the H matrix
-        H11 = E + E.T - P / self.abar**2
+        H11 = E + E.T - (P / self.abar**2)
         H22 = 2 * Lambda - D11_imp - D11_imp.T
         H33 = P
         H21 = -C1_imp
@@ -569,6 +557,14 @@ class RENBase(nn.Module):
         # specific REN parameterisation.
         direct = self._hmatrix_to_direct(H, implicit)
         return direct
+    
+    def _h_contracting_to_x(self, H: Array) -> Array:
+        """
+        Convert part of H matrix used in the contraction setup
+        to REN X matrix (if using polar parameterization, set p = norm(X)).
+        """
+        # TODO: Can we do something better than cholesky?
+        return jnp.linalg.cholesky(H, upper=True)
     
     
     ############### Specify these for each REN parameterisation ###############
@@ -651,7 +647,7 @@ class RENBase(nn.Module):
                     "When output layer is identity map, need state_size == output_size."
                 )
 
-    def _check_explicit_sizes(self, e: ExplicitRENParams):
+    def _check_explicit(self, e: ExplicitRENParams):
         """Error checking to help with explicit init."""
         
         nu = self.input_size
@@ -675,3 +671,9 @@ class RENBase(nn.Module):
         assert e.bv.shape == (nv,)
         assert e.by.shape == (ny,)
         
+        # D11 must be lower triangular
+        assert jnp.all(e.D11 == jnp.tril(e.D11, k=-1))
+        
+        # A matrix must be stable for contraction
+        eig_norms = jnp.abs(jnp.linalg.eigvals(e.A))
+        assert jnp.all(eig_norms < 1.0)

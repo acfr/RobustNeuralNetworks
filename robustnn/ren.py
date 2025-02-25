@@ -145,12 +145,13 @@ class ContractingREN(ren.RENBase):
     
     def _hmatrix_to_direct(self, H, imp: ren.ImplicitRENParams) -> ren.DirectRENParams:
         X = self._h_contracting_to_x(H)
+        Y1 = imp.E
         return ren.DirectRENParams(
             p = l2_norm(X, eps=self.eps),
             X = X,
             B2 = imp.B2,
             D12 = imp.D12,
-            Y1 = None,
+            Y1 = Y1,
             C2 = imp.C2,
             D21 = imp.D21,
             D22 = imp.D22,
@@ -163,6 +164,8 @@ class ContractingREN(ren.RENBase):
         )
         
     def _generate_explicit_params(self):
+        
+        return None # TODO: Not working yet
         
         # Sizes and dtype
         nu = self.input_size
@@ -188,7 +191,7 @@ class ContractingREN(ren.RENBase):
             B1 = self.kernel_init(keys[2], (nx, nv), dtype),
             B2 = self.kernel_init(keys[3], (nx, nu), dtype),
             C1 = self.kernel_init(keys[4], (nv, nx), dtype),
-            D11 = self.kernel_init(keys[5], (nv, nv), dtype),
+            D11 = self.kernel_init(keys[5], (nv, nv), dtype), # TODO: Needs to be tril!!!
             D12 = self.kernel_init(keys[6], (nv, nu), dtype),
             C2 = self.kernel_init(keys[7], (ny, nx), dtype),
             D21 = self.kernel_init(keys[8], (ny, nv), dtype),
