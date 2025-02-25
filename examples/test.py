@@ -74,11 +74,14 @@ params = model.init(rng, test_q0, jnp.zeros((batches, 1)))
 
 # Check explicit
 new_explicit = model.params_to_explicit(params)
-
 for field in explicit.__dataclass_fields__:
     x1 = getattr(explicit, field)
     x2 = getattr(new_explicit, field)
     print(f"{field}: {jnp.mean(x1 - x2)}")
+
+
+
+
 
 
 # Test disturbances are steps of increasing magnitude
