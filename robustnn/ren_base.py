@@ -98,7 +98,8 @@ class ImplicitRENParams:
 
 
 def get_valid_init():
-    return ["random", "long_memory", "random_explicit", "long_memory_explicit"]
+    return ["random", "long_memory", "random_explicit", "long_memory_explicit",
+            "external_explicit"]
 
 
 class RENBase(nn.Module):
@@ -142,7 +143,7 @@ class RENBase(nn.Module):
             precision for `jnp.float32`).
         seed: Random seed for initialising explicit model (default: 0). This is not a 
             nice way to handle explicit init. Make it use the random seed from model.init()
-            instead in the future. (TODO: get rid of in future)
+            instead in the future. (TODO: get rid of this in future)
             
             https://flax-linen.readthedocs.io/en/latest/guides/flax_fundamentals/rng_guide.html#using-self-param-and-self-variable
     """
@@ -162,6 +163,7 @@ class RENBase(nn.Module):
     init_output_zero: bool = False
     identity_output: bool = False
     explicit_init: ExplicitRENParams = None
+    _direct_explicit_init: DirectRENParams = None
     
     do_polar_param: bool = True
     d22_zero: bool = False
@@ -353,20 +355,21 @@ class RENBase(nn.Module):
     
     def _init_params(self):
         
-        # Initialise from explicit if provided
-        if self.explicit_init is not None:
-            self._init_from_explicit(self.explicit_init)
-            return None
+        # Check if the user has followed instructions
+        if self._check_do_explicit_init():
+            if self._direct_explicit_init is None:
+                raise ValueError(
+                    "You have chosen to init a REN from an explicit model but have " +
+                    "not called the `explicit_pre_init` method yet. Call this before " + "calling the typical `model.init()` and/or `model.apply()` " +
+                    "methods in Flax."
+                )
         
-        # Error checking
         if self.init_method not in get_valid_init():
             raise ValueError("Undefined init method '{}'".format(self.init_method))
         
-        # Either initialise direct params straight away, or initialise an
-        # explicit model and compute the corresponding direct params
-        if "explicit" in self.init_method:
-            explicit = self._generate_explicit_params()
-            self._init_from_explicit(explicit)
+        # Run the appropriate init
+        if self._check_do_explicit_init():
+            self._init_from_explicit()
         else:
             self._init_params_direct()
         
@@ -461,17 +464,45 @@ class RENBase(nn.Module):
         
         return init_func
     
-    def _init_from_explicit(self, explicit: ExplicitRENParams):
-        """Initialise direct params from an existing explicit REN model."""
+    def explicit_pre_init(self):
+        """A non-jittable method allowing initialisation from an explicit model.
         
-        # Double-check valid sizes
-        self._check_explicit(explicit)
+        Call this before running `model.init()`, `model.apply()`, or anything else
+        if you want to initialise the REN from an explicit model. This is to avoid
+        having non-jittable code in the `setup()` or `__call__()` methods.
+        """
         
-        # Compute direct params matching this explicit model
+        # Skip if not required
+        if not self._check_do_explicit_init():
+            return None
+        
+        # Run any parameterisation-specific customisation
+        self._custom_pre_init()
+        
+        # Get and check an explicit model
+        explicit = self.explicit_init
+        if explicit is None:
+            explicit = self._generate_explicit_params()
+        self._check_valid_explicit(explicit)
+        
+        # Compute direct params reproducing this explicit model and store
         direct = self._explicit_to_direct(explicit)
+        self._direct_explicit_init = direct
+    
+    def _check_do_explicit_init(self):
+        return ((self.explicit_init is not None) or 
+                ("explicit" in self.init_method))
+    
+    def _init_from_explicit(self):
+        """Initialise direct params from an existing explicit REN model.
+        
+        This method requires the `explicit_pre_init` method to have been
+        called first to correctly populate the `_direct_explicit_init` field.
+        """
+        
+        direct = self._direct_explicit_init
         dtype = self.param_dtype
         
-        # Initialise learnable params as these values
         ps = {}
         for field in direct.__dataclass_fields__:           
             val = getattr(direct, field)
@@ -563,7 +594,6 @@ class RENBase(nn.Module):
         Convert part of H matrix used in the contraction setup
         to REN X matrix (if using polar parameterization, set p = norm(X)).
         """
-        # TODO: Can we do something better than cholesky?
         return jnp.linalg.cholesky(H, upper=True)
     
     
@@ -584,6 +614,10 @@ class RENBase(nn.Module):
             "RENBase models should not be called. " +
             "Choose a REN parameterization instead (eg: `ContractingREN`)."
         )
+        
+    def _custom_pre_init(self):
+        """Overload this method for custom steps in the explicit pre-init."""
+        pass
         
     def _generate_explicit_params(self):
         """Randomly generate explicit parameterisation for a REN.
@@ -647,7 +681,7 @@ class RENBase(nn.Module):
                     "When output layer is identity map, need state_size == output_size."
                 )
 
-    def _check_explicit(self, e: ExplicitRENParams):
+    def _check_valid_explicit(self, e: ExplicitRENParams):
         """Error checking to help with explicit init."""
         
         nu = self.input_size

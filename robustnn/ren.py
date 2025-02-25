@@ -7,7 +7,7 @@ from flax.linen import initializers as init
 from flax.typing import Array
 from typing import Tuple
 
-from robustnn.utils import l2_norm, identity_init, solve_discrete_lyapunov_direct
+from robustnn.utils import l2_norm
 from robustnn import ren_base as ren
 
 class ContractingREN(ren.RENBase):
@@ -41,16 +41,22 @@ class ContractingREN(ren.RENBase):
     """
     init_as_linear: Tuple = ()
     
-    def setup(self):
-        self._error_checking()
-        if not self.init_as_linear:
-            self._init_params()
-        else:
-            self._init_linear_sys()
-    
     def _error_checking(self):
         pass
-        
+    
+    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
+        H = self._x_to_h_contracting(ps.X, ps.p)
+        explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
+        return explicit
+    
+    
+    ################ Explicit initialization Functions ################
+    
+    def _custom_pre_init(self):
+        """Initialise as linear system if it's provided."""
+        if self.init_as_linear:
+            self._init_linear_sys()
+    
     def _init_linear_sys(self):
         """Initialise the contracting REN as a (stable) linear system."""
         
@@ -78,7 +84,7 @@ class ContractingREN(ren.RENBase):
         B = jnp.vstack([B, jnp.zeros((dnx, nu), dtype)])
         C = jnp.hstack([C, jnp.zeros((ny, dnx), dtype)])
         
-        # Initialise from the corresponding explicit model
+        # Set up an explicit model to initialise from in the pre-init
         explicit = ren.ExplicitRENParams(
             A = A,
             B1 = jnp.zeros((nx_a, nv), dtype),
@@ -93,12 +99,7 @@ class ContractingREN(ren.RENBase):
             bv = jnp.zeros((nv,), dtype),
             by = jnp.zeros((ny,), dtype),
         )
-        self._init_from_explicit(explicit)
-
-    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
-        H = self._x_to_h_contracting(ps.X, ps.p)
-        explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
-        return explicit
+        self.explicit_init = explicit
     
     def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda) -> Array:
         W = 2*Lambda - Lambda @ e.D11 - e.D11.T @ Lambda
@@ -383,6 +384,8 @@ class GeneralREN(ren.RENBase):
         Q = self.Q - self.eps * jnp.identity(self.Q.shape[0], self.param_dtype)
         R = self.R + self.eps * jnp.identity(self.R.shape[0], self.param_dtype)
         return Q, self.S, R
+    
+    ################ Explicit initialization Functions ################
     
     # def _generate_explicit_params(self):
     #     raise NotImplementedError("TODO.")
