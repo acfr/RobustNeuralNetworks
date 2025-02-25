@@ -141,7 +141,7 @@ class ContractingREN(ren.RENBase):
         
         # Random seed
         rng = jax.random.PRNGKey(self.seed)
-        keys = jax.random.split(rng, 13)
+        keys = jax.random.split(rng, 12)
         
         # Get orthogonal/diagonal matrices for a stable A-matrix
         if self.init_method == "random_explicit":
@@ -164,10 +164,10 @@ class ContractingREN(ren.RENBase):
             D12 = self.kernel_init(keys[6], (nv, nu), dtype),
             C2 = self.kernel_init(keys[7], (ny, nx), dtype),
             D21 = self.kernel_init(keys[8], (ny, nv), dtype),
-            D22 = self.kernel_init(keys[9], (ny, nu), dtype), # TODO: Might want zeros.
-            bx = self.bias_init(keys[10], (nx,), dtype),
-            bv = self.bias_init(keys[11], (nv,), dtype),
-            by = self.bias_init(keys[12], (ny,), dtype),
+            D22 = jnp.zeros((ny, nu), dtype),
+            bx = self.bias_init(keys[9], (nx,), dtype),
+            bv = self.bias_init(keys[10], (nv,), dtype),
+            by = self.bias_init(keys[11], (ny,), dtype),
         )
         
     

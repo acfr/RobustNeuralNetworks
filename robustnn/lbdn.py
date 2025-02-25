@@ -44,9 +44,7 @@ def cayley(W, return_split=False):
 def dot_lax(input1, input2, precision: PrecisionLike = None):
     """
     Wrapper around lax.dot_general(). Use this instead of `@` for
-    more efficient array-matrix multiplication and backpropagation?
-    
-    TODO: Look into whether we actually need this or can just use `x @ A.T`.
+    more accurate array-matrix multiplication (higher default precision?)
     """
     return lax.dot_general(
         input1,

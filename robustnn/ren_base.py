@@ -142,7 +142,7 @@ class RENBase(nn.Module):
             precision for `jnp.float32`).
         seed: Random seed for initialising explicit model (default: 0). This is not a 
             nice way to handle explicit init. Make it use the random seed from model.init()
-            instead in the future. (TODO: get rid of this?)
+            instead in the future. (TODO: get rid of in future)
             
             https://flax-linen.readthedocs.io/en/latest/guides/flax_fundamentals/rng_guide.html#using-self-param-and-self-variable
     """
