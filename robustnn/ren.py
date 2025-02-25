@@ -1,14 +1,16 @@
-import numpy as np
+import jax
 import jax.numpy as jnp
+import numpy as np
+import cvxpy as cp
 
 from flax.linen import initializers as init
 from flax.typing import Array
 from typing import Tuple
 
 from robustnn.utils import l2_norm, identity_init, solve_discrete_lyapunov_direct
-from robustnn.ren_base import RENBase, DirectRENParams, ExplicitRENParams
+from robustnn import ren_base as ren
 
-class ContractingREN(RENBase):
+class ContractingREN(ren.RENBase):
     """Construct a Contracting REN.
     
     Attributes::
@@ -48,20 +50,9 @@ class ContractingREN(RENBase):
     
     def _error_checking(self):
         pass
-    
-    def _explicit_to_sdp(self, e: ExplicitRENParams, P, Lambda):
-        """TODO: Add docstring"""
-        W = 2*Lambda - Lambda @ e.D11 - e.D11.T @ Lambda
-        AB = np.block([[e.A, e.B1]])
-        H = np.block([
-            [self.abar**2 * P, e.C1.T @ Lambda],
-            [-Lambda @ e.C1.T, W]
-        ])
-        H = H - AB.T @ P @ AB
-        return H
-        
         
     def _init_linear_sys(self):
+        # TODO: Remove this and make it simpler.
         """Initialise the contracting REN as a (stable) linear system."""
         
         # Extract params and system sizes
@@ -74,13 +65,13 @@ class ContractingREN(RENBase):
         # Error checking
         nx_a = A.shape[0]
         if not (A.shape[0] <= nx and A.shape[1] == A.shape[0]):
-            raise ValueError("Size of initial A matrix should be `(n, n)` with `n <= state_size`")
+            raise ValueError("Size of input A matrix should be (n, n) with n <= state_size")
         if not (B.shape[0] == nx_a and B.shape[1] == nu):
-            raise ValueError("Size of initial B matrix should be `(A.shape[0], input_size)`")
+            raise ValueError("Size of input B matrix should be (A.shape[0], input_size)")
         if not (C.shape[0] == ny and C.shape[1] == nx_a):
-            raise ValueError("Size of initial C matrix should be `(output_size, A.shape[0])`")
+            raise ValueError("Size of input C matrix should be (output_size, A.shape[0])")
         if not (D.shape[0] == ny and D.shape[1] == nu):
-            raise ValueError("Size of initial D matrix should be `(output_size, input_size)`") 
+            raise ValueError("Size of input D matrix should be (output_size, input_size)") 
         if not self.abar == 1:
             raise NotImplementedError("Make compatible with abar != 0 (TODO).")
         
@@ -134,16 +125,82 @@ class ContractingREN(RENBase):
         D22 = self.param("D22", init.constant(D), (ny, nu), self.param_dtype)
         
         # Set up the direct parameter struct
-        self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
+        self.direct = ren.DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
                                       D22, X3, Y3, Z3, bx, bv, by)
         
-    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
-        H = self._x_to_h(ps.X, ps.p)
+    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
+        H = self._x_to_h_contracting(ps.X, ps.p)
         explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
         return explicit
     
+    def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda) -> Array:
+        W = 2*Lambda - Lambda @ e.D11 - e.D11.T @ Lambda
+        AB = np.block([[e.A, e.B1]])
+        H = cp.bmat([
+            [self.abar**2 * P, e.C1.T @ Lambda],
+            [-Lambda @ e.C1, W]
+        ])
+        H = H - AB.T @ P @ AB
+        return H
     
-class LipschitzREN(RENBase):
+    def _hmatrix_to_direct(self, H, imp: ren.ImplicitRENParams) -> ren.DirectRENParams:
+        X = self._h_contracting_to_x(H)
+        return ren.DirectRENParams(
+            p = l2_norm(X, eps=self.eps),
+            X = X,
+            B2 = imp.B2,
+            D12 = imp.D12,
+            Y1 = None,
+            C2 = imp.C2,
+            D21 = imp.D21,
+            D22 = imp.D22,
+            X3 = None,
+            Y3 = None,
+            Z3 = None,
+            bx = imp.bx,
+            bv = imp.bv,
+            by = imp.by,
+        )
+        
+    def _generate_explicit_params(self):
+        
+        # Sizes and dtype
+        nu = self.input_size
+        nx = self.state_size
+        nv = self.features
+        ny = self.output_size
+        dtype = self.param_dtype
+        
+        # Random seed
+        rng = jax.random.PRNGKey(self.seed)
+        keys = jax.random.split(rng, 13)
+        
+        # Get orthogonal/diagonal matrices for a stable A-matrix
+        if self.init_method == "random_explicit":
+            D = jax.random.uniform(keys[0], nx)
+        elif self.init_method == "long_memory_explicit":
+            D = 1 - 0.01*jax.random.uniform(keys[0], nx)
+        U = init.orthogonal()(keys[1], (nx,nx), dtype)
+        
+        # Randomly generate explicit params
+        return ren.ExplicitRENParams(
+            A = U @ jnp.diag(D) @ U.T,
+            B1 = self.kernel_init(keys[2], (nx, nv), dtype),
+            B2 = self.kernel_init(keys[3], (nx, nu), dtype),
+            C1 = self.kernel_init(keys[4], (nv, nx), dtype),
+            D11 = self.kernel_init(keys[5], (nv, nv), dtype),
+            D12 = self.kernel_init(keys[6], (nv, nu), dtype),
+            C2 = self.kernel_init(keys[7], (ny, nx), dtype),
+            D21 = self.kernel_init(keys[8], (ny, nv), dtype),
+            D22 = self.kernel_init(keys[9], (ny, nu), dtype), # TODO: Might want zeros.
+            bx = self.bias_init(keys[10], (nx,), dtype),
+            bv = self.bias_init(keys[11], (nv,), dtype),
+            by = self.bias_init(keys[12], (ny,), dtype),
+        )
+        
+    
+    
+class LipschitzREN(ren.RENBase):
     """Construct a Lipschitz-bounded REN.
     
     Attributes::
@@ -176,13 +233,12 @@ class LipschitzREN(RENBase):
         if self.identity_output:
             raise NotImplementedError("Currently no support for identitiy output with Lipschitz-bounded RENs. TODO.")
     
-    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
         Iu = jnp.identity(nu, self.param_dtype)
         Iy = jnp.identity(ny, self.param_dtype)
-        
         
         # Implicit params
         B2_imp = ps.B2
@@ -211,12 +267,12 @@ class LipschitzREN(RENBase):
         Gamma_Q = mul_Q.T @ mul_Q / (-self.gamma)
         Gamma_R = mul_R.T @ jnp.linalg.solve(R, mul_R)
         
-        H = self._x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
+        H = self._x_to_h_contracting(ps.X, ps.p) + Gamma_R - Gamma_Q
         explicit = self._hmatrix_to_explicit(ps, H, D22)
         return explicit
 
 
-class GeneralREN(RENBase):
+class GeneralREN(ren.RENBase):
     """Construct a REN satisfying an incremental IQC defined by Q, S, R.
     
     Example usage::
@@ -273,7 +329,7 @@ class GeneralREN(RENBase):
         if self.identity_output:
             raise NotImplementedError("Currently no support for identitiy output with QSR RENs. TODO.")
         
-    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
@@ -313,7 +369,7 @@ class GeneralREN(RENBase):
         Gamma_Q = mul_Q.T @ Q @ mul_Q
         Gamma_R = mul_R.T @ jnp.linalg.solve(R1, mul_R)
         
-        H = self._x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
+        H = self._x_to_h_contracting(ps.X, ps.p) + Gamma_R - Gamma_Q
         explicit = self._hmatrix_to_explicit(ps, H, D22)
         return explicit
 
@@ -355,6 +411,15 @@ class GeneralREN(RENBase):
         Q = self.Q - self.eps * jnp.identity(self.Q.shape[0], self.param_dtype)
         R = self.R + self.eps * jnp.identity(self.R.shape[0], self.param_dtype)
         return Q, self.S, R
+    
+    # def _generate_explicit_params(self):
+    #     raise NotImplementedError("TODO.")
+    
+    # def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda):
+    #     raise NotImplementedError("TODO.")
+    
+    # def _hmatrix_to_direct(self,  H: Array, implicit: ren.ImplicitRENParams):
+    #     raise NotImplementedError("TODO.")
 
 
 def _check_posdef(A: Array, eps=jnp.finfo(jnp.float32).eps):

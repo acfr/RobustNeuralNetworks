@@ -32,7 +32,7 @@ default_config = {
     "nx": 10,
     "nv": 100,
     "activation": "relu",
-    "init_method": "cholesky",
+    "init_method": "long_memory", # TODO: explicit init needs 0 output init!
     "polar": True,
     
     "seed": 0,
@@ -155,7 +155,7 @@ train_and_test(default_config)
 
 # Change initialisation
 config = deepcopy(default_config)
-config["init_method"] = "cholesky"
+config["init_method"] = "long_memory"
 train_and_test(config)
 
 # Change activation

@@ -174,7 +174,7 @@ train_and_test(default_config)
 
 # Change initialisation
 config = deepcopy(default_config)
-config["init_method"] = "cholesky"
+config["init_method"] = "long_memory"
 train_and_test(config)
 
 # Change activation
