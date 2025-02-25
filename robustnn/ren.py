@@ -137,7 +137,7 @@ class ContractingREN(ren.RENBase):
         W = 2*Lambda - Lambda @ e.D11 - e.D11.T @ Lambda
         AB = np.block([[e.A, e.B1]])
         H = cp.bmat([
-            [self.abar**2 * P, e.C1.T @ Lambda],
+            [self.abar**2 * P, -e.C1.T @ Lambda],
             [-Lambda @ e.C1, W]
         ])
         H = H - AB.T @ P @ AB
@@ -165,8 +165,6 @@ class ContractingREN(ren.RENBase):
         
     def _generate_explicit_params(self):
         
-        return None # TODO: Not working yet
-        
         # Sizes and dtype
         nu = self.input_size
         nx = self.state_size
@@ -184,14 +182,18 @@ class ContractingREN(ren.RENBase):
         elif self.init_method == "long_memory_explicit":
             D = 1 - 0.01*jax.random.uniform(keys[0], nx)
         U = init.orthogonal()(keys[1], (nx,nx), dtype)
+        A = U @ jnp.diag(D) @ U.T
+        
+        # D11 always lower-triangular
+        D11 = jnp.tril(self.kernel_init(keys[5], (nv, nv), dtype), k=-1)
         
         # Randomly generate explicit params
         return ren.ExplicitRENParams(
-            A = U @ jnp.diag(D) @ U.T,
+            A = A,
             B1 = self.kernel_init(keys[2], (nx, nv), dtype),
             B2 = self.kernel_init(keys[3], (nx, nu), dtype),
-            C1 = self.kernel_init(keys[4], (nv, nx), dtype),
-            D11 = self.kernel_init(keys[5], (nv, nv), dtype), # TODO: Needs to be tril!!!
+            C1 = self.kernel_init(keys[4], (nv, nx), dtype), # TODO: Why does this fail??
+            D11 = D11,
             D12 = self.kernel_init(keys[6], (nv, nu), dtype),
             C2 = self.kernel_init(keys[7], (ny, nx), dtype),
             D21 = self.kernel_init(keys[8], (ny, nv), dtype),

@@ -32,7 +32,8 @@ default_config = {
     "nx": 10,
     "nv": 100,
     "activation": "relu",
-    "init_method": "long_memory", # TODO: explicit init needs 0 output init!
+    "init_method": "long_memory",
+    # "init_method": "random_explicit", # TODO: explicit init needs 0 output init!
     "polar": True,
     
     "seed": 0,
@@ -146,29 +147,11 @@ def train_and_test(config):
     plt.plot(results["test_loss"])
     plt.xlabel("Training epochs")
     plt.ylabel("Test loss")
+    plt.ylim(1, 10)
+    plt.yscale("log")
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_loss.pdf")
     plt.close()
     
 
 # Test it out on nominal config
 train_and_test(default_config)
-
-# Change initialisation
-config = deepcopy(default_config)
-config["init_method"] = "long_memory"
-train_and_test(config)
-
-# Change activation
-config = deepcopy(default_config)
-config["activation"] = "relu"
-train_and_test(config)
-
-# Change polar param
-config = deepcopy(default_config)
-config["polar"] = not config["polar"]
-train_and_test(config)
-
-# Change seed
-config = deepcopy(default_config)
-config["seed"] = 42
-train_and_test(config)

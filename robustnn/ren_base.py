@@ -551,7 +551,7 @@ class RENBase(nn.Module):
             [H11, H21.T, H31.T],
             [H21, H22, H32.T],
             [H31, H32, H33]
-        ]) # TODO: Add eps * identity for numerical conditioning?
+        ]) + self.eps * jnp.identity(2 * nx + nv)
         
         # Convert to final direct parameters. This depends on the 
         # specific REN parameterisation.
