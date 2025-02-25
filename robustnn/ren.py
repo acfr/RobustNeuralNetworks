@@ -1,13 +1,16 @@
+import jax
 import jax.numpy as jnp
+import numpy as np
+import cvxpy as cp
 
 from flax.linen import initializers as init
 from flax.typing import Array
 from typing import Tuple
 
-from robustnn.utils import l2_norm, identity_init, solve_discrete_lyapunov_direct
-from robustnn.ren_base import RENBase, DirectRENParams, ExplicitRENParams
+from robustnn.utils import l2_norm
+from robustnn import ren_base as ren
 
-class ContractingREN(RENBase):
+class ContractingREN(ren.RENBase):
     """Construct a Contracting REN.
     
     Attributes::
@@ -38,16 +41,22 @@ class ContractingREN(RENBase):
     """
     init_as_linear: Tuple = ()
     
-    def setup(self):
-        self._error_checking()
-        if not self.init_as_linear:
-            self._init_params()
-        else:
-            self._init_linear_sys()
-    
     def _error_checking(self):
         pass
-        
+    
+    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
+        H = self._x_to_h_contracting(ps.X, ps.p)
+        explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
+        return explicit
+    
+    
+    ################ Explicit initialization Functions ################
+    
+    def _custom_pre_init(self):
+        """Initialise as linear system if it's provided."""
+        if self.init_as_linear:
+            self._init_linear_sys()
+    
     def _init_linear_sys(self):
         """Initialise the contracting REN as a (stable) linear system."""
         
@@ -57,80 +66,130 @@ class ContractingREN(RENBase):
         nx = self.state_size
         nv = self.features
         ny = self.output_size
+        dtype = self.param_dtype
         
         # Error checking
         nx_a = A.shape[0]
-        if not (A.shape[0] <= nx and A.shape[1] == A.shape[0]):
-            raise ValueError("Size of initial A matrix should be `(n, n)` with `n <= state_size`")
-        if not (B.shape[0] == nx_a and B.shape[1] == nu):
-            raise ValueError("Size of initial B matrix should be `(A.shape[0], input_size)`")
-        if not (C.shape[0] == ny and C.shape[1] == nx_a):
-            raise ValueError("Size of initial C matrix should be `(output_size, A.shape[0])`")
-        if not (D.shape[0] == ny and D.shape[1] == nu):
-            raise ValueError("Size of initial D matrix should be `(output_size, input_size)`") 
-        if not self.abar == 1:
-            raise NotImplementedError("Make compatible with abar != 0 (TODO).")
+        assert (A.shape[0] <= nx and A.shape[1] == A.shape[0])
+        assert B.shape == (nx_a, nu)
+        assert C.shape == (ny, nx_a)
+        assert D.shape == (ny, nu)
         
         # Fill out A matrix to match the required number of states
         dnx = nx - nx_a
         A = jnp.block([
-            [A, jnp.zeros((nx_a, dnx), self.param_dtype)],
-            [jnp.zeros((dnx, nx_a), self.param_dtype), jnp.zeros((dnx, dnx), self.param_dtype)],
+            [A, jnp.zeros((nx_a, dnx), dtype)],
+            [jnp.zeros((dnx, nx_a), dtype), jnp.zeros((dnx, dnx), dtype)],
         ])
-        B = jnp.vstack([B, jnp.zeros((dnx, nu), self.param_dtype)])
-        C = jnp.hstack([C, jnp.zeros((ny, dnx), self.param_dtype)])
+        B = jnp.vstack([B, jnp.zeros((dnx, nu), dtype)])
+        C = jnp.hstack([C, jnp.zeros((ny, dnx), dtype)])
         
-        # Make sure all the biases are zero
-        bx = self.param("bx", init.zeros_init(), (nx,), self.param_dtype)
-        bv = self.param("bv", init.zeros_init(), (nv,), self.param_dtype)
-        by = self.param("by", init.zeros_init(), (ny,), self.param_dtype)
-        
-        # Set some other params to zero
-        D12 = self.param("D12", init.zeros_init(), (nv, nu), self.param_dtype)
-        D21 = self.param("D21", init.zeros_init(), (ny, nv), self.param_dtype)
-        
-        # Irrelevant params for contracting REN
-        X3 = self.param("X3", init.zeros_init(), (0,), self.param_dtype)
-        Y3 = self.param("Y3", init.zeros_init(), (0,), self.param_dtype)
-        Z3 = self.param("Z3", init.zeros_init(), (0,), self.param_dtype)
-        
-        # Build up the X matrix based on the initial state-space model
-        P = solve_discrete_lyapunov_direct(A.T, jnp.identity(nx))
-        Lambda = jnp.identity(nv)
-        PA = P @ A
-        
-        H = jnp.block([
-            [P, jnp.zeros((nx, nv)), PA.T],
-            [jnp.zeros((nv, nx)), 2*Lambda, jnp.zeros((nv, nx))],
-            [PA, jnp.zeros((nx, nv)), P]
+        # Set up an explicit model to initialise from in the pre-init
+        explicit = ren.ExplicitRENParams(
+            A = A,
+            B1 = jnp.zeros((nx_a, nv), dtype),
+            B2 = B,
+            C1 = jnp.zeros((nv, nx_a), dtype),
+            C2 = C,
+            D11 = jnp.zeros((nv, nv), dtype),
+            D12 = jnp.zeros((nv, nu), dtype),
+            D21 = jnp.zeros((ny, nv), dtype),
+            D22 = D,
+            bx = jnp.zeros((nx,), dtype),
+            bv = jnp.zeros((nv,), dtype),
+            by = jnp.zeros((ny,), dtype),
+        )
+        self.explicit_init = explicit
+    
+    def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda, C1_imp) -> Array:
+        W = 2*Lambda - Lambda @ e.D11 - e.D11.T @ Lambda
+        AB = np.block([[e.A, e.B1]])
+        H = cp.bmat([
+            [self.abar**2 * P, -C1_imp.T],
+            [-C1_imp, W]
         ])
-        H = H + self.eps * jnp.identity(2 * nx + nv) # TODO: Add Wishart?
-        
-        X = jnp.linalg.cholesky(H, upper=True)
-        X = self.param("X", init.constant(X), (2*nx + nv, 2*nx + nv), self.param_dtype)
-        
-        # Other implicit params
-        X_norm = l2_norm(X, eps=self.eps)
-        p = self.param("polar", init.constant(X_norm), (1,), self.param_dtype)        
-        Y1 = self.param("Y1", identity_init(), (nx, nx), self.param_dtype)
-        
-        # Set fixed arrays directly from state matrices
-        B2_imp = P @ B
-        B2 = self.param("B2", init.constant(B2_imp), (nx, nu), self.param_dtype)
-        C2 = self.param("C2", init.constant(C), (ny, nx), self.param_dtype)
-        D22 = self.param("D22", init.constant(D), (ny, nu), self.param_dtype)
-        
-        # Set up the direct parameter struct
-        self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
-                                      D22, X3, Y3, Z3, bx, bv, by)
-        
-    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
-        H = self._x_to_h(ps.X, ps.p)
-        explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
-        return explicit
+        H = H - AB.T @ P @ AB
+        return H
     
+    def _hmatrix_to_direct(self, H, imp: ren.ImplicitRENParams) -> ren.DirectRENParams:
+        X = self._h_contracting_to_x(H)
+        Y1 = imp.E
+        return ren.DirectRENParams(
+            p = l2_norm(X, eps=self.eps),
+            X = X,
+            B2 = imp.B2,
+            D12 = imp.D12,
+            Y1 = Y1,
+            C2 = imp.C2,
+            D21 = imp.D21,
+            D22 = imp.D22,
+            X3 = None,
+            Y3 = None,
+            Z3 = None,
+            bx = imp.bx,
+            bv = imp.bv,
+            by = imp.by,
+        )
+        
+    def _generate_explicit_params(self):
+        
+        # Sizes and dtype
+        nu = self.input_size
+        nx = self.state_size
+        nv = self.features
+        ny = self.output_size
+        dtype = self.param_dtype
+        
+        # Random seed
+        rng = jax.random.PRNGKey(self.seed)
+        keys = jax.random.split(rng, 12)
+        
+        # Get orthogonal/diagonal matrices for a stable A-matrix
+        if self.init_method == "random_explicit":
+            D = jax.random.uniform(keys[0], nx)
+        elif self.init_method == "long_memory_explicit":
+            D = 1 - 0.01*jax.random.uniform(keys[0], nx)
+        U = init.orthogonal()(keys[1], (nx,nx), dtype)
+        V = init.orthogonal()(keys[2], (nx,nx), dtype)
+        
+        # State and equilibrium layers
+        # C1 will be chosen so that the contraction LMI is feasible,
+        # so it is actually ignored. D11 is always lower-triangular.
+        A = V @ jnp.diag(D) @ U.T
+        B1 = self.kernel_init(keys[3], (nx, nv), dtype)
+        B2 = self.kernel_init(keys[4], (nx, nu), dtype)
+        bx = self.bias_init(keys[5], (nx,), dtype)
+        
+        C1 = self.kernel_init(keys[0], (nv, nx), dtype)
+        D11 = jnp.tril(self.kernel_init(keys[6], (nv, nv), dtype), k=-1)
+        D12 = self.kernel_init(keys[7], (nv, nu), dtype)
+        bv = self.bias_init(keys[8], (nv,), dtype)
+        
+        # Choose output layer specially
+        if self.init_output_zero:
+            out_kernel_init = init.zeros_init()
+            out_bias_init = init.zeros_init()
+        else:
+            out_kernel_init = self.kernel_init
+            out_bias_init = self.bias_init
+            
+        if self.identity_output:
+            C2 = jnp.identity(nx)
+            D21 = jnp.zeros((ny, nv), dtype)
+            by = jnp.zeros((ny,), dtype)
+        else:
+            by = out_bias_init(keys[9], (ny,), dtype)
+            C2 = out_kernel_init(keys[10], (ny, nx), dtype)
+            D21 = out_kernel_init(keys[11], (ny, nv), dtype)    
+        D22 = jnp.zeros((ny, nu), dtype)
+        
+        # Randomly generate explicit params
+        return ren.ExplicitRENParams(
+            A, B1, B2, C1, C2, D11, D12, D21, D22, bx, bv, by
+        )
+        
     
-class LipschitzREN(RENBase):
+class LipschitzREN(ren.RENBase):
     """Construct a Lipschitz-bounded REN.
     
     Attributes::
@@ -163,13 +222,12 @@ class LipschitzREN(RENBase):
         if self.identity_output:
             raise NotImplementedError("Currently no support for identitiy output with Lipschitz-bounded RENs. TODO.")
     
-    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
         Iu = jnp.identity(nu, self.param_dtype)
         Iy = jnp.identity(ny, self.param_dtype)
-        
         
         # Implicit params
         B2_imp = ps.B2
@@ -198,12 +256,12 @@ class LipschitzREN(RENBase):
         Gamma_Q = mul_Q.T @ mul_Q / (-self.gamma)
         Gamma_R = mul_R.T @ jnp.linalg.solve(R, mul_R)
         
-        H = self._x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
+        H = self._x_to_h_contracting(ps.X, ps.p) + Gamma_R - Gamma_Q
         explicit = self._hmatrix_to_explicit(ps, H, D22)
         return explicit
 
 
-class GeneralREN(RENBase):
+class GeneralREN(ren.RENBase):
     """Construct a REN satisfying an incremental IQC defined by Q, S, R.
     
     Example usage::
@@ -260,7 +318,7 @@ class GeneralREN(RENBase):
         if self.identity_output:
             raise NotImplementedError("Currently no support for identitiy output with QSR RENs. TODO.")
         
-    def _direct_to_explicit(self, ps: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
@@ -300,7 +358,7 @@ class GeneralREN(RENBase):
         Gamma_Q = mul_Q.T @ Q @ mul_Q
         Gamma_R = mul_R.T @ jnp.linalg.solve(R1, mul_R)
         
-        H = self._x_to_h(ps.X, ps.p) + Gamma_R - Gamma_Q
+        H = self._x_to_h_contracting(ps.X, ps.p) + Gamma_R - Gamma_Q
         explicit = self._hmatrix_to_explicit(ps, H, D22)
         return explicit
 
@@ -342,6 +400,17 @@ class GeneralREN(RENBase):
         Q = self.Q - self.eps * jnp.identity(self.Q.shape[0], self.param_dtype)
         R = self.R + self.eps * jnp.identity(self.R.shape[0], self.param_dtype)
         return Q, self.S, R
+    
+    ################ Explicit initialization Functions ################
+    
+    # def _generate_explicit_params(self):
+    #     raise NotImplementedError("TODO.")
+    
+    # def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda):
+    #     raise NotImplementedError("TODO.")
+    
+    # def _hmatrix_to_direct(self,  H: Array, implicit: ren.ImplicitRENParams):
+    #     raise NotImplementedError("TODO.")
 
 
 def _check_posdef(A: Array, eps=jnp.finfo(jnp.float32).eps):

@@ -18,7 +18,7 @@ Q = -X.T @ X
 R = S @ jnp.linalg.solve(Q, S.T) + Y.T @ Y
 
 model = ren.GeneralREN(nu, nx, nv, ny, Q=Q, S=S, R=R, 
-                       activation=nn.tanh, init_method="cholesky")
+                       activation=nn.tanh, init_method="long_memory")
 model.check_valid_qsr()
 
 # Dummy inputs and states

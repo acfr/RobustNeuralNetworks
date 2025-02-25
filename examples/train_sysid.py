@@ -31,7 +31,7 @@ config = {
     "nx": 75,
     "nv": 150,
     "activation": "relu",
-    "init_method": "cholesky",
+    "init_method": "long_memory",
     "polar": True,
 } 
 
@@ -126,7 +126,7 @@ def train_and_test(config):
 # Run it all for a few different configs
 config["polar"] = True
 config["activation"] = "relu"
-config["init_method"] = "cholesky"
+config["init_method"] = "long_memory"
 train_and_test(config)
 
 config["activation"] = "relu"
@@ -136,7 +136,7 @@ train_and_test(config)
 # Try it all again without the polar parameterisation
 config["polar"] = False
 config["activation"] = "relu"
-config["init_method"] = "cholesky"
+config["init_method"] = "long_memory"
 train_and_test(config)
 
 config["activation"] = "relu"

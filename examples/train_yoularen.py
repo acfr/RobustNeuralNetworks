@@ -32,7 +32,8 @@ default_config = {
     "nx": 10,
     "nv": 100,
     "activation": "relu",
-    "init_method": "cholesky",
+    # "init_method": "long_memory",
+    "init_method": "long_memory_explicit",
     "polar": True,
     
     "seed": 0,
@@ -61,6 +62,7 @@ def run_youla_ren_training(config):
     
     # Create the REN model and linear system environment
     model = build_ren(config)
+    model.explicit_pre_init()
     env = youla.ExampleSystem()
     
     # Train the model
@@ -146,29 +148,11 @@ def train_and_test(config):
     plt.plot(results["test_loss"])
     plt.xlabel("Training epochs")
     plt.ylabel("Test loss")
+    plt.ylim(1, 10)
+    plt.yscale("log")
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_loss.pdf")
     plt.close()
     
 
 # Test it out on nominal config
 train_and_test(default_config)
-
-# Change initialisation
-config = deepcopy(default_config)
-config["init_method"] = "cholesky"
-train_and_test(config)
-
-# Change activation
-config = deepcopy(default_config)
-config["activation"] = "relu"
-train_and_test(config)
-
-# Change polar param
-config = deepcopy(default_config)
-config["polar"] = not config["polar"]
-train_and_test(config)
-
-# Change seed
-config = deepcopy(default_config)
-config["seed"] = 42
-train_and_test(config)
