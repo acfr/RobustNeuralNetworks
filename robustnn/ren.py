@@ -152,25 +152,42 @@ class ContractingREN(ren.RENBase):
         U = init.orthogonal()(keys[1], (nx,nx), dtype)
         V = init.orthogonal()(keys[2], (nx,nx), dtype)
         
-        # Randomly generate explicit params
+        # State and equilibrium layers
         # C1 will be chosen so that the contraction LMI is feasible,
         # so it is actually ignored. D11 is always lower-triangular.
+        A = V @ jnp.diag(D) @ U.T
+        B1 = self.kernel_init(keys[3], (nx, nv), dtype)
+        B2 = self.kernel_init(keys[4], (nx, nu), dtype)
+        bx = self.bias_init(keys[5], (nx,), dtype)
+        
+        C1 = self.kernel_init(keys[0], (nv, nx), dtype)
+        D11 = jnp.tril(self.kernel_init(keys[6], (nv, nv), dtype), k=-1)
+        D12 = self.kernel_init(keys[7], (nv, nu), dtype)
+        bv = self.bias_init(keys[8], (nv,), dtype)
+        
+        # Choose output layer specially
+        if self.init_output_zero:
+            out_kernel_init = init.zeros_init()
+            out_bias_init = init.zeros_init()
+        else:
+            out_kernel_init = self.kernel_init
+            out_bias_init = self.bias_init
+            
+        if self.identity_output:
+            C2 = jnp.identity(nx)
+            D21 = jnp.zeros((ny, nv), dtype)
+            by = jnp.zeros((ny,), dtype)
+        else:
+            by = out_bias_init(keys[9], (ny,), dtype)
+            C2 = out_kernel_init(keys[10], (ny, nx), dtype)
+            D21 = out_kernel_init(keys[11], (ny, nv), dtype)    
+        D22 = jnp.zeros((ny, nu), dtype)
+        
+        # Randomly generate explicit params
         return ren.ExplicitRENParams(
-            A = V @ jnp.diag(D) @ U.T,
-            B1 = self.kernel_init(keys[3], (nx, nv), dtype),
-            B2 = self.kernel_init(keys[4], (nx, nu), dtype),
-            C1 = self.kernel_init(keys[0], (nv, nx), dtype),
-            D11 = jnp.tril(self.kernel_init(keys[5], (nv, nv), dtype), k=-1),
-            D12 = self.kernel_init(keys[6], (nv, nu), dtype),
-            C2 = self.kernel_init(keys[7], (ny, nx), dtype),
-            D21 = self.kernel_init(keys[8], (ny, nv), dtype),
-            D22 = jnp.zeros((ny, nu), dtype),
-            bx = self.bias_init(keys[9], (nx,), dtype),
-            bv = self.bias_init(keys[10], (nv,), dtype),
-            by = self.bias_init(keys[11], (ny,), dtype),
+            A, B1, B2, C1, C2, D11, D12, D21, D22, bx, bv, by
         )
         
-    
     
 class LipschitzREN(ren.RENBase):
     """Construct a Lipschitz-bounded REN.

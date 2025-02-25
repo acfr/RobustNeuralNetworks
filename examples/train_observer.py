@@ -29,7 +29,7 @@ default_config = {
     "nx": 51,
     "nv": 200,
     "activation": "tanh",
-    "init_method": "random",
+    "init_method": "random_explicit",
     "polar": True,
     
     "seed": 0,
@@ -81,6 +81,7 @@ def run_observer_training(config):
 
     # Create a REN model for the observer
     model = build_pde_obsv_ren(input_data, config)
+    model.explicit_pre_init()
 
     # Train a model
     params, results = obsv.train_observer(
@@ -101,7 +102,7 @@ def run_observer_training(config):
 def train_and_test(config):
     
     # Train the model
-    run_observer_training(config)
+    # run_observer_training(config)
 
     # Load for testing
     config, params, results = utils.load_results_from_config(config)
@@ -171,23 +172,3 @@ def train_and_test(config):
 
 # Test it out on nominal config
 train_and_test(default_config)
-
-# Change initialisation
-config = deepcopy(default_config)
-config["init_method"] = "long_memory"
-train_and_test(config)
-
-# Change activation
-config = deepcopy(default_config)
-config["activation"] = "relu"
-train_and_test(config)
-
-# Change polar param
-config = deepcopy(default_config)
-config["polar"] = not config["polar"]
-train_and_test(config)
-
-# Change seed
-config = deepcopy(default_config)
-config["seed"] = 42
-train_and_test(config)

@@ -33,7 +33,7 @@ default_config = {
     "nv": 100,
     "activation": "relu",
     # "init_method": "long_memory",
-    "init_method": "long_memory_explicit", # TODO: explicit init needs 0 output init!
+    "init_method": "long_memory_explicit",
     "polar": True,
     
     "seed": 0,
@@ -42,7 +42,7 @@ default_config = {
 
 def build_ren(config):
     """Build a REN for the Youla-REN policy."""
-    model = ren.ContractingREN(
+    return ren.ContractingREN(
         1, 
         config["nx"],
         config["nv"],
@@ -51,8 +51,6 @@ def build_ren(config):
         init_method=config["init_method"],
         do_polar_param=config["polar"],
     )
-    model.explicit_pre_init()
-    return model
 
 
 def run_youla_ren_training(config):
@@ -64,6 +62,7 @@ def run_youla_ren_training(config):
     
     # Create the REN model and linear system environment
     model = build_ren(config)
+    model.explicit_pre_init()
     env = youla.ExampleSystem()
     
     # Train the model

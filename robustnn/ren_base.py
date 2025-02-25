@@ -504,7 +504,10 @@ class RENBase(nn.Module):
         dtype = self.param_dtype
         
         ps = {}
-        for field in direct.__dataclass_fields__:           
+        for field in direct.__dataclass_fields__:
+            if field == "D22" and self.d22_zero:
+                ps[field] = jnp.zeros((self.output_size, self.input_size), dtype)
+                
             val = getattr(direct, field)
             if val is None:
                 ps[field] = self.param(field, init.zeros_init(), (0,), dtype)
