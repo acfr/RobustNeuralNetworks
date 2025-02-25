@@ -114,7 +114,9 @@ def train_observer(
     
     def loss_fn(params, xn, x, u):
         """Loss function is one-step ahead prediction error."""
-        x_pred, _ = model.apply(params, x, u)
+        # x_pred, _ = model.apply(params, x, u)
+        explicit = model.params_to_explicit(params)
+        x_pred, _ = model.explicit_call(x, u, explicit)
         return jnp.mean(l2_norm(xn - x_pred, axis=-1)**2)
     
     grad_loss = jax.jit(jax.value_and_grad(loss_fn))

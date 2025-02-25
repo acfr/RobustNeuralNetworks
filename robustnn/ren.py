@@ -52,7 +52,6 @@ class ContractingREN(ren.RENBase):
         pass
         
     def _init_linear_sys(self):
-        # TODO: Remove this and make it simpler.
         """Initialise the contracting REN as a (stable) linear system."""
         
         # Extract params and system sizes
@@ -61,73 +60,41 @@ class ContractingREN(ren.RENBase):
         nx = self.state_size
         nv = self.features
         ny = self.output_size
+        dtype = self.param_dtype
         
         # Error checking
         nx_a = A.shape[0]
-        if not (A.shape[0] <= nx and A.shape[1] == A.shape[0]):
-            raise ValueError("Size of input A matrix should be (n, n) with n <= state_size")
-        if not (B.shape[0] == nx_a and B.shape[1] == nu):
-            raise ValueError("Size of input B matrix should be (A.shape[0], input_size)")
-        if not (C.shape[0] == ny and C.shape[1] == nx_a):
-            raise ValueError("Size of input C matrix should be (output_size, A.shape[0])")
-        if not (D.shape[0] == ny and D.shape[1] == nu):
-            raise ValueError("Size of input D matrix should be (output_size, input_size)") 
-        if not self.abar == 1:
-            raise NotImplementedError("Make compatible with abar != 0 (TODO).")
+        assert (A.shape[0] <= nx and A.shape[1] == A.shape[0])
+        assert B.shape == (nx_a, nu)
+        assert C.shape == (ny, nx_a)
+        assert D.shape == (ny, nu)
         
         # Fill out A matrix to match the required number of states
         dnx = nx - nx_a
         A = jnp.block([
-            [A, jnp.zeros((nx_a, dnx), self.param_dtype)],
-            [jnp.zeros((dnx, nx_a), self.param_dtype), jnp.zeros((dnx, dnx), self.param_dtype)],
+            [A, jnp.zeros((nx_a, dnx), dtype)],
+            [jnp.zeros((dnx, nx_a), dtype), jnp.zeros((dnx, dnx), dtype)],
         ])
-        B = jnp.vstack([B, jnp.zeros((dnx, nu), self.param_dtype)])
-        C = jnp.hstack([C, jnp.zeros((ny, dnx), self.param_dtype)])
+        B = jnp.vstack([B, jnp.zeros((dnx, nu), dtype)])
+        C = jnp.hstack([C, jnp.zeros((ny, dnx), dtype)])
         
-        # Make sure all the biases are zero
-        bx = self.param("bx", init.zeros_init(), (nx,), self.param_dtype)
-        bv = self.param("bv", init.zeros_init(), (nv,), self.param_dtype)
-        by = self.param("by", init.zeros_init(), (ny,), self.param_dtype)
-        
-        # Set some other params to zero
-        D12 = self.param("D12", init.zeros_init(), (nv, nu), self.param_dtype)
-        D21 = self.param("D21", init.zeros_init(), (ny, nv), self.param_dtype)
-        
-        # Irrelevant params for contracting REN
-        X3 = self.param("X3", init.zeros_init(), (0,), self.param_dtype)
-        Y3 = self.param("Y3", init.zeros_init(), (0,), self.param_dtype)
-        Z3 = self.param("Z3", init.zeros_init(), (0,), self.param_dtype)
-        
-        # Build up the X matrix based on the initial state-space model
-        P = solve_discrete_lyapunov_direct(A.T, jnp.identity(nx))
-        Lambda = jnp.identity(nv)
-        PA = P @ A
-        
-        H = jnp.block([
-            [P, jnp.zeros((nx, nv)), PA.T],
-            [jnp.zeros((nv, nx)), 2*Lambda, jnp.zeros((nv, nx))],
-            [PA, jnp.zeros((nx, nv)), P]
-        ])
-        H = H + self.eps * jnp.identity(2 * nx + nv) # TODO: Add Wishart?
-        
-        X = jnp.linalg.cholesky(H, upper=True)
-        X = self.param("X", init.constant(X), (2*nx + nv, 2*nx + nv), self.param_dtype)
-        
-        # Other implicit params
-        X_norm = l2_norm(X, eps=self.eps)
-        p = self.param("polar", init.constant(X_norm), (1,), self.param_dtype)        
-        Y1 = self.param("Y1", identity_init(), (nx, nx), self.param_dtype)
-        
-        # Set fixed arrays directly from state matrices
-        B2_imp = P @ B
-        B2 = self.param("B2", init.constant(B2_imp), (nx, nu), self.param_dtype)
-        C2 = self.param("C2", init.constant(C), (ny, nx), self.param_dtype)
-        D22 = self.param("D22", init.constant(D), (ny, nu), self.param_dtype)
-        
-        # Set up the direct parameter struct
-        self.direct = ren.DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
-                                      D22, X3, Y3, Z3, bx, bv, by)
-        
+        # Initialise from the corresponding explicit model
+        explicit = ren.ExplicitRENParams(
+            A = A,
+            B1 = jnp.zeros((nx_a, nv), dtype),
+            B2 = B,
+            C1 = jnp.zeros((nv, nx_a), dtype),
+            C2 = C,
+            D11 = jnp.zeros((nv, nv), dtype),
+            D12 = jnp.zeros((nv, nu), dtype),
+            D21 = jnp.zeros((ny, nv), dtype),
+            D22 = D,
+            bx = jnp.zeros((nx,), dtype),
+            bv = jnp.zeros((nv,), dtype),
+            by = jnp.zeros((ny,), dtype),
+        )
+        self._init_from_explicit(explicit)
+
     def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
         H = self._x_to_h_contracting(ps.X, ps.p)
         explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
@@ -192,7 +159,7 @@ class ContractingREN(ren.RENBase):
             A = A,
             B1 = self.kernel_init(keys[2], (nx, nv), dtype),
             B2 = self.kernel_init(keys[3], (nx, nu), dtype),
-            C1 = self.kernel_init(keys[4], (nv, nx), dtype), # TODO: Why does this fail??
+            C1 = 0.01*self.kernel_init(keys[4], (nv, nx), dtype), # TODO: Why does this fail
             D11 = D11,
             D12 = self.kernel_init(keys[6], (nv, nu), dtype),
             C2 = self.kernel_init(keys[7], (ny, nx), dtype),

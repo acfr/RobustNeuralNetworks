@@ -34,7 +34,15 @@ explicit = model.params_to_explicit(params)
 x1, y1 = model.explicit_call(states, inputs, explicit)
 
 # Check the result via forward mode
-jit_call = jax.jit(model.apply)
+# TODO: Can't JIT the apply method at the moment
+# because setup is not jittable for explicit init. Instead of
+#           jit_call = jax.jit(model.apply)
+# we therefore use the following. I've raised an issue.
+@jax.jit
+def jit_call(params, states, inputs):
+    explicit = model.params_to_explicit(params)
+    return model.explicit_call(states, inputs, explicit)
+
 x2, y2 = jit_call(params, states, inputs)
 
 # Check it matches the linear system
