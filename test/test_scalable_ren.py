@@ -26,7 +26,11 @@ inputs = jnp.ones((batches, nu))
 params = model.init(key2, states, inputs)
 
 # Forward mode
-jit_call = jax.jit(model.apply)
+# jit_call = jax.jit(model.apply)
+@jax.jit
+def jit_call(params, states, inputs):
+    explicit = model.params_to_explicit(params)
+    return model.explicit_call(states, inputs, explicit)
 new_state, out = jit_call(params, states, inputs)
 print(new_state)
 print(out)

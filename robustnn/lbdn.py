@@ -69,7 +69,7 @@ class ExplicitSandwichParams:
     psi_d: Array
     b: Array
     
-# TODO: Document these or find a better way to have them here?
+# TODO: Convert these all to static methods in the SandwichFC class
 
 def explicit_sandwich_call(
     u: Array, 
@@ -185,6 +185,18 @@ class SandwichLayer(nn.Module):
         return _params_to_explicit(ps)
 
 
+@dataclass
+class DirectLBDNParams:
+    layers: Sequence[DirectSandwichParams]
+    log_gamma: Array
+
+
+@dataclass
+class ExplicitLBDNParams:
+    layers: Sequence[ExplicitSandwichParams]
+    log_gamma: Array
+
+
 class LBDN(nn.Module):
     """Lipschitz-Bounded Deep Network.
     
@@ -231,14 +243,14 @@ class LBDN(nn.Module):
     
     def setup(self):
         
-        # # Set up trainable/constant Lipschitz bound (positive quantity)
-        # # The learnable parameter is log(gamma), then we take gamma = exp(log_gamma)        
-        # log_gamma = self.param("ln_gamma", init.constant(jnp.log(self.gamma)),
-        #                        (1,), jnp.float32)
-        # if not self.trainable_lipschitz:
-        #     _rng = jax.random.PRNGKey(0)
-        #     log_gamma = init.constant(jnp.log(self.gamma))(_rng, (1,), jnp.float32)
-            
+        # Set up trainable/constant Lipschitz bound (positive quantity)
+        # The learnable parameter is log(gamma), then we take gamma = exp(log_gamma)        
+        log_gamma = self.param("ln_gamma", init.constant(jnp.log(self.gamma)),
+                               (1,), jnp.float32)
+        if not self.trainable_lipschitz:
+            _rng = jax.random.PRNGKey(0)
+            log_gamma = init.constant(jnp.log(self.gamma))(_rng, (1,), jnp.float32)
+        
         # We have a bunch of networks
         in_layers = (self.input_size,) + self.hidden_sizes[:-1]
         layers = [
@@ -263,43 +275,74 @@ class LBDN(nn.Module):
                 kernel_init=kinit
             )
         )
+        
+        self.log_gamma = log_gamma
         self.layers = layers
         
     def __call__(self, inputs: jnp.array) -> jnp.array:
         
-        direct = [s.direct for s in self.layers]
+        direct = self._get_direct_params()
         explicit = self._direct_to_explicit(direct)
         return self.explicit_call(inputs, explicit)
 
-    def explicit_call(self, u: Array, explicit: Sequence[ExplicitSandwichParams]):
-        
-        sqrt_gamma = jnp.sqrt(self.gamma) # TODO: jnp.sqrt(jnp.exp(log_gamma))
-        x = sqrt_gamma * u
-        
-        # for k, s in enumerate(self.layers):
-        #     x = s.explicit_call(x, explicit[k])
-        
-        # TODO: Document this if it works
-        for e in explicit[:-1]:
-            x = explicit_sandwich_call(
-                x, e, self.activation, self.use_bias, is_output=False
-            )
-        x = explicit_sandwich_call(
-            x, explicit[-1], self.activation, self.use_bias, is_output=True
-        )
-            
-        return sqrt_gamma * x
+    def explicit_call(self, u: Array, explicit: ExplicitLBDNParams):
+        return self._explicit_call(u, explicit, self.gamma, 
+                                   self.activation, self.use_bias)
     
-    def _direct_to_explicit(
-        self, ps: Sequence[DirectSandwichParams]
-    ) -> Sequence[ExplicitSandwichParams]:
-        return [_direct_to_explicit(ps_k) for ps_k in ps]
+    def _get_direct_params(self) -> DirectLBDNParams:
+        return DirectLBDNParams([s.direct for s in self.layers], self.log_gamma)
     
-    def params_to_explicit(self, ps: dict) -> Sequence[ExplicitSandwichParams]:
+    @staticmethod
+    def _direct_to_explicit(ps: DirectLBDNParams) -> ExplicitLBDNParams:
+        
+        layer_explicit_params = [_direct_to_explicit(ps_k) for ps_k in ps.layers]
+        return ExplicitLBDNParams(layer_explicit_params, ps.log_gamma)
+    
+    @staticmethod
+    def params_to_explicit(ps: dict) -> ExplicitLBDNParams:
+        
+        # Grab all the layer paramters
         layer_keys = [k for k in ps["params"].keys() if "layers_" in k]
         explicit = []
         for key in layer_keys:
             layer_ps = {"params": ps["params"][key]}
             explicit.append(_params_to_explicit(layer_ps))
-        return explicit
+            
+        # Check to see if there's a trainable Lipschitz bound
+        if "log_gamma" in ps["params"].keys():
+            log_gamma = ps["params"]["log_gamma"]
+        else:
+            log_gamma = None
+        
+        return ExplicitLBDNParams(explicit, log_gamma)
+    
+    @staticmethod
+    def _explicit_call(
+        u: Array, 
+        explicit: ExplicitLBDNParams,
+        gamma: jnp.float32, # type: ignore
+        activation: ActivationFn,
+        use_bias: bool = True
+    ):
+        
+        # TODO: Tidy this up
+        # log_gamma not stored in the params dict if it's not trainable,
+        # so option to reset it here.
+        if explicit.log_gamma is not None:
+             sqrt_gamma = jnp.sqrt(jnp.exp(explicit.log_gamma))
+        else:
+            sqrt_gamma = jnp.sqrt(gamma)
+        x = sqrt_gamma * u
+        
+        # Evaluate the Sandwich layers
+        for e in explicit.layers[:-1]:
+            x = explicit_sandwich_call(
+                x, e, activation, use_bias, is_output=False
+            )
+        x = explicit_sandwich_call(
+            x, explicit.layers[-1], activation, use_bias, is_output=True
+        )
+        
+        # Second part of the Lipschitz bound
+        return sqrt_gamma * x
     

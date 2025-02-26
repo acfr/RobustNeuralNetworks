@@ -8,7 +8,7 @@ from flax.linen import initializers as init
 from flax.struct import dataclass
 from flax.typing import Dtype, Array
 
-from robustnn.lbdn import cayley, LBDN
+from robustnn import lbdn
 from robustnn.utils import l2_norm
 from robustnn.utils import ActivationFn, Initializer
 
@@ -52,6 +52,7 @@ class ExplicitSRENParams:
     bx: Array
     bv: Array
     by: Array
+    network_params: lbdn.ExplicitLBDNParams
     
 
 class ScalableREN(nn.Module):
@@ -78,6 +79,7 @@ class ScalableREN(nn.Module):
     # do_polar_param: bool = True # TODO: add support?
     
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
+    _gamma: jnp.float32 = 1.0 # type: ignore
     
     def setup(self):
         
@@ -85,7 +87,8 @@ class ScalableREN(nn.Module):
         
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
         
-        explicit = self._direct_to_explicit(self.direct)
+        direct = (self.direct, self.network._get_direct_params())
+        explicit = self._direct_to_explicit(direct)
         return self.explicit_call(state, inputs, explicit)
     
     def explicit_call(
@@ -95,7 +98,9 @@ class ScalableREN(nn.Module):
         
         # Equilibirum layer
         v = x @ e.C1.T + u @ e.D12.T + e.bv
-        w = self.network(v)
+        w = lbdn.LBDN._explicit_call(
+            v, e.network_params, self._gamma, self.activation
+        )
         
         # State-space model
         x1 = x @ e.A.T + w @ e.B1.T + u @ e.B2.T + e.bx
@@ -103,7 +108,6 @@ class ScalableREN(nn.Module):
         return x1, y
     
     def simulate_sequence(self, params, x0, u):
-        raise NotImplementedError("Need to have params_to_explicit for LBDN.")
         explicit = self.params_to_explicit(params)
         def rollout(carry, ut):
             xt, = carry
@@ -116,14 +120,12 @@ class ScalableREN(nn.Module):
     def initialize_carry(
         self, rng: jax.Array, input_shape: Tuple[int, ...]
     ) -> Array:
-        # NOTE: Same as REN
         batch_dims = input_shape[:-1]
         rng, _ = jax.random.split(rng)
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
 
     def params_to_explicit(self, ps: dict):
-        raise NotImplementedError("Need to have params_to_explicit for LBDN.")
         direct = DirectSRENParams(
             p1 = ps["params"]["p1"],
             p2 = ps["params"]["p2"],
@@ -141,15 +143,23 @@ class ScalableREN(nn.Module):
             bv = ps["params"]["bv"],
             by = ps["params"]["by"],
         )
-        return self._direct_to_explicit(direct)
+        explicit = self._direct_to_explicit((direct, None))
+        explicit = explicit.replace(network_params = lbdn.LBDN.params_to_explicit(
+            {"params": ps["params"]["network"]}
+        ))
+        return explicit
     
-    def _direct_to_explicit(self, ps: DirectSRENParams) -> ExplicitSRENParams:
+    def _direct_to_explicit(
+        self, params: Tuple[DirectSRENParams, lbdn.DirectLBDNParams]
+    ) -> ExplicitSRENParams:
         """TODO: Split this up for contracting/other Scalable RENs"""
+        
+        ps, ps_network = params
         
         # Get all elements of the banded X-matrix first
         X_e = ps.p1 * ps.Xbar / l2_norm(ps.Xbar)
-        X11_T = cayley(ps.p2 * ps.Y2 / l2_norm(ps.Y2))
-        X43_T, X44_T = cayley(ps.p3 * ps.Y3 / l2_norm(ps.Y3), return_split=True)
+        X11_T = lbdn.cayley(ps.p2 * ps.Y2 / l2_norm(ps.Y2))
+        X43_T, X44_T = lbdn.cayley(ps.p3 * ps.Y3 / l2_norm(ps.Y3), return_split=True)
         X11, X43, X44 = X11_T.T, X43_T.T, X44_T.T
         
         # Some shapes
@@ -171,6 +181,14 @@ class ScalableREN(nn.Module):
         C1_imp = X11 @ X21.T
         # P_imp = X32 @ X32.T + X33 @ X33.T
         
+        # Explicit params for the network in feedback
+        # They'll be none if we're reading straight from the params dict
+        # TODO: This is a bit gross, can we tidy it up?
+        if ps_network is not None:
+            network_explicit = lbdn.LBDN._direct_to_explicit(ps_network)
+        else:
+            network_explicit = None
+        
         # Explicit model
         return ExplicitSRENParams(
             A = jnp.linalg.solve(E, A_imp),
@@ -183,7 +201,8 @@ class ScalableREN(nn.Module):
             D22 = ps.D22,
             bx = ps.bx,
             bv = ps.bv,
-            by = ps.by
+            by = ps.by,
+            network_params = network_explicit
         )
         
     
@@ -201,9 +220,11 @@ class ScalableREN(nn.Module):
         dtype = self.param_dtype
         
         # Initialise an LBDN for the equilibrium layer
-        self.network = LBDN(
-            layer_sizes=nh + (nv,),
-            gamma=1.0,
+        self.network = lbdn.LBDN(
+            input_size=nv,
+            hidden_sizes=nh,
+            output_size=nv,
+            gamma=self._gamma,
             activation=self.activation,
             kernel_init=self.kernel_init,
         )
