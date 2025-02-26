@@ -3,8 +3,8 @@ Implementation of Lipschitz Bounded Deep Networks (Linear) in JAX/FLAX
 
 Adapted from Julia implentation: https://github.com/acfr/RobustNeuralNetworks.jl
 
-Author: Jack Naylor, ACFR, Sep '23
-Edited: Nic Barbara, ACFR, Mar '24
+Original translation: Jack Naylor, ACFR, Sep '23
+Separate direct/explicit: Nic Barbara, ACFR, Mar '24, Feb '25
 
 These networks should be compatible with other FLAX modules.
 '''
@@ -14,9 +14,9 @@ import jax.numpy as jnp
 
 from flax import linen as nn
 from flax.linen import initializers as init
-from jax import lax
+from flax.struct import dataclass
 from typing import Sequence, Optional
-from flax.typing import Dtype, PrecisionLike
+from flax.typing import Dtype, PrecisionLike, Array
 
 from robustnn.utils import l2_norm, ActivationFn, Initializer
 
@@ -46,12 +46,29 @@ def dot_lax(input1, input2, precision: PrecisionLike = None):
     Wrapper around lax.dot_general(). Use this instead of `@` for
     more accurate array-matrix multiplication (higher default precision?)
     """
-    return lax.dot_general(
+    return jax.lax.dot_general(
         input1,
         input2,
         (((input1.ndim - 1,), (1,)), ((), ())),
         precision=precision,
     )
+
+
+@dataclass
+class DirectSandwichParams:
+    XY: Array
+    a: Array
+    d: Array
+    b: Array
+
+
+@dataclass
+class ExplicitSandwichParams:
+    A_T: Array
+    B: Array
+    psi_d: Array
+    b: Array
+
 
 class SandwichLayer(nn.Module):
     """A version of linen.Dense with a Lipschitz bound of 1.0.
@@ -61,12 +78,13 @@ class SandwichLayer(nn.Module):
         >>> from robustnn.networks.lbdn import SandwichLayer
         >>> import jax, jax.numpy as jnp
 
-        >>> layer = SandwichLayer(features=4)
+        >>> layer = SandwichLayer(input_size=3, features=4)
         >>> params = layer.init(jax.random.key(0), jnp.ones((1, 3)))
         >>> jax.tree_map(jnp.shape, params)
         {'params': {'XY': (7, 4), 'a': (1,), 'b': (4,), 'd': (4,)}}
 
     Attributes:
+        input_size: the number of input features.
         features: the number of output features.
         use_bias: whether to add a bias to the output (default: True).
         is_output: treat this as the output layer of an LBDN (default: False).
@@ -79,6 +97,7 @@ class SandwichLayer(nn.Module):
         bias_init: initializer function for the bias (default: zeros_init()).
         psi_init: initializer function for the activation scaling (default: zeros_init()).
     """
+    input_size: int
     features: int
     use_bias: bool = True
     is_output: bool = False
@@ -91,43 +110,57 @@ class SandwichLayer(nn.Module):
     bias_init: Initializer = init.zeros_init()
     psi_init: Initializer = init.zeros_init()
     
-    @nn.compact
+    def setup(self):
+        dtype = self.param_dtype
+        
+        XY = self.param("XY", self.kernel_init, 
+                        (self.input_size + self.features, self.features), 
+                        dtype)
+        a = self.param('a', init.constant(l2_norm(XY)), (1,), self.param_dtype)
+        d = self.param('d', self.psi_init, (self.features,), self.param_dtype)
+        b = self.param('b', self.bias_init, (self.features,), self.param_dtype)
+        
+        self.direct = DirectSandwichParams(XY, a, d, b)
+    
     def __call__(self, inputs: jnp.array) -> jnp.array:
         
-        # Set up parameters
-        xy = self.param("XY", self.kernel_init, 
-                        (jnp.shape(inputs)[-1]+self.features, self.features), 
-                        self.param_dtype)
+        explicit = self._direct_to_explicit(self.direct)
+        return self.explicit_call(inputs, explicit)
         
-        a = self.param('a', init.constant(l2_norm(xy)), (1,), self.param_dtype)
-        
-        if self.use_bias: 
-            b = self.param('b', self.bias_init, (self.features,), self.param_dtype)
-            
-        if not self.is_output: 
-            d = self.param('d', self.psi_init, (self.features,), self.param_dtype)
-            
-        # Computations
-        A_T, B_T = cayley(a / l2_norm(xy) * xy, return_split=True)
-        B = B_T.T
+    def explicit_call(self, u: Array, e: ExplicitSandwichParams) -> Array:
         
         # If just the output layer, return Bx + b (or just Bx if no bias)
-        # Using lax.dot_general directly instead of `@` because `linen.Dense`
-        # does it too - look into this later.
+        # Using lax.dot_general instead of `@` because `linen.Dense` does it
         if self.is_output:
             if self.use_bias:
-                return dot_lax(inputs, B) + b
+                return dot_lax(u, e.B) + e.b
             else:
-                return dot_lax(inputs, B)
+                return dot_lax(u, e.B)
                 
         # Regular sandwich layer (clip d to avoid over/underflow)
-        psi_d = jnp.exp(jnp.clip(d, a_min=-20.0, a_max=20.0))
-        x = jnp.sqrt(2.0) * dot_lax(inputs, ((jnp.diag(1 / psi_d)) @ B))
+        x = jnp.sqrt(2.0) * dot_lax(u, ((jnp.diag(1 / e.psi_d)) @ e.B))
         if self.use_bias: 
-            x += b
-        x = jnp.sqrt(2.0) * dot_lax(self.activation(x), (A_T * psi_d.T))
+            x += e.b
+        return jnp.sqrt(2.0) * dot_lax(self.activation(x), (e.A_T * e.psi_d.T))
+    
+    def _direct_to_explicit(self, ps:DirectSandwichParams) -> ExplicitSandwichParams:
         
-        return x
+        # Cayley transform
+        A_T, B_T = cayley(ps.a / l2_norm(ps.XY) * ps.XY, return_split=True)
+        B = B_T.T
+        
+        # Clip d to avoid over/underflow and return
+        psi_d = jnp.exp(jnp.clip(ps.d, a_min=-20.0, a_max=20.0))
+        return ExplicitSandwichParams(A_T, B, psi_d, ps.b)
+    
+    def params_to_explicit(self, ps: dict) -> ExplicitSandwichParams:
+        direct = DirectSandwichParams(
+            XY = ps["params"]["XY"],
+            a = ps["params"]["a"],
+            d = ps["params"]["d"],
+            b = ps["params"]["b"]
+        )
+        return self._direct_to_explicit(direct)
 
 
 class LBDN(nn.Module):
@@ -139,16 +172,18 @@ class LBDN(nn.Module):
         >>> import jax, jax.numpy as jnp
         
         >>> nu, ny = 5, 2
-        >>> layers = (8, 16, ny)
+        >>> layers = (8, 16)
         >>> gamma = jnp.float32(10)
         
-        >>> model = LBDN(layer_sizes=layers, gamma=gamma)
+        >>> model = LBDN(nu, layers, ny, gamma=gamma)
         >>> params = model.init(jax.random.key(0), jnp.ones((6,nu)))
         >>> jax.tree_map(jnp.shape, params)
         {'params': {'SandwichLayer_0': {'XY': (13, 8), 'a': (1,), 'b': (8,), 'd': (8,)}, 'SandwichLayer_1': {'XY': (24, 16), 'a': (1,), 'b': (16,), 'd': (16,)}, 'SandwichLayer_2': {'XY': (18, 2), 'a': (1,), 'b': (2,)}, 'ln_gamma': (1,)}}
     
     Attributes:
-        layer_sizes: Tuple of hidden layer sizes and the output size.
+        input_size: the number of input features.
+        hidden_sizes: Tuple of hidden layer sizes.
+        output_size: the number of output features.
         gamma: Upper bound on the Lipschitz constant (default: inf).
         activation: Activation function to use (default: relu).
         kernel_init: Initialisation function for matrics (default: glorot_normal).
@@ -162,7 +197,9 @@ class LBDN(nn.Module):
     Note: Optional activation on final layer is not implemented yet.
     """
     
-    layer_sizes: Sequence[int]
+    input_size: int
+    hidden_sizes: Sequence[int]
+    output_size: int
     gamma: jnp.float32 = 1.0 # type: ignore
     activation: ActivationFn = nn.relu
     kernel_init: Initializer = init.glorot_normal()
@@ -172,8 +209,8 @@ class LBDN(nn.Module):
     
     def setup(self):
         """Define some common sizes."""
-        self.hidden_sizes = self.layer_sizes[:-1]
-        self.output_size = self.layer_sizes[-1]
+        # self.hidden_sizes = self.layer_sizes[:-1]
+        # self.output_size = self.layer_sizes[-1]
         
     @nn.compact
     def __call__(self, inputs : jnp.array) -> jnp.array:
@@ -191,15 +228,18 @@ class LBDN(nn.Module):
         x = sqrt_gamma * inputs
         
         # Evaluate the network hidden layers
-        for _, nz in enumerate(self.hidden_sizes):
-            x = SandwichLayer(nz, 
+        in_layers = (self.input_size,) + self.hidden_sizes[:-1]
+        for k in range(len(self.hidden_sizes)):
+            x = SandwichLayer(input_size=in_layers[k],
+                              features=self.hidden_sizes[k], 
                               activation=self.activation,
                               use_bias=self.use_bias,
                               kernel_init=self.kernel_init)(x)
         
         # Treat the output layer separately
         kinit = init.zeros_init() if self.init_output_zero else self.kernel_init
-        x = SandwichLayer(self.output_size, 
+        x = SandwichLayer(input_size=self.hidden_sizes[-1],
+                          features=self.output_size, 
                           is_output=True, 
                           use_bias=self.use_bias,
                           kernel_init=kinit)(x)

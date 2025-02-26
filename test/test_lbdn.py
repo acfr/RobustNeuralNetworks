@@ -9,11 +9,11 @@ rng, key = jax.random.split(rng, 2)
 
 # Model size and Lipschitz bound
 nu, ny = 5, 2
-layers = (8, 16, ny)
+layers = (8, 16)
 gamma = jnp.float32(10)
 
 # Create LBDN model
-model = LBDN(layer_sizes=layers, gamma=gamma, activation=nn.tanh)
+model = LBDN(nu, layers, ny, gamma=gamma, activation=nn.tanh)
 
 # Dummy inputs
 batches = 4

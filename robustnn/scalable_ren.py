@@ -103,7 +103,7 @@ class ScalableREN(nn.Module):
         return x1, y
     
     def simulate_sequence(self, params, x0, u):
-        # NOTE: Same as REN
+        raise NotImplementedError("Need to have params_to_explicit for LBDN.")
         explicit = self.params_to_explicit(params)
         def rollout(carry, ut):
             xt, = carry
@@ -123,8 +123,7 @@ class ScalableREN(nn.Module):
         return self.carry_init(rng, mem_shape, self.param_dtype)
 
     def params_to_explicit(self, ps: dict):
-        raise NotImplementedError()
-        # TODO: What about the LBDN???
+        raise NotImplementedError("Need to have params_to_explicit for LBDN.")
         direct = DirectSRENParams(
             p1 = ps["params"]["p1"],
             p2 = ps["params"]["p2"],
