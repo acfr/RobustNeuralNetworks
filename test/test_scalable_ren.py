@@ -1,51 +1,72 @@
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
 
+from datetime import datetime
+
+from robustnn import ren
 from robustnn import scalable_ren as sren
 
-# Random seeds
-rng = jax.random.key(0)
-rng, keyX, keyY, keyS, key1, key2 = jax.random.split(rng, 6)
+from utils import count_num_params
+
+
+# Problem size
+nu = 10
+ny = 20
+batches = 50
+horizon = 1024
+
+# Initialise a standard contracting REN
+nx_ren = 50         # Number of states
+nv_ren = 400        # Number of equilibrium layer states
+model_ren = ren.ContractingREN(nu, nx_ren, nv_ren, ny)
 
 # Initialise a scalable REN
-nu = 5
-nx = 3
-nv = 6
-ny = 2
-nh = (8, 16)
-model = sren.ScalableREN(
-    nu, nx, nv, ny, nh,
-    activation=nn.tanh, 
-)
+nx_sren = 50        # Number of states
+nv_sren = 100       # Number of equilibirum layer states
+nh = (128,)*6       # Number of hidden layers in the LBDN
+model_sren = sren.ScalableREN(nu, nx_sren, nv_sren, ny, nh)
 
-# Dummy inputs and states
-batches = 4
-states = model.initialize_carry(key1, (batches, nu)) + 1
-inputs = jnp.ones((batches, nu))
-params = model.init(key2, states, inputs)
+# Test function
+def test_ren(model, seed=0):
+    
+    # Random seeds
+    rng = jax.random.key(seed)
+    rng, key1, key2, key3, key4 = jax.random.split(rng, 5)
+    
+    # Dummy inputs and states
+    states = model.initialize_carry(key1, (batches, nu))
+    states = jax.random.normal(key2, states.shape)
+    inputs = jax.random.normal(key3, (horizon, batches, nu))
+    
+    # Initialise the model and check how many params
+    params = model.init(key4, states, inputs[0])
+    print("Number of params: ", count_num_params(params))
+    
+    # Dummy loss function that calls the REN on a sequence of data
+    @jax.jit
+    def loss(params, x0, u):
+        x1, y = model.simulate_sequence(params, x0, u)
+        return jnp.sum(x1**2) + jnp.sum(y**2)
+    
+    # Roughly time how long it takes to run forward eval. Run it once for JIT first
+    first_losses = loss(params, states, inputs)
+    
+    print("Start forward: ", datetime.now())
+    losses = loss(params, states, inputs)
+    print("End forward:   ", datetime.now())
+    
+    # Do the same for the backwards pass
+    grad_func = jax.jit(jax.grad(loss))
+    first_grads = grad_func(params, states, inputs)
+    
+    print("Start backward: ", datetime.now())
+    grads = grad_func(params, states, inputs)
+    print("End backward:   ", datetime.now())
+    
+    return (losses, grads), (first_losses, first_grads)
 
-# Forward mode
-# jit_call = jax.jit(model.apply)
-@jax.jit
-def jit_call(params, states, inputs):
-    explicit = model.params_to_explicit(params)
-    return model.explicit_call(states, inputs, explicit)
-new_state, out = jit_call(params, states, inputs)
-print(new_state)
-print(out)
+print("Testing REN:")
+test_ren(model_ren)
 
-# Test taking a gradient
-def loss(states, inputs):
-    nstate, out = model.apply(params, states, inputs)
-    return jnp.sum(nstate**2) + jnp.sum(out**2)
-
-grad_func = jax.jit(jax.grad(loss, argnums=(0,1)))
-gs = grad_func(states, inputs)
-
-print(loss(states, inputs))
-print("States grad: ", gs[0])
-print("Output grad: ", gs[1])
-
-# Check conversion to explicit params
-# print(model.params_to_explicit(params))
+print("Testing Scalable REN:")
+test_ren(model_sren)
