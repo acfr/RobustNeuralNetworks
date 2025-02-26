@@ -68,6 +68,52 @@ class ExplicitSandwichParams:
     B: Array
     psi_d: Array
     b: Array
+    
+# TODO: Document these or find a better way to have them here?
+
+def explicit_sandwich_call(
+    u: Array, 
+    e: ExplicitSandwichParams,
+    activation: ActivationFn,
+    use_bias: bool = True,
+    is_output: bool = False,
+) -> Array:
+    """Forward pass of a sandwich layer."""
+        
+    # If just the output layer, return Bx + b (or just Bx if no bias)
+    # Using lax.dot_general instead of `@` because `linen.Dense` does it
+    if is_output:
+        if use_bias:
+            return dot_lax(u, e.B) + e.b
+        else:
+            return dot_lax(u, e.B)
+            
+    # Regular sandwich layer (clip d to avoid over/underflow)
+    x = jnp.sqrt(2.0) * dot_lax(u, ((jnp.diag(1 / e.psi_d)) @ e.B))
+    if use_bias: 
+        x += e.b
+    return jnp.sqrt(2.0) * dot_lax(activation(x), (e.A_T * e.psi_d.T))
+
+
+def _direct_to_explicit(ps:DirectSandwichParams) -> ExplicitSandwichParams:
+        
+    # Cayley transform
+    A_T, B_T = cayley(ps.a / l2_norm(ps.XY) * ps.XY, return_split=True)
+    B = B_T.T
+    
+    # Clip d to avoid over/underflow and return
+    psi_d = jnp.exp(jnp.clip(ps.d, a_min=-20.0, a_max=20.0))
+    return ExplicitSandwichParams(A_T, B, psi_d, ps.b)
+
+
+def _params_to_explicit(ps: dict) -> ExplicitSandwichParams:
+        direct = DirectSandwichParams(
+            XY = ps["params"]["XY"],
+            a = ps["params"]["a"],
+            d = ps["params"]["d"],
+            b = ps["params"]["b"]
+        )
+        return _direct_to_explicit(direct)
 
 
 class SandwichLayer(nn.Module):
@@ -128,39 +174,15 @@ class SandwichLayer(nn.Module):
         return self.explicit_call(inputs, explicit)
         
     def explicit_call(self, u: Array, e: ExplicitSandwichParams) -> Array:
-        
-        # If just the output layer, return Bx + b (or just Bx if no bias)
-        # Using lax.dot_general instead of `@` because `linen.Dense` does it
-        if self.is_output:
-            if self.use_bias:
-                return dot_lax(u, e.B) + e.b
-            else:
-                return dot_lax(u, e.B)
-                
-        # Regular sandwich layer (clip d to avoid over/underflow)
-        x = jnp.sqrt(2.0) * dot_lax(u, ((jnp.diag(1 / e.psi_d)) @ e.B))
-        if self.use_bias: 
-            x += e.b
-        return jnp.sqrt(2.0) * dot_lax(self.activation(x), (e.A_T * e.psi_d.T))
+        return explicit_sandwich_call(
+            u, e, self.activation, self.use_bias, self.is_output
+        )
     
     def _direct_to_explicit(self, ps:DirectSandwichParams) -> ExplicitSandwichParams:
-        
-        # Cayley transform
-        A_T, B_T = cayley(ps.a / l2_norm(ps.XY) * ps.XY, return_split=True)
-        B = B_T.T
-        
-        # Clip d to avoid over/underflow and return
-        psi_d = jnp.exp(jnp.clip(ps.d, a_min=-20.0, a_max=20.0))
-        return ExplicitSandwichParams(A_T, B, psi_d, ps.b)
+        return _direct_to_explicit(ps)
     
     def params_to_explicit(self, ps: dict) -> ExplicitSandwichParams:
-        direct = DirectSandwichParams(
-            XY = ps["params"]["XY"],
-            a = ps["params"]["a"],
-            d = ps["params"]["d"],
-            b = ps["params"]["b"]
-        )
-        return self._direct_to_explicit(direct)
+        return _params_to_explicit(ps)
 
 
 class LBDN(nn.Module):
@@ -208,41 +230,76 @@ class LBDN(nn.Module):
     init_output_zero: bool = False
     
     def setup(self):
-        """Define some common sizes."""
-        # self.hidden_sizes = self.layer_sizes[:-1]
-        # self.output_size = self.layer_sizes[-1]
         
-    @nn.compact
-    def __call__(self, inputs : jnp.array) -> jnp.array:
-        
-        # Set up trainable/constant Lipschitz bound (positive quantity)
-        # The learnable parameter is log(gamma), then we take gamma = exp(log_gamma)
-        log_gamma = self.param("ln_gamma", init.constant(jnp.log(self.gamma)),
-                               (1,), jnp.float32)
-        if not self.trainable_lipschitz:
-            _rng = jax.random.PRNGKey(0)
-            log_gamma = init.constant(jnp.log(self.gamma))(_rng, (1,), jnp.float32)
+        # # Set up trainable/constant Lipschitz bound (positive quantity)
+        # # The learnable parameter is log(gamma), then we take gamma = exp(log_gamma)        
+        # log_gamma = self.param("ln_gamma", init.constant(jnp.log(self.gamma)),
+        #                        (1,), jnp.float32)
+        # if not self.trainable_lipschitz:
+        #     _rng = jax.random.PRNGKey(0)
+        #     log_gamma = init.constant(jnp.log(self.gamma))(_rng, (1,), jnp.float32)
             
-        # Apply the Lipschitz bound
-        sqrt_gamma = jnp.sqrt(jnp.exp(log_gamma))
-        x = sqrt_gamma * inputs
-        
-        # Evaluate the network hidden layers
+        # We have a bunch of networks
         in_layers = (self.input_size,) + self.hidden_sizes[:-1]
-        for k in range(len(self.hidden_sizes)):
-            x = SandwichLayer(input_size=in_layers[k],
-                              features=self.hidden_sizes[k], 
-                              activation=self.activation,
-                              use_bias=self.use_bias,
-                              kernel_init=self.kernel_init)(x)
+        layers = [
+            SandwichLayer(
+                input_size=in_layers[k],
+                features=self.hidden_sizes[k], 
+                activation=self.activation,
+                use_bias=self.use_bias,
+                kernel_init=self.kernel_init
+            )
+            for k in range(len(self.hidden_sizes))
+        ]
         
         # Treat the output layer separately
         kinit = init.zeros_init() if self.init_output_zero else self.kernel_init
-        x = SandwichLayer(input_size=self.hidden_sizes[-1],
-                          features=self.output_size, 
-                          is_output=True, 
-                          use_bias=self.use_bias,
-                          kernel_init=kinit)(x)
-        x = sqrt_gamma * x
+        layers.append(
+            SandwichLayer(
+                input_size=self.hidden_sizes[-1],
+                features=self.output_size, 
+                is_output=True, 
+                use_bias=self.use_bias,
+                kernel_init=kinit
+            )
+        )
+        self.layers = layers
         
-        return x
+    def __call__(self, inputs: jnp.array) -> jnp.array:
+        
+        direct = [s.direct for s in self.layers]
+        explicit = self._direct_to_explicit(direct)
+        return self.explicit_call(inputs, explicit)
+
+    def explicit_call(self, u: Array, explicit: Sequence[ExplicitSandwichParams]):
+        
+        sqrt_gamma = jnp.sqrt(self.gamma) # TODO: jnp.sqrt(jnp.exp(log_gamma))
+        x = sqrt_gamma * u
+        
+        # for k, s in enumerate(self.layers):
+        #     x = s.explicit_call(x, explicit[k])
+        
+        # TODO: Document this if it works
+        for e in explicit[:-1]:
+            x = explicit_sandwich_call(
+                x, e, self.activation, self.use_bias, is_output=False
+            )
+        x = explicit_sandwich_call(
+            x, explicit[-1], self.activation, self.use_bias, is_output=True
+        )
+            
+        return sqrt_gamma * x
+    
+    def _direct_to_explicit(
+        self, ps: Sequence[DirectSandwichParams]
+    ) -> Sequence[ExplicitSandwichParams]:
+        return [_direct_to_explicit(ps_k) for ps_k in ps]
+    
+    def params_to_explicit(self, ps: dict) -> Sequence[ExplicitSandwichParams]:
+        layer_keys = [k for k in ps["params"].keys() if "layers_" in k]
+        explicit = []
+        for key in layer_keys:
+            layer_ps = {"params": ps["params"][key]}
+            explicit.append(_params_to_explicit(layer_ps))
+        return explicit
+    

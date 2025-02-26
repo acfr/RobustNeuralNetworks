@@ -4,6 +4,9 @@ import flax.linen as nn
 
 from robustnn.lbdn import LBDN
 
+# Need this to avoid matrix multiplication discrepancy
+jax.config.update("jax_default_matmul_precision", "highest")
+
 rng = jax.random.key(0)
 rng, key = jax.random.split(rng, 2)
 
@@ -21,7 +24,12 @@ inputs = jnp.ones((batches, nu))
 params = model.init(key, inputs)
 
 # Forward mode
-jit_call = jax.jit(model.apply)
+# jit_call = jax.jit(model.apply)
+@jax.jit
+def jit_call(params, inputs):
+    explicit = model.params_to_explicit(params)
+    return model.explicit_call(inputs, explicit)
+
 out = jit_call(params, inputs)
 print(out)
 
