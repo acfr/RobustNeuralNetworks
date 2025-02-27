@@ -4,6 +4,9 @@ import flax.linen as nn
 
 from robustnn import ren
 
+# Need this to avoid matrix multiplication discrepancy
+jax.config.update("jax_default_matmul_precision", "highest")
+
 # Random seeds
 rng = jax.random.key(0)
 rng, keyX, keyY, keyS, key1, key2 = jax.random.split(rng, 6)
@@ -18,7 +21,7 @@ Q = -X.T @ X
 R = S @ jnp.linalg.solve(Q, S.T) + Y.T @ Y
 
 model = ren.GeneralREN(nu, nx, nv, ny, Q=Q, S=S, R=R, 
-                       activation=nn.tanh, init_method="cholesky")
+                       activation=nn.tanh, init_method="long_memory")
 model.check_valid_qsr()
 
 # Dummy inputs and states

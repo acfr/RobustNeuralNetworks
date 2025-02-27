@@ -22,6 +22,7 @@ D = jax.random.normal(keyD, (ny, nu))
 model = ren.ContractingREN(nu, nx, nv, ny,
                            activation=nn.tanh, 
                            init_as_linear=(A,B,C,D))
+model.explicit_pre_init()
 
 # Dummy inputs and states
 batches = 1
