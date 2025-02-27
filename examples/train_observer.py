@@ -1,10 +1,13 @@
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-from pathlib import Path
 from copy import deepcopy
+from pathlib import Path
 
 from robustnn import ren
+from robustnn import scalable_ren as sren
+from robustnn.utils import count_num_params
+
 from utils.plot_utils import startup_plotting
 from utils import observer as obsv 
 from utils import utils
@@ -17,37 +20,60 @@ jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
 # TODO: Tune these. 1e-5 is the benchmark tolerance
-default_config = {
+ren_config = {
     "experiment": "pde",
-    "epochs": 100,              # TODO: Tune this
+    "network": "contracting_ren",
+    "epochs": 100,
     "lr": 1e-3,
-    "min_lr": 1e-6,             # TODO: Tune this
-    "lr_patience": 1,           # TODO: Tune this
+    "min_lr": 1e-6,
+    "lr_patience": 5,
     "batches": 200,
     "time_steps": 100_000,
     
     "nx": 51,
     "nv": 200,
     "activation": "tanh",
-    "init_method": "random_explicit",
+    "init_method": "random",
     "polar": True,
     
     "seed": 0,
 }
 
+# Should have size: 94665 params (ish)
+# TODO: Tune this. Performance not great yet
+sren_config = deepcopy(ren_config)
+sren_config["network"] = "scalable_ren"
+sren_config["nx"] = 51
+sren_config["nv"] = 68
+sren_config["nh"] = (64,) * 7
+sren_config["init_method"] = "random"
 
-def build_pde_obsv_ren(input_data, config):
+
+def build_ren(input_data, config):
     """Build a REN for the PDE observer."""
-    return ren.ContractingREN(
-        input_data.shape[-1], 
-        config["nx"],
-        config["nv"],
-        config["nx"],
-        activation=utils.get_activation(config["activation"]),
-        init_method=config["init_method"],
-        do_polar_param=config["polar"],
-        identity_output=True
-    )
+    if config["network"] == "contracting_ren":
+        model = ren.ContractingREN(
+            input_data.shape[-1], 
+            config["nx"],
+            config["nv"],
+            config["nx"],
+            activation=utils.get_activation(config["activation"]),
+            init_method=config["init_method"],
+            do_polar_param=config["polar"],
+            identity_output=True
+        )
+    elif config["network"] == "scalable_ren":
+        model = sren.ScalableREN(
+            input_data.shape[-1], 
+            config["nx"],
+            config["nv"],
+            config["nx"],
+            config["nh"],
+            activation=utils.get_activation(config["activation"]),
+            init_method=config["init_method"],
+            identity_output=True
+        )
+    return model
 
 
 def run_observer_training(config):
@@ -80,7 +106,7 @@ def run_observer_training(config):
     print("Done!")
 
     # Create a REN model for the observer
-    model = build_pde_obsv_ren(input_data, config)
+    model = build_ren(input_data, config)
     model.explicit_pre_init()
 
     # Train a model
@@ -93,6 +119,7 @@ def run_observer_training(config):
         lr_patience=config["lr_patience"],
         seed=config["seed"]
     )
+    results["num_params"] = count_num_params(params)
 
     # Save results for later evaluation
     utils.save_results(config, params, results)
@@ -102,7 +129,7 @@ def run_observer_training(config):
 def train_and_test(config):
     
     # Train the model
-    # run_observer_training(config)
+    run_observer_training(config)
 
     # Load for testing
     config, params, results = utils.load_results_from_config(config)
@@ -122,7 +149,7 @@ def train_and_test(config):
     y = obsv.measure(x_true, u)
     
     # Re-build and initialise the observer
-    model = build_pde_obsv_ren(y, config)
+    model = build_ren(y, config)
     
     # Simulate the observer through time
     key = jax.random.PRNGKey(config["seed"])
@@ -141,6 +168,9 @@ def train_and_test(config):
         if i < 3:
             ax.set_xticks([])
         return im
+    
+    # Print number of params
+    print("Number of params: ", results["num_params"])
     
     # Plot the heat map
     fig, axes = plt.subplots(3, 1, figsize=(6, 4.2))
@@ -168,7 +198,20 @@ def train_and_test(config):
     plt.yscale('log')
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_loss.pdf")
     plt.close()
+    
+    # Plot the test loss vs time
+    # Plot from second time to ingore compilation time with JIT
+    times = results["times"]
+    time_seconds = [(t - times[1]).total_seconds() for t in times]
+    
+    plt.plot(time_seconds[1:], results["mean_loss"][1:])
+    plt.xlabel("Training time (s)")
+    plt.ylabel("Training loss")
+    plt.yscale("log")
+    plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_loss_time.pdf")
+    plt.close()
 
 
 # Test it out on nominal config
-train_and_test(default_config)
+train_and_test(ren_config)
+train_and_test(sren_config)

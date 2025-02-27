@@ -5,6 +5,9 @@ from copy import deepcopy
 from pathlib import Path
 
 from robustnn import ren
+from robustnn import scalable_ren as sren
+from robustnn.utils import count_num_params
+
 from utils.plot_utils import startup_plotting
 from utils import youla
 from utils import utils
@@ -18,8 +21,9 @@ jax.config.update("jax_default_matmul_precision", "highest")
 # Training hyperparameters
 # Slightly better results with (nx, nv) = (50, 500), 
 # but not worth computation time
-default_config = {
+ren_config = {
     "experiment": "youla",
+    "network": "contracting_ren",
     "epochs": 100,
     "lr": 1e-3,
     "min_lr": 1e-6,
@@ -32,25 +36,43 @@ default_config = {
     "nx": 10,
     "nv": 100,
     "activation": "relu",
-    # "init_method": "long_memory",
-    "init_method": "long_memory_explicit",
+    "init_method": "long_memory",
     "polar": True,
     
     "seed": 0,
 }
 
+sren_config = deepcopy(ren_config)
+sren_config["network"] = "scalable_ren"
+sren_config["nx"] = 10
+sren_config["nv"] = 28
+sren_config["nh"] = (32,) * 5
+sren_config["init_method"] = "random"
+
 
 def build_ren(config):
     """Build a REN for the Youla-REN policy."""
-    return ren.ContractingREN(
-        1, 
-        config["nx"],
-        config["nv"],
-        1,
-        activation=utils.get_activation(config["activation"]),
-        init_method=config["init_method"],
-        do_polar_param=config["polar"],
-    )
+    if config["network"] == "contracting_ren":
+        model = ren.ContractingREN(
+            1, 
+            config["nx"],
+            config["nv"],
+            1,
+            activation=utils.get_activation(config["activation"]),
+            init_method=config["init_method"],
+            do_polar_param=config["polar"],
+        )
+    elif config["network"] == "scalable_ren":
+        model = sren.ScalableREN(
+            1,
+            config["nx"],
+            config["nv"],
+            1,
+            config["nh"],
+            activation=utils.get_activation(config["activation"]),
+            init_method=config["init_method"],
+        )
+    return model
 
 
 def run_youla_ren_training(config):
@@ -79,6 +101,7 @@ def run_youla_ren_training(config):
         lr_patience     = config["lr_patience"],
         seed            = config["seed"]
     )
+    results["num_params"] = count_num_params(params)
     
     # Save results for later evaluation
     utils.save_results(config, params, results)
@@ -124,6 +147,9 @@ def train_and_test(config):
     _, (z0, _) = youla.rollout(env, model, params, test_x0, test_q0, test_d)
     z0 = jnp.squeeze(z0)
     
+    # Print number of params
+    print("Number of params: ", results["num_params"])
+    
     # Plot output z vs time
     plt.plot(d, label="Disturbance")
     plt.plot(z0, label="Open Loop")
@@ -153,6 +179,20 @@ def train_and_test(config):
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_loss.pdf")
     plt.close()
     
+    # Plot the test loss vs time
+    # Plot from second time to ingore compilation time with JIT
+    times = results["times"]
+    time_seconds = [(t - times[1]).total_seconds() for t in times]
+    
+    plt.plot(time_seconds[1:], results["test_loss"][1:])
+    plt.xlabel("Training time (s)")
+    plt.ylabel("Test loss")
+    plt.ylim(1, 10)
+    plt.yscale("log")
+    plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_loss_time.pdf")
+    plt.close()
+    
 
-# Test it out on nominal config
-train_and_test(default_config)
+# Test it out
+train_and_test(ren_config)
+train_and_test(sren_config)

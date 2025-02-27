@@ -26,8 +26,9 @@ def get_activation(s: str):
 def generate_fname(config):
     """Generate a common file name for results loading/saving."""
     polar_label = "polar" if config["polar"] else "nopolar"
-    filename = "{}_nx{}_nv{}_{}_{}_{}_s{}".format(
+    filename = "{}_{}_nx{}_nv{}_{}_{}_{}_s{}".format(
         config["experiment"],
+        config["network"],
         config["nx"],
         config["nv"],
         config["activation"],
