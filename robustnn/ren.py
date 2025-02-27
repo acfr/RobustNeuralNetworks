@@ -13,12 +13,12 @@ from robustnn import ren_base as ren
 class ContractingREN(ren.RENBase):
     """Construct a Contracting REN.
     
-    Attributes::
+    Attributes:
         init_as_linear: Tuple of (A, B, C, D) matrices to initialise the contracting REN as
                         a linear system. The linear system must be stable. Default is `()`, 
                         which uses the random initialisation outlined in `RENBase`.
     
-    Example usage::
+    Example usage:
 
         >>> import jax, jax.numpy as jnp
         >>> from robustnn import ren
@@ -35,7 +35,9 @@ class ContractingREN(ren.RENBase):
         
         >>> params = model.init(key2, states, inputs)
         >>> jax.tree_util.tree_map(jnp.shape, params)
-        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (4,), 'bx': (2,), 'by': (1,), 'polar': (1,)}}
+        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 
+        1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': 
+        (4,), 'bx': (2,), 'by': (1,), 'polar': (1,)}}
     
     See docs for `RENBase` for full list of arguments.
     """
@@ -192,10 +194,10 @@ class ContractingREN(ren.RENBase):
 class LipschitzREN(ren.RENBase):
     """Construct a Lipschitz-bounded REN.
     
-    Attributes::
+    Attributes:
         gamma: upper bound on the Lipschitz constant (default 1.0).
     
-    Example usage::
+    Example usage:
 
         >>> import jax, jax.numpy as jnp
         >>> from robustnn import ren
@@ -212,7 +214,9 @@ class LipschitzREN(ren.RENBase):
         
         >>> params = model.init(key2, states, inputs)
         >>> jax.tree_util.tree_map(jnp.shape, params)
-        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
+        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 
+        1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 
+        4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
     
     See docs for `RENBase` for full list of arguments.
     """
@@ -220,7 +224,10 @@ class LipschitzREN(ren.RENBase):
     
     def _error_checking(self):
         if self.identity_output:
-            raise NotImplementedError("Currently no support for identitiy output with Lipschitz-bounded RENs. TODO.")
+            raise NotImplementedError(
+                "Currently no support for identitiy output with " +
+                "Lipschitz-bounded RENs. TODO."
+            )
     
     def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
         nu = self.input_size
@@ -264,7 +271,7 @@ class LipschitzREN(ren.RENBase):
 class GeneralREN(ren.RENBase):
     """Construct a REN satisfying an incremental IQC defined by Q, S, R.
     
-    Example usage::
+    Example usage:
 
         >>> import jax, jax.numpy as jnp
         >>> from robustnn import ren
@@ -290,20 +297,24 @@ class GeneralREN(ren.RENBase):
         
         >>> params = model.init(key2, states, inputs)
         >>> jax.tree_util.tree_map(jnp.shape, params)
-        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
+        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 
+        1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 
+        4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
         
-    Attributes::
+    Attributes:
         Q: IQC output weight.
         S: IQC cross input/output weight.
         R: IQC input weight.
     
     The IQC matrices have the following conditions for a REN with input
     size `nu` and output size `ny`:
-        - `Q.shape` must be `(ny, ny)`.
-        - `S.shape` must be `(nu, ny)`.
-        - `R.shape` must be `(nu, nu)`.
-        - `Q` must be negative definite.
-        - `R - S @ (inv(Q) @ S.T)` must be positive definite.
+    
+    - `Q.shape` must be `(ny, ny)`.
+    - `S.shape` must be `(nu, ny)`.
+    - `R.shape` must be `(nu, nu)`.
+    - `Q` must be negative definite.
+    - `R - S @ (inv(Q) @ S.T)` must be positive definite.
+    
     We expect users to JIT calls to the `.init()` and `.apply()` methods for a
     REN, so we leave error checking as a separate API call. Use 
     `model.check_valid_qsr(*model.qsr)` to check for appropriate (Q, S, R) matrices.
@@ -314,9 +325,13 @@ class GeneralREN(ren.RENBase):
     
     def _error_checking(self):
         if (not self.d22_zero) and self.init_output_zero:
-            raise ValueError("Cannot have zero output on init without setting `d22_zero=True`.")
+            raise ValueError(
+                "Cannot have zero output on init without setting `d22_zero=True`."
+            )
         if self.identity_output:
-            raise NotImplementedError("Currently no support for identitiy output with QSR RENs. TODO.")
+            raise NotImplementedError(
+                "Identity output currently not supported for QSR RENs. TODO."
+            )
         
     def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
         nu = self.input_size
@@ -401,16 +416,17 @@ class GeneralREN(ren.RENBase):
         R = self.R + self.eps * jnp.identity(self.R.shape[0], self.param_dtype)
         return Q, self.S, R
     
+    
     ################ Explicit initialization Functions ################
     
-    # def _generate_explicit_params(self):
-    #     raise NotImplementedError("TODO.")
+    def _generate_explicit_params(self):
+        raise NotImplementedError("TODO.")
     
-    # def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda):
-    #     raise NotImplementedError("TODO.")
+    def _explicit_to_sdp(self, e: ren.ExplicitRENParams, P, Lambda):
+        raise NotImplementedError("TODO.")
     
-    # def _hmatrix_to_direct(self,  H: Array, implicit: ren.ImplicitRENParams):
-    #     raise NotImplementedError("TODO.")
+    def _hmatrix_to_direct(self,  H: Array, implicit: ren.ImplicitRENParams):
+        raise NotImplementedError("TODO.")
 
 
 def _check_posdef(A: Array, eps=jnp.finfo(jnp.float32).eps):

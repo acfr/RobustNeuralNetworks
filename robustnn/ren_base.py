@@ -111,10 +111,10 @@ class RENBase(nn.Module):
     Explanations below.
         
     Attributes:
-        input_size: the number of input features (nu).
-        state_size: the number of internal states (nx).
-        features: the number of (hidden) neurons (nv).
-        output_size: the number of output features (ny).
+        input_size: number of input features (nu).
+        state_size: number of internal states (nx).
+        features: number of (hidden) neurons (nv).
+        output_size: number of output features (ny).
         activation: Activation function to use (default: relu).
         
         kernel_init: initializer for weights (default: lecun_normal()).
@@ -124,28 +124,24 @@ class RENBase(nn.Module):
         param_dtype: the dtype passed to parameter initializers (default: float32).
         
         init_method: parameter initialisation method to choose from. Options are:
-            - `"random"` (default): Random sampling with `recurrent_kernel_init`.
-            - `"long_memory"`: Initialise such that `A = I` (approx.) in explicit model.
-                Good for long-memory dynamics on initialisation.
-            - `"random_explicit": Randomly sample explicit model, not direct params.
-            - `"long_memory_explicit": Long-term init of explicit model not direct params.
+        
+        - "random" (default): Random sampling with `recurrent_kernel_init`.
+        - "long_memory": Initialise such that `A = I` (approx.) in explicit model.
+            Good for long-memory dynamics on initialisation.
+        - "random_explicit": Randomly sample explicit model, not direct params.
+        - "long_memory_explicit": Long-term init of explicit model not direct params.
+        
         init_output_zero: initialize the network so its output is zero (default: False).
-        identity_output: Exclude output layer ``y_t = C_2 x_t + D_{21} w_t + D_{22} u_t + 
-            b_y``. Otherwise, output is just ``y_t = x_t``. (default: False).
-        explicit_init: explicit REN parameters to use for initialization (default: None).
+        identity_output: enforce that output layer is ``y_t = x_t``. (default: False).
+        explicit_init: initialise the REN from some ExplicitRENParams (default: None).
             If this is not `None`, it supercedes all other initialisation options.
             
         do_polar_param: Use the polar parameterization for the H matrix (default: True).
         d22_zero: Fix `D22 = 0` to remove any feedthrough in the REN (default: False).
-        abar: upper bound on the contraction rate. Requires
-            `0 <= abar <= 1` (default: 1).
-        eps: Regularising parameter for positive-definite matrices (default: machine 
+        abar: upper bound on the contraction rate. Requires `0 <= abar <= 1` (default: 1).
+        eps: regularising parameter for positive-definite matrices (default: machine 
             precision for `jnp.float32`).
-        seed: Random seed for initialising explicit model (default: 0). This is not a 
-            nice way to handle explicit init. Make it use the random seed from model.init()
-            instead in the future. (TODO: get rid of this in future)
-            
-            https://flax-linen.readthedocs.io/en/latest/guides/flax_fundamentals/rng_guide.html#using-self-param-and-self-variable
+        seed: random seed for randomly initialising explicit model (default: 0). 
     """
     input_size: int     # nu
     state_size: int     # nx
@@ -172,6 +168,7 @@ class RENBase(nn.Module):
     seed: int = 0
     
     def setup(self):
+        """Initialise the direct REN params."""
 
         # Error checking
         self._error_check_output_layer()
@@ -179,25 +176,30 @@ class RENBase(nn.Module):
         self._init_params()
 
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
+        """Call a REN model
+
+        Args:
+            state (Array): internal model state.
+            inputs (Array): model inputs.
+
+        Returns:
+            Tuple[Array, Array]: (next_states, outputs).
         """
-        Call a REN.
-        
-        This implementation treats the REN as a dynamical system to be evaluated
-        at a single time. The syntax is `state, out = ren(state, in)`.
-        """
-        
-        # Direct parameterisation mapping
         explicit = self._direct_to_explicit(self.direct)
-        
-        # Call the explicit REN form and return
-        state, out = self.explicit_call(state, inputs, explicit)
-        return state, out
+        return self.explicit_call(state, inputs, explicit)
     
     def explicit_call(
         self, x: Array, u: Array, e: ExplicitRENParams
     ) -> Tuple[Array, Array]:
-        """
-        Evaluate a REN given its explicit parameterization.
+        """Evaluate explicit model for a REN.
+
+        Args:
+            x (Array): internal model state.
+            u (Array): model inputs.
+            e (ExplicitSRENParams): explicit params.
+
+        Returns:
+            Tuple[Array, Array]: (next_states, outputs).
         """
         b = x @ e.C1.T + u @ e.D12.T + e.bv
         w = tril_equlibrium_layer(self.activation, e.D11, b)
@@ -205,7 +207,7 @@ class RENBase(nn.Module):
         y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
         return x1, y
     
-    def simulate_sequence(self, params, x0, u):
+    def simulate_sequence(self, params, x0, u) -> Tuple[Array, Array]:
         """Simulate a REN over a sequence of inputs.
 
         Args:
@@ -214,8 +216,7 @@ class RENBase(nn.Module):
             u: array of inputs as a sequence, shape is (time, batches, ...).
             
         Returns:
-            x1: internal state at the end of the sequence.
-            y: array of outputs as a sequence, shape is (time, batches, ...).
+            Tuple[Array, Array]: (final_state, outputs in (time, batches, ...)).
             
         Note:
             - Use this if you would otherwise do `model.apply()` in a loop.
@@ -235,40 +236,37 @@ class RENBase(nn.Module):
     def initialize_carry(
         self, rng: jax.Array, input_shape: Tuple[int, ...]
     ) -> Array:
-        """Initialize the REN state (carry).
-        
+        """Initialise the REN state (carry).
+
         Args:
-        rng: random number generator passed to the init_fn.
-        input_shape: a tuple providing the shape of the input to the network.
-        
+            rng (jax.Array): random seed for carry initialisation.
+            input_shape (Tuple[int, ...]): Shape of model input array.
+
         Returns:
-        An initialized state (carry) vector for the REN network.
+            Array: initial model state.
         """
         batch_dims = input_shape[:-1]
         rng, _ = jax.random.split(rng)
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
     
-    def params_to_explicit(self, ps: dict):
+    def params_to_explicit(self, ps: dict) -> ExplicitRENParams:
+        """Convert from Flax params dict to explicit REN params.
+
+        Args:
+            ps (dict): Flax params dict `{"params": {<model_params>}}`.
+
+        Returns:
+            ExplicitRENParams: explicit params for REN.
         """
-        Convert a parameter dictionary returned by the `.init()` method
-        in Flax into an `ExplicitRENParams` instance.
         
-        The `ps` dictionary must be of the form (with possibly different sizes):
-        {'params': {'B2': (2, 1), 'C2': (1, 2), 'D12': (4, 1), 'D21': (1, 4), 'D22': (1, 1), 'X': (8, 8), 'X3': (1, 1), 'Y1': (2, 2), 'Y3': (1, 1), 'Z3': (0, 1), 'bv': (1, 4), 'bx': (1, 2), 'by': (1, 1), 'polar': (1,)}}
-        """
-        
-        # Special handling for identity output layer for now.
-        # Should make this more streamlined (TODO)
+        # Special handling for identity output layer
         if self.identity_output:
-            nu = self.input_size
-            nx = self.state_size
-            nv = self.features
-            ny = self.output_size
-            C2 = jnp.identity(nx)
-            D21 = jnp.zeros((ny, nv), self.param_dtype)
-            D22 = jnp.zeros((ny, nu), self.param_dtype)
-            by = jnp.zeros((ny,), self.param_dtype)
+            dtype = self.param_dtype
+            C2 = jnp.identity(self.state_size, dtype)
+            D21 = jnp.zeros((self.output_size, self.features), dtype)
+            D22 = jnp.zeros((self.output_size, self.input_size), dtype)
+            by = jnp.zeros((self.output_size,), dtype)
         else:
             C2 = ps["params"]["C2"]
             D21 = ps["params"]["D21"]
@@ -296,7 +294,16 @@ class RENBase(nn.Module):
     def _hmatrix_to_explicit(
         self, ps: DirectRENParams, H: Array, D22: Array
     ) -> ExplicitRENParams:
-        """Convert REN H matrix to explict form given direct params."""
+        """Convert REN H matrix to explict model given direct params.
+
+        Args:
+            ps (DirectRENParams): direct REN params.
+            H (Array): REN H matrix used in parameterisation (see Eqns. 19, 29).
+            D22 (Array): The D22 matrix to be used. Allows for special construction.
+
+        Returns:
+            ExplicitRENParams: explicit REN model.
+        """
         
         nx = self.state_size
         nv = self.features
@@ -341,9 +348,15 @@ class RENBase(nn.Module):
         return explicit
     
     def _x_to_h_contracting(self, X: Array, p: Array) -> Array:
-        """
-        Convert REN X matrix to part of H matrix used in the contraction
+        """Convert REN X matrix to part of H matrix used in the contraction
         setup (using polar parameterization if required).
+
+        Args:
+            X (Array): REN X matrix.
+            p (Array): polar parameter.
+
+        Returns:
+            Array: REN H matrix.
         """
         H = X.T @ X
         if self.do_polar_param:
@@ -354,13 +367,17 @@ class RENBase(nn.Module):
     #################### Initialization Functions ####################
     
     def _init_params(self):
+        """High-level init wrapper to initialise direct params either randomly
+        or from an explicit model.
+        """
         
         # Check if the user has followed instructions
         if self._check_do_explicit_init():
             if self._direct_explicit_init is None:
                 raise ValueError(
                     "You have chosen to init a REN from an explicit model but have " +
-                    "not called the `explicit_pre_init` method yet. Call this before " + "calling the typical `model.init()` and/or `model.apply()` " +
+                    "not called the `explicit_pre_init` method yet. Call this before " + 
+                    "calling the typical `model.init()` and/or `model.apply()` " +
                     "methods in Flax."
                 )
         
@@ -431,8 +448,16 @@ class RENBase(nn.Module):
                                       D22, X3, Y3, Z3, bx, bv, by)
         
     def _x_long_memory_init(self, B2, D12):
-        """Initialise the X matrix so E, F, P (and therefore A) are I."""
-        
+        """Initialise the X matrix so E, F, P (and therefore A) are I.
+
+        Args:
+            B2 (_type_): B2 matrix (used in init).
+            D12 (_type_): D12 matrix (used in init).
+            
+        Returns:
+            function: initialiser function with signature 
+                `init_func(key, shape, dtype) -> Array`
+        """
         def init_func(key, shape, dtype) -> Array:
             dtype = self.param_dtype
             key, rng = jax.random.split(key, 2)
@@ -472,12 +497,12 @@ class RENBase(nn.Module):
         having non-jittable code in the `setup()` or `__call__()` methods.
         """
         
+        # Run any parameterisation-specific customisation
+        self._custom_pre_init()
+        
         # Skip if not required
         if not self._check_do_explicit_init():
             return None
-        
-        # Run any parameterisation-specific customisation
-        self._custom_pre_init()
         
         # Get and check an explicit model
         explicit = self.explicit_init
@@ -658,7 +683,7 @@ class RENBase(nn.Module):
             
         Note:
             If any of the fields in `DirectRENParams` are not used by a specific
-            parameterisation, just leave them as `None`. Y1 handled separately.
+            parameterisation, just leave them as `None`.
         """
         raise NotImplementedError(
             "This function is called within the `_explicit_to_direct` method. " +
