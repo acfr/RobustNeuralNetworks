@@ -170,5 +170,5 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
-train_and_test(sren_config)
 train_and_test(ren_config)
+train_and_test(sren_config)
