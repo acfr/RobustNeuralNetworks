@@ -5,8 +5,9 @@ from datetime import datetime
 
 from robustnn import ren
 from robustnn import scalable_ren as sren
+from robustnn.utils import count_num_params
 
-import utils
+from utils import compute_p_contractingren, compute_p_sren
 
 
 # Problem size
@@ -40,7 +41,7 @@ def test_ren(model, seed=0):
     
     # Initialise the model and check how many params
     params = model.init(key4, states, inputs[0])
-    print("Number of params: ", utils.count_num_params(params))
+    print("Number of params: ", count_num_params(params))
     
     # Dummy loss function that calls the REN on a sequence of data
     @jax.jit
@@ -105,5 +106,5 @@ def test_contraction(model, p_func, seed=0):
     return jnp.all(lhs <= rhs)
 
 print("Quick contraction check: ")
-print("REN:  ", test_contraction(model_ren, utils.compute_p_contractingren))
-print("SREN: ", test_contraction(model_sren, utils.compute_p_sren))
+print("REN:  ", test_contraction(model_ren, compute_p_contractingren))
+print("SREN: ", test_contraction(model_sren, compute_p_sren))

@@ -80,3 +80,24 @@ def solve_discrete_lyapunov_direct(a, q):
     x = jnp.linalg.solve(lhs, q.flatten())
 
     return jnp.reshape(x, q.shape)
+
+
+def count_num_params(d):
+    """
+    Recursively counts the total number of elements in all jax.numpy arrays
+    contained in a dictionary (which may contain nested dictionaries).
+    
+    Parameters:
+    d (dict): Dictionary containing jax.numpy arrays and possibly nested dictionaries.
+    
+    Returns:
+    int: Total number of elements in all jax.numpy arrays.
+    """
+    total_elements = 0
+    for value in d.values():
+        if isinstance(value, jnp.ndarray):
+            total_elements += value.size
+        elif isinstance(value, dict):
+            total_elements += count_num_params(value)
+    
+    return total_elements

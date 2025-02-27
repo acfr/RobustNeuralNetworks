@@ -86,6 +86,7 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
     
     # Loop through for training
     train_loss_log = []
+    timelog = []
     for epoch in range(epochs):
         
         # Reset the recurrent state
@@ -103,15 +104,19 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
         # Store losses and print training info
         epoch_loss = jnp.mean(jnp.array(batch_loss))
         train_loss_log.append(epoch_loss)
+        timelog.append(datetime.now())
         lr = opt_state[1].hyperparams['learning_rate']
         
         if verbose:
             print(f"Epoch: {epoch+1}/{epochs}, " +
                   f"Loss: {epoch_loss:.4f}, " +
                   f"lr: {lr:.3g}, " +
-                  f"Time: {datetime.now()}")
-    
-    return params, jnp.array(train_loss_log)
+                  f"Time: {timelog[-1]}")
+    results = {
+        "train_loss": jnp.array(train_loss_log),
+        "times": timelog,
+    }
+    return params, results
 
 
 def validate(model: ren.RENBase, params, val_data, washout=100, seed=123):

@@ -15,6 +15,11 @@ from robustnn.utils import l2_norm, identity_init
 from robustnn.utils import ActivationFn, Initializer
 
 
+def get_valid_init():
+    return ["random", "long_memory", "random_explicit", "long_memory_explicit",
+            "external_explicit"]
+    
+
 @partial(jax.jit, static_argnums=(0,))
 def tril_equlibrium_layer(activation, D11, b):
     """
@@ -95,11 +100,6 @@ class ImplicitRENParams:
     bx: Array
     bv: Array
     by: Array
-
-
-def get_valid_init():
-    return ["random", "long_memory", "random_explicit", "long_memory_explicit",
-            "external_explicit"]
 
 
 class RENBase(nn.Module):

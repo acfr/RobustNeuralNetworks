@@ -13,6 +13,10 @@ from robustnn.utils import l2_norm, cayley
 from robustnn.utils import ActivationFn, Initializer
 
 
+def get_valid_init():
+    return ["random"]
+
+
 @dataclass
 class DirectSRENParams:
     """Data class to keep track of direct params for Scalable REN.
@@ -135,6 +139,9 @@ class ScalableREN(nn.Module):
     
     def setup(self):
         """Initialise the scalable REN direct params."""
+        
+        if self.init_method not in get_valid_init():
+            raise ValueError("Undefined init method '{}'".format(self.init_method))
         
         nu = self.input_size
         nx = self.state_size

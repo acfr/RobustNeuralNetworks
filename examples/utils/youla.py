@@ -245,9 +245,11 @@ def train_yoularen(
     # Loop through for training
     test_loss = []
     train_loss = []
+    timelog = []
     for epoch in range(epochs):
         
         # Evaluate test loss for logging
+        timelog.append(datetime.now())
         test_loss.append(
             loss_fn(params, test_x0, test_q0, test_disturbances)[0]
         )
@@ -284,7 +286,7 @@ def train_yoularen(
                   f"train_cost: {train_loss[-1]:.4f}, " +
                   f"test_cost: {test_loss[-1]:.4f}, " +
                   f"lr: {current_lr:.3g}, " +
-                  f"Time: {datetime.now()}")
+                  f"Time: {timelog[-1]}")
             
         # Update the learning rate scaling factor
         _, scheduler_state = scheduler.update(
@@ -292,6 +294,11 @@ def train_yoularen(
         )
     
     # Final test cost, store results, return
+    timelog.append(datetime.now())
     test_loss.append(loss_fn(params, test_x0, test_q0, test_disturbances)[0])
-    results = {"train_loss": jnp.array(train_loss), "test_loss": jnp.array(test_loss)}
+    results = {
+        "train_loss": jnp.array(train_loss), 
+        "test_loss": jnp.array(test_loss),
+        "times": timelog,
+    }
     return params, results

@@ -150,6 +150,7 @@ def train_observer(
     
     # Loop through for training
     mean_loss, loss_std = [1e5], []
+    timelog = []
     for epoch in range(epochs):
         
         # Compute batch losses
@@ -164,6 +165,7 @@ def train_observer(
         losses = jnp.array(batch_loss)
         mean_loss.append(jnp.mean(losses))
         loss_std.append(jnp.std(losses))
+        timelog.append(datetime.now())
         
         # Print results for the user
         if verbose:
@@ -172,12 +174,16 @@ def train_observer(
                   f"mean loss: {mean_loss[-1]:.4E}, " +
                   f"std: {jnp.std(jnp.array(batch_loss)):.4E}, " +
                   f"lr: {current_lr:.2g}, " +
-                  f"Time: {datetime.now()}")
+                  f"Time: {timelog[-1]}")
         
         # Update the learning rate scaling factor
         _, scheduler_state = scheduler.update(
             updates=params, state=scheduler_state, value=mean_loss[-1]
         )
     
-    results = {"mean_loss": jnp.array(mean_loss[1:]), "std_loss": jnp.array(loss_std)}
+    results = {
+        "mean_loss": jnp.array(mean_loss[1:]), 
+        "std_loss": jnp.array(loss_std),
+        "times": timelog,
+    }
     return params, results

@@ -5,26 +5,6 @@ from robustnn.utils import l2_norm
 from robustnn import ren_base as ren
 from robustnn import scalable_ren as sren
 
-def count_num_params(d):
-    """
-    Recursively counts the total number of elements in all jax.numpy arrays
-    contained in a dictionary (which may contain nested dictionaries).
-    
-    Parameters:
-    d (dict): Dictionary containing jax.numpy arrays and possibly nested dictionaries.
-    
-    Returns:
-    int: Total number of elements in all jax.numpy arrays.
-    """
-    total_elements = 0
-    for value in d.values():
-        if isinstance(value, jnp.ndarray):
-            total_elements += value.size
-        elif isinstance(value, dict):
-            total_elements += count_num_params(value)
-    
-    return total_elements
-
 
 def estimate_lipschitz_lower(    
     policy,
