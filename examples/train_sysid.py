@@ -1,11 +1,9 @@
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-from copy import deepcopy
 from pathlib import Path
 
 from robustnn import ren
-from robustnn import scalable_ren as sren
 from robustnn.utils import count_num_params
 
 from utils.plot_utils import startup_plotting
@@ -41,39 +39,18 @@ ren_config = {
     "polar": False,
 } 
 
-# Should have size: 96995 params (ish)
-# TODO: Tune this. Haven't checked performance yet
-sren_config = deepcopy(ren_config)
-sren_config["network"] = "scalable_ren"
-sren_config["nx"] = 75
-sren_config["nv"] = 64
-sren_config["nh"] = (64,) * 6
-sren_config["init_method"] = "random"
-
 
 def build_ren(config):
     """Build a REN for the PDE observer."""
-    if config["network"] == "contracting_ren":
-        model = ren.ContractingREN(
-            2, 
-            config["nx"],
-            config["nv"],
-            3,
-            activation=utils.get_activation(config["activation"]), 
-            init_method=config["init_method"],
-            do_polar_param=config["polar"]
-        )
-    elif config["network"] == "scalable_ren":
-        model = sren.ScalableREN(
-            2,
-            config["nx"],
-            config["nv"],
-            3,
-            config["nh"],
-            activation=utils.get_activation(config["activation"]),
-            init_method=config["init_method"],
-        )
-    return model
+    return ren.ContractingREN(
+        2, 
+        config["nx"],
+        config["nv"],
+        3,
+        activation=utils.get_activation(config["activation"]), 
+        init_method=config["init_method"],
+        do_polar_param=config["polar"]
+    )
     
 
 def run_sys_id_test(config):
@@ -171,4 +148,3 @@ def train_and_test(config):
 
 # Test it out on nominal config
 train_and_test(ren_config)
-train_and_test(sren_config)

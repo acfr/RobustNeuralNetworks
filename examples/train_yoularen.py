@@ -1,11 +1,9 @@
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-from copy import deepcopy
 from pathlib import Path
 
 from robustnn import ren
-from robustnn import scalable_ren as sren
 from robustnn.utils import count_num_params
 
 from utils.plot_utils import startup_plotting
@@ -42,37 +40,18 @@ ren_config = {
     "seed": 0,
 }
 
-sren_config = deepcopy(ren_config)
-sren_config["network"] = "scalable_ren"
-sren_config["nx"] = 10
-sren_config["nv"] = 28
-sren_config["nh"] = (32,) * 5
-sren_config["init_method"] = "random"
-
 
 def build_ren(config):
     """Build a REN for the Youla-REN policy."""
-    if config["network"] == "contracting_ren":
-        model = ren.ContractingREN(
-            1, 
-            config["nx"],
-            config["nv"],
-            1,
-            activation=utils.get_activation(config["activation"]),
-            init_method=config["init_method"],
-            do_polar_param=config["polar"],
-        )
-    elif config["network"] == "scalable_ren":
-        model = sren.ScalableREN(
-            1,
-            config["nx"],
-            config["nv"],
-            1,
-            config["nh"],
-            activation=utils.get_activation(config["activation"]),
-            init_method=config["init_method"],
-        )
-    return model
+    return ren.ContractingREN(
+        1, 
+        config["nx"],
+        config["nv"],
+        1,
+        activation=utils.get_activation(config["activation"]),
+        init_method=config["init_method"],
+        do_polar_param=config["polar"],
+    )
 
 
 def run_youla_ren_training(config):
@@ -195,4 +174,3 @@ def train_and_test(config):
 
 # Test it out
 train_and_test(ren_config)
-train_and_test(sren_config)
