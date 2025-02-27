@@ -2,6 +2,8 @@ import jax, jax.numpy as jnp
 import optax
 
 from robustnn.utils import l2_norm
+from robustnn import ren_base as ren
+from robustnn import scalable_ren as sren
 
 def count_num_params(d):
     """
@@ -94,3 +96,45 @@ def estimate_lipschitz_lower(
                   optimizer_state[1].hyperparams['learning_rate'])
     
     return max(lips)
+
+
+def compute_p_contractingren(model: ren.RENBase, ps: dict):
+    
+    p = ps["params"]["p"]
+    X = ps["params"]["X"]
+    Y1 = ps["params"]["Y1"]
+    
+    nx = model.state_size
+    nv = model.features
+    abar = model.abar
+    
+    H = model._x_to_h_contracting(X, p)
+    H11 = H[:nx, :nx]
+    H33 = H[(nv+nx):(2*nx+nv), (nv+nx):(2*nx+nv)]
+    
+    P_imp = H33
+    E = (H11 + P_imp / abar**2 + Y1 - Y1.T)/2
+    
+    return E.T @ jnp.linalg.solve(P_imp, E)
+
+
+def compute_p_sren(model: sren.ScalableREN, ps: dict):
+    
+    p1 = ps["params"]["p1"]
+    Xbar = ps["params"]["Xbar"]
+    
+    Y1 = ps["params"]["Y1"]
+    Y2 = ps["params"]["Y2"]
+    
+    nv = Y2.shape[1]
+    n1, n3 = nv, nv
+    n2 = int(0.5 * Xbar.shape[1] - n1 - n3)
+    
+    X_e = p1 * Xbar / l2_norm(Xbar)
+    X32 = X_e[:, (n1+n2):(n1+2*n2)]
+    X33 = X_e[:, (n1+2*n2):]
+    
+    P_imp = X32 @ X32.T + X33 @ X33.T
+    E = (X_e @ X_e.T + Y1 - Y1.T) / 2
+    
+    return E.T @ jnp.linalg.solve(P_imp, E)

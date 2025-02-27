@@ -6,7 +6,7 @@ from datetime import datetime
 from robustnn import ren
 from robustnn import scalable_ren as sren
 
-from utils import count_num_params
+import utils
 
 
 # Problem size
@@ -40,7 +40,7 @@ def test_ren(model, seed=0):
     
     # Initialise the model and check how many params
     params = model.init(key4, states, inputs[0])
-    print("Number of params: ", count_num_params(params))
+    print("Number of params: ", utils.count_num_params(params))
     
     # Dummy loss function that calls the REN on a sequence of data
     @jax.jit
@@ -70,3 +70,40 @@ test_ren(model_ren)
 
 print("Testing Scalable REN:")
 test_ren(model_sren)
+
+
+############################################################
+
+
+# Test contraction
+def mat_norm2(x, A):
+    return jnp.sum((x @ A.T) * x, axis=-1)
+
+def test_contraction(model, p_func, seed=0):
+    
+    # Random seeds
+    rng = jax.random.key(seed)
+    rng, key1, key2, key3, key4, key5 = jax.random.split(rng, 6)
+    
+    # Dummy inputs and states
+    states = model.initialize_carry(key1, (batches, nu))
+    x0 = 10*jax.random.normal(key2, states.shape)
+    x1 = jax.random.normal(key3, states.shape)
+    inputs = jax.random.normal(key4, (batches, nu))
+    
+    params = model.init(key5, states, inputs)
+    
+    # Simulate one step
+    x0n, _ = model.apply(params, x0, inputs)
+    x1n, _ = model.apply(params, x1, inputs)
+    
+    # Test for contraction
+    P = p_func(model, params)
+    lhs = mat_norm2(x0n - x1n, P) - mat_norm2(x0 - x1, P)
+    rhs = 0
+    
+    return jnp.all(lhs <= rhs)
+
+print("Quick contraction check: ")
+print("REN:  ", test_contraction(model_ren, utils.compute_p_contractingren))
+print("SREN: ", test_contraction(model_sren, utils.compute_p_sren))
