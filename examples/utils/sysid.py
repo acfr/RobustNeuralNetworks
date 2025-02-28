@@ -75,7 +75,7 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
         return params, opt_state, new_x, loss_value
     
     # Random seeds
-    rng = jax.random.PRNGKey(seed)
+    rng = jax.random.key(seed)
     key1, key2, rng = jax.random.split(rng, 3)
 
     # Initialize model parameters and optimizer state
@@ -133,7 +133,7 @@ def validate(model: ren.RENBase, params, val_data, washout=100, seed=123):
         dict: Dictionary of results.
     """
 
-    rng = jax.random.PRNGKey(seed)
+    rng = jax.random.key(seed)
     key, rng = jax.random.split(rng)
     u_val, y_val = val_data
         

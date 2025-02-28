@@ -84,7 +84,7 @@ def generate_disturbance(
     multiple segments if needed.
     
     Args:
-        key (jax.random.PRNGKey): Random key for JAX's random number generator.
+        key (jax.random.key): Random key for JAX's random number generator.
         timesteps (int): Total number of timesteps in the sequence.
         batches (int): Number of batch samples to generate.
         nw (int, optional): Number of disturbance channels (default: 1).
@@ -216,7 +216,7 @@ def train_yoularen(
     num_epochs_per_reset = max_steps // rollout_length
     
     # Random seeds
-    rng = jax.random.PRNGKey(seed)
+    rng = jax.random.key(seed)
     key1, key2, key3, key4, rng = jax.random.split(rng, 5)
     
     # Set up optimizer and learning rate scheduler

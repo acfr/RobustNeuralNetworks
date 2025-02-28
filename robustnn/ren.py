@@ -144,7 +144,7 @@ class ContractingREN(ren.RENBase):
         dtype = self.param_dtype
         
         # Random seed
-        rng = jax.random.PRNGKey(self.seed)
+        rng = jax.random.key(self.seed)
         keys = jax.random.split(rng, 12)
         
         # Get orthogonal/diagonal matrices for a stable A-matrix

@@ -102,7 +102,7 @@ def train_and_test(config):
     
     # Generate test data
     batches = 1
-    rng = jax.random.PRNGKey(config["seed"])
+    rng = jax.random.key(config["seed"])
     test_x0 = env.init_state(batches)
     test_q0 = model.initialize_carry(rng, (batches, 1))
     
