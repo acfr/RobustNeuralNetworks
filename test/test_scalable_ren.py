@@ -14,7 +14,7 @@ from utils import compute_p_contractingren, compute_p_sren
 nu = 10
 ny = 20
 batches = 50
-horizon = 1024
+horizon = 512
 
 # Initialise a standard contracting REN
 nx_ren = 50         # Number of states

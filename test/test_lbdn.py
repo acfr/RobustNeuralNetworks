@@ -27,15 +27,15 @@ params = model.init(key, inputs)
 # jit_call = jax.jit(model.apply)
 @jax.jit
 def jit_call(params, inputs):
-    explicit = model.params_to_explicit(params)
-    return model.explicit_call(inputs, explicit)
+    explicit = model.direct_to_explicit(params)
+    return model.explicit_call(params, inputs, explicit)
 
 out = jit_call(params, inputs)
 print(out)
 
 # Test taking a gradient
 def loss(inputs):
-    out = model.apply(params, inputs)
+    out = jit_call(params, inputs)
     return jnp.sum(out**2)
 
 grad_func = jax.jit(jax.grad(loss))

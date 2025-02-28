@@ -46,7 +46,8 @@ class ContractingREN(ren.RENBase):
     def _error_checking(self):
         pass
     
-    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
+    def _direct_to_explicit(self) -> ren.ExplicitRENParams:
+        ps = self.direct
         H = self._x_to_h_contracting(ps.X, ps.p)
         explicit = self._hmatrix_to_explicit(ps, H, ps.D22)
         return explicit
@@ -143,7 +144,7 @@ class ContractingREN(ren.RENBase):
         dtype = self.param_dtype
         
         # Random seed
-        rng = jax.random.PRNGKey(self.seed)
+        rng = jax.random.key(self.seed)
         keys = jax.random.split(rng, 12)
         
         # Get orthogonal/diagonal matrices for a stable A-matrix
@@ -229,7 +230,8 @@ class LipschitzREN(ren.RENBase):
                 "Lipschitz-bounded RENs. TODO."
             )
     
-    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
+    def _direct_to_explicit(self) -> ren.ExplicitRENParams:
+        ps = self.direct
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
@@ -333,7 +335,8 @@ class GeneralREN(ren.RENBase):
                 "Identity output currently not supported for QSR RENs. TODO."
             )
         
-    def _direct_to_explicit(self, ps: ren.DirectRENParams) -> ren.ExplicitRENParams:
+    def _direct_to_explicit(self) -> ren.ExplicitRENParams:
+        ps = self.direct
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size

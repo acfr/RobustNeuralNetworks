@@ -39,6 +39,7 @@ class DirectSRENParams:
     bx: Array
     bv: Array
     by: Array
+    network_params: lbdn.DirectLBDNParams
 
 
 @dataclass
@@ -203,8 +204,11 @@ class ScalableREN(nn.Module):
             D21 = self.param("D21", out_kernel_init, (ny, nv), dtype)
             D22 = self.param("D22", init.zeros_init(), (ny, nu), dtype)
             
-        self.direct = DirectSRENParams(p1, p2, p3, Xbar, Y1, Y2, Y3, B2, 
-                                       D12, C2, D21, D22, bx, bv, by)
+        self.direct = DirectSRENParams(
+            p1, p2, p3, Xbar, Y1, Y2, Y3, B2, 
+            D12, C2, D21, D22, bx, bv, by,
+            self.network.direct
+        )
         
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
         """Call a scalable REN model
@@ -217,11 +221,10 @@ class ScalableREN(nn.Module):
             Tuple[Array, Array]: (next_states, outputs).
         """
         
-        direct = (self.direct, self.network._get_direct_params())
-        explicit = self._direct_to_explicit(direct)
-        return self.explicit_call(state, inputs, explicit)
-    
-    def explicit_call(
+        explicit = self._direct_to_explicit()
+        return self._explicit_call(state, inputs, explicit)
+        
+    def _explicit_call(
         self, x: Array, u: Array, e: ExplicitSRENParams
     ) -> Tuple[Array, Array]:
         """Evaluate explicit model for a scalable REN.
@@ -237,30 +240,27 @@ class ScalableREN(nn.Module):
 
         # Equilibirum layer
         v = x @ e.C1.T + u @ e.D12.T + e.bv
-        w = lbdn.LBDN._explicit_call(
-            v, e.network_params, self._gamma, self.activation
-        )
+        w = self.network._explicit_call(v, e.network_params)
         
         # State-space model
         x1 = x @ e.A.T + w @ e.B1.T + u @ e.B2.T + e.bx
         y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
         return x1, y
     
-    def simulate_sequence(self, params, x0, u) -> Tuple[Array, Array]:
+    def _simulate_sequence(self, x0, u) -> Tuple[Array, Array]:
         """Simulate a scalable REN over a sequence of inputs.
 
         Args:
-            params: the usual model parameters dict.
             x0: array of initial states, shape is (batches, ...).
             u: array of inputs as a sequence, shape is (time, batches, ...).
             
         Returns:
             Tuple[Array, Array]: (final_state, outputs in (time, batches, ...)).
         """
-        explicit = self.params_to_explicit(params)
+        explicit = self._direct_to_explicit()
         def rollout(carry, ut):
             xt, = carry
-            xt1, yt = self.explicit_call(xt, ut, explicit)
+            xt1, yt = self._explicit_call(xt, ut, explicit)
             return (xt1,), yt
         (x1, ), y = jax.lax.scan(rollout, (x0,), u)
         return x1, y
@@ -282,75 +282,17 @@ class ScalableREN(nn.Module):
         rng, _ = jax.random.split(rng)
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
-
-    def params_to_explicit(self, ps: dict) -> ExplicitSRENParams:
-        """Convert from Flax params dict to explicit scalable REN params.
+        
+    def _direct_to_explicit(self) -> ExplicitSRENParams:
+        """Convert from direct to explicit scalable REN params.
 
         Args:
-            ps (dict): Flax params dict `{"params": {<model_params>}}`.
+            None
 
         Returns:
             ExplicitSRENParams: explicit params for scalable REN.
         """
-        
-        # Special handling for the output layer
-        if self.identity_output:
-            dtype = self.param_dtype
-            C2 = jnp.identity(self.state_size, dtype)
-            D21 = jnp.zeros((self.output_size, self.features), dtype)
-            D22 = jnp.zeros((self.output_size, self.input_size), dtype)
-            by = jnp.zeros((self.output_size,), dtype)
-        else:
-            C2 = ps["params"]["C2"]
-            D21 = ps["params"]["D21"]
-            D22 = ps["params"]["D22"]
-            by = ps["params"]["by"]
-        
-        # Direct params for linear part of SREN model
-        direct = DirectSRENParams(
-            p1 = ps["params"]["p1"],
-            p2 = ps["params"]["p2"],
-            p3 = ps["params"]["p3"],
-            Xbar = ps["params"]["Xbar"],
-            Y1 = ps["params"]["Y1"],
-            Y2 = ps["params"]["Y2"],
-            Y3 = ps["params"]["Y3"],
-            B2 = ps["params"]["B2"],
-            D12 = ps["params"]["D12"],
-            bx = ps["params"]["bx"],
-            bv = ps["params"]["bv"],
-            C2 = C2,
-            D21 = D21,
-            D22 = D22,
-            by = by,
-        )
-        explicit = self._direct_to_explicit((direct, None))
-        
-        # Handle direct-to-explicit conversion for LBDN layer separately
-        # Note that we cannot access self.network (or self.direct) outside
-        # of the `setup()` and `__call__()` functions because Flax is a pain :(
-        return explicit.replace(network_params = lbdn.LBDN.params_to_explicit(
-            {"params": ps["params"]["network"]}
-        ))
-    
-    def _direct_to_explicit(
-        self, params: Tuple[DirectSRENParams, lbdn.DirectLBDNParams]
-    ) -> ExplicitSRENParams:
-        """Convert from direct scalable REN params to explicit params.
-
-        Args:
-            params (Tuple[DirectSRENParams, lbdn.DirectLBDNParams]): tuple of 
-                direct params for the linear part of the scalable REN and
-                the 1-Lipschitz network, respectively.
-
-        Returns:
-            ExplicitSRENParams: explicit scalable REN model.
-            
-        Leave the DirectLBDNParams as `None` if they are to be computed
-        externally. This can be useful if converting straight from params dict.
-        """
-        
-        ps, ps_network = params
+        ps = self.direct
         
         # Get all elements of the banded X-matrix first
         X_e = ps.p1 * ps.Xbar / l2_norm(ps.Xbar)
@@ -376,12 +318,6 @@ class ScalableREN(nn.Module):
         B1_imp = X33 @ X43.T
         C1_imp = X11 @ X21.T
         
-        # Explicit params for the network in feedback
-        if ps_network is not None:
-            network_explicit = lbdn.LBDN._direct_to_explicit(ps_network)
-        else:
-            network_explicit = None
-        
         return ExplicitSRENParams(
             A = jnp.linalg.solve(E, A_imp),
             B1 = jnp.linalg.solve(E, B1_imp),
@@ -394,7 +330,7 @@ class ScalableREN(nn.Module):
             bx = ps.bx,
             bv = ps.bv,
             by = ps.by,
-            network_params = network_explicit
+            network_params = self.network._direct_to_explicit()
         )
             
     
@@ -404,3 +340,46 @@ class ScalableREN(nn.Module):
         """The RENs have this method. This way we can use the same
         high-level code."""
         pass
+
+
+    #################### Convenient Wrappers ####################
+
+    def explicit_call(
+        self, params:dict, x: Array, u: Array, e: ExplicitSRENParams
+    ) -> Tuple[Array, Array]:
+        """Evaluate explicit model for a scalable REN.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            x (Array): internal model state.
+            u (Array): model inputs.
+            e (ExplicitSRENParams): explicit params.
+
+        Returns:
+            Tuple[Array, Array]: (next_states, outputs).
+        """
+        return self.apply(params, x, u, e, method="_explicit_call")
+    
+    def simulate_sequence(self, params: dict, x0, u) -> Tuple[Array, Array]:
+        """Simulate a scalable REN over a sequence of inputs.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            x0: array of initial states, shape is (batches, ...).
+            u: array of inputs as a sequence, shape is (time, batches, ...).
+            
+        Returns:
+            Tuple[Array, Array]: (final_state, outputs in (time, batches, ...)).
+        """
+        return self.apply(params, x0, u, method="_simulate_sequence")
+    
+    def direct_to_explicit(self, params: dict) -> ExplicitSRENParams:
+        """Convert from direct to explicit scalable REN params.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+
+        Returns:
+            ExplicitSRENParams: explicit params for scalable REN.
+        """
+        return self.apply(params, method="_direct_to_explicit")

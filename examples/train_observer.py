@@ -128,7 +128,7 @@ def train_and_test(config):
     model = build_ren(y, config)
     
     # Simulate the observer through time
-    key = jax.random.PRNGKey(config["seed"])
+    key = jax.random.key(config["seed"])
     x0 = model.initialize_carry(key, y[0].shape)
     _, xhat = model.simulate_sequence(params, x0, y)
     

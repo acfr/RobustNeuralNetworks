@@ -31,14 +31,19 @@ inputs = jnp.ones((batches, nu))
 params = model.init(key2, states, inputs)
 
 # Forward mode
-jit_call = jax.jit(model.apply)
+# jit_call = jax.jit(model.apply)
+@jax.jit
+def jit_call(params, states, inputs):
+    explicit = model.direct_to_explicit(params)
+    return model.explicit_call(params, states, inputs, explicit)
+
 new_state, out = jit_call(params, states, inputs)
 print(new_state)
 print(out)
 
 # Test taking a gradient
 def loss(states, inputs):
-    nstate, out = model.apply(params, states, inputs)
+    nstate, out = jit_call(params, states, inputs)
     return jnp.sum(nstate**2) + jnp.sum(out**2)
 
 grad_func = jax.jit(jax.grad(loss, argnums=(0,1)))
@@ -47,6 +52,3 @@ gs = grad_func(states, inputs)
 print(loss(states, inputs))
 print("States grad: ", gs[0])
 print("Output grad: ", gs[1])
-
-# Check conversion to explicit params
-print(model.params_to_explicit(params))

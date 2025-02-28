@@ -59,7 +59,7 @@ def get_data(
     U0 = init_u_func((n_in,))   # Initial input
     
     # Random perturbations
-    ws = 0.05 * jax.random.normal(jax.random.PRNGKey(seed), (time_steps-1, n_in))
+    ws = 0.05 * jax.random.normal(jax.random.key(seed), (time_steps-1, n_in))
     
     # Simulate discretised PDE through time with Euler integration
     # Input is normally distributed but clamped to [0,1]
@@ -83,7 +83,7 @@ def batch_data(xn, xt, input_data, batches, seed):
     input_data = jnp.array_split(input_data, batches)
 
     # Shuffle batches
-    key = jax.random.PRNGKey(seed)
+    key = jax.random.key(seed)
     shuffle_indices = jax.random.permutation(key, len(xt))
     xt = [xt[i] for i in shuffle_indices]
     xn = [xn[i] for i in shuffle_indices]
@@ -129,7 +129,7 @@ def train_observer(
         return params, opt_state, loss_value
     
     # Random seeds
-    rng = jax.random.PRNGKey(seed)
+    rng = jax.random.key(seed)
     key1, rng = jax.random.split(rng)
     
     # Set up the optimizer with a learning rate scheduler that decays by 0.1

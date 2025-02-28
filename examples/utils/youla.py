@@ -84,7 +84,7 @@ def generate_disturbance(
     multiple segments if needed.
     
     Args:
-        key (jax.random.PRNGKey): Random key for JAX's random number generator.
+        key (jax.random.key): Random key for JAX's random number generator.
         timesteps (int): Total number of timesteps in the sequence.
         batches (int): Number of batch samples to generate.
         nw (int, optional): Number of disturbance channels (default: 1).
@@ -128,7 +128,7 @@ def rollout(
     
     # Construct the explicit params from the current REN params
     # Don't need to do this every step during the rollout!
-    explicit = model.params_to_explicit(params)
+    explicit = model.direct_to_explicit(params)
     
     def youla_step(carry, wt):
         """Single timestep of closed-loop system."""
@@ -142,7 +142,7 @@ def rollout(
         # Compute controls with Youl param
         # We clip states here just for convenience in plotting/costs, 
         # they're already clipped in the dynamics() function
-        q_next, u_tilde = model.explicit_call(qt, y_tilde, explicit)
+        q_next, u_tilde = model.explicit_call(params, qt, y_tilde, explicit)
         u_tilde = jnp.clip(u_tilde, min=-env.max_u, max=env.max_u)
         
         # Update environment state and return
@@ -216,7 +216,7 @@ def train_yoularen(
     num_epochs_per_reset = max_steps // rollout_length
     
     # Random seeds
-    rng = jax.random.PRNGKey(seed)
+    rng = jax.random.key(seed)
     key1, key2, key3, key4, rng = jax.random.split(rng, 5)
     
     # Set up optimizer and learning rate scheduler

@@ -24,7 +24,7 @@ def estimate_lipschitz_lower(
     """
     
     # Initialise model inputs
-    key = jax.random.PRNGKey(seed)
+    key = jax.random.key(seed)
     key, rng1, rng2 = jax.random.split(key, 3)
     u1 = init_var * jax.random.normal(rng1, (batches, n_inputs))
     u2 = u1 + 1e-4 * jax.random.normal(rng2, (batches, n_inputs))
