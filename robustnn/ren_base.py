@@ -185,15 +185,16 @@ class RENBase(nn.Module):
         Returns:
             Tuple[Array, Array]: (next_states, outputs).
         """
-        explicit = self._direct_to_explicit(self.direct)
-        return self.explicit_call(state, inputs, explicit)
+        explicit = self._direct_to_explicit()
+        return self._explicit_call(state, inputs, explicit)
     
     def explicit_call(
-        self, x: Array, u: Array, e: ExplicitRENParams
+        self, params:dict, x: Array, u: Array, e: ExplicitRENParams
     ) -> Tuple[Array, Array]:
         """Evaluate explicit model for a REN.
 
         Args:
+            params (dict): Flax model parameters dictionary.
             x (Array): internal model state.
             u (Array): model inputs.
             e (ExplicitSRENParams): explicit params.
@@ -201,17 +202,37 @@ class RENBase(nn.Module):
         Returns:
             Tuple[Array, Array]: (next_states, outputs).
         """
+        # Don't need to use .apply() for REN, it doesn't need to access
+        # anything that's defined in the setup() method.
+        # return self.apply(params, x, u, e, method="_explicit_call")
+        return self._explicit_call(x, u, e)
+    
+    def _explicit_call(
+        self, x: Array, u: Array, e: ExplicitRENParams
+    ) -> Tuple[Array, Array]:
         b = x @ e.C1.T + u @ e.D12.T + e.bv
         w = tril_equlibrium_layer(self.activation, e.D11, b)
         x1 = x @ e.A.T + w @ e.B1.T + u @ e.B2.T + e.bx
         y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
         return x1, y
     
-    def simulate_sequence(self, params, x0, u) -> Tuple[Array, Array]:
+    def direct_to_explicit(self, params: dict) -> ExplicitRENParams:
+        """Convert from direct to explicit REN params.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+
+        Returns:
+            ExplicitRENParams: explicit params for REN.
+        """
+        return self.apply(params, method="_direct_to_explicit")
+
+    
+    def simulate_sequence(self, params: dict, x0, u) -> Tuple[Array, Array]:
         """Simulate a REN over a sequence of inputs.
 
         Args:
-            params: the usual model parameters dict.
+            params (dict): Flax model parameters dictionary.
             x0: array of initial states, shape is (batches, ...).
             u: array of inputs as a sequence, shape is (time, batches, ...).
             
@@ -224,10 +245,13 @@ class RENBase(nn.Module):
             of the sequence. This avoids unnecessary calls to the parameter
             mapping and should speed up your code :)
         """
-        explicit = self.params_to_explicit(params)
+        return self.apply(params, x0, u, method="_simulate_sequence")
+    
+    def _simulate_sequence(self, x0, u) -> Tuple[Array, Array]:
+        explicit = self._direct_to_explicit()
         def rollout(carry, ut):
             xt, = carry
-            xt1, yt = self.explicit_call(xt, ut, explicit)
+            xt1, yt = self._explicit_call(xt, ut, explicit)
             return (xt1,), yt
         (x1, ), y = jax.lax.scan(rollout, (x0,), u)
         return x1, y
@@ -250,47 +274,6 @@ class RENBase(nn.Module):
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
     
-    def params_to_explicit(self, ps: dict) -> ExplicitRENParams:
-        """Convert from Flax params dict to explicit REN params.
-
-        Args:
-            ps (dict): Flax params dict `{"params": {<model_params>}}`.
-
-        Returns:
-            ExplicitRENParams: explicit params for REN.
-        """
-        
-        # Special handling for identity output layer
-        if self.identity_output:
-            dtype = self.param_dtype
-            C2 = jnp.identity(self.state_size, dtype)
-            D21 = jnp.zeros((self.output_size, self.features), dtype)
-            D22 = jnp.zeros((self.output_size, self.input_size), dtype)
-            by = jnp.zeros((self.output_size,), dtype)
-        else:
-            C2 = ps["params"]["C2"]
-            D21 = ps["params"]["D21"]
-            D22 = ps["params"]["D22"]
-            by = ps["params"]["by"]
-        
-        direct = DirectRENParams(
-            p = ps["params"]["p"],
-            X = ps["params"]["X"],
-            B2 = ps["params"]["B2"],
-            D12 = ps["params"]["D12"],
-            Y1 = ps["params"]["Y1"],
-            X3 = ps["params"]["X3"],
-            Y3 = ps["params"]["Y3"],
-            Z3 = ps["params"]["Z3"],
-            bx = ps["params"]["bx"],
-            bv = ps["params"]["bv"],
-            C2 = C2,
-            D21 = D21,
-            D22 = D22,
-            by = by,
-        )
-        return self._direct_to_explicit(direct)
-    
     def _hmatrix_to_explicit(
         self, ps: DirectRENParams, H: Array, D22: Array
     ) -> ExplicitRENParams:
@@ -304,7 +287,6 @@ class RENBase(nn.Module):
         Returns:
             ExplicitRENParams: explicit REN model.
         """
-        
         nx = self.state_size
         nv = self.features
         
@@ -634,7 +616,7 @@ class RENBase(nn.Module):
             "Each REN parameterisation should have its own version of this function."
         )
         
-    def _direct_to_explicit(self, direct: DirectRENParams) -> ExplicitRENParams:
+    def _direct_to_explicit(self) -> ExplicitRENParams:
         """
         Convert direct paremeterization of a REN to explicit form
         for evaluation. This depends on the specific REN parameterization.

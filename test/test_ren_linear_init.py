@@ -31,8 +31,8 @@ inputs = jnp.ones((batches, nu))
 params = model.init(key2, states, inputs)
 
 # Check the result via explicit model
-explicit = model.params_to_explicit(params)
-x1, y1 = model.explicit_call(states, inputs, explicit)
+explicit = model.direct_to_explicit(params)
+x1, y1 = model.explicit_call(params, states, inputs, explicit)
 
 # Check the result via forward mode
 jit_call = jax.jit(model.apply)

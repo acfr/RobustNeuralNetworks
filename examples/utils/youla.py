@@ -128,7 +128,7 @@ def rollout(
     
     # Construct the explicit params from the current REN params
     # Don't need to do this every step during the rollout!
-    explicit = model.params_to_explicit(params)
+    explicit = model.direct_to_explicit(params)
     
     def youla_step(carry, wt):
         """Single timestep of closed-loop system."""
@@ -142,7 +142,7 @@ def rollout(
         # Compute controls with Youl param
         # We clip states here just for convenience in plotting/costs, 
         # they're already clipped in the dynamics() function
-        q_next, u_tilde = model.explicit_call(qt, y_tilde, explicit)
+        q_next, u_tilde = model.explicit_call(params, qt, y_tilde, explicit)
         u_tilde = jnp.clip(u_tilde, min=-env.max_u, max=env.max_u)
         
         # Update environment state and return

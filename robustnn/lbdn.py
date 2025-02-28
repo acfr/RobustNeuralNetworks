@@ -121,10 +121,10 @@ class SandwichLayer(nn.Module):
         Returns:
             Array: layer outputs.
         """
-        explicit = self._direct_to_explicit(self.direct)
-        return self.explicit_call(inputs, explicit)
+        explicit = self._direct_to_explicit()
+        return self._explicit_call(inputs, explicit)
         
-    def explicit_call(self, u: Array, e: ExplicitSandwichParams) -> Array:
+    def _explicit_call(self, u: Array, e: ExplicitSandwichParams) -> Array:
         """Evaluate the explicit model for a Sandwich layer.
 
         Args:
@@ -134,49 +134,16 @@ class SandwichLayer(nn.Module):
         Returns:
             Array: layer outputs.
         """
-        return self._explicit_call(
-            u, e, self.activation, self.use_bias, self.is_output
-        )
-    
-    @staticmethod
-    def _explicit_call(
-        u: Array, 
-        e: ExplicitSandwichParams,
-        activation: ActivationFn,
-        use_bias: bool = True,
-        is_output: bool = False,
-    ) -> Array:
-        """Static method for explicit call of the Sandwhich layer.
-
-        Args:
-            u (Array): layer inputs.
-            e (ExplicitSandwichParams): explicit params.
-            activation (ActivationFn): activation function.
-            use_bias (bool, optional): whether to use bias vector. Defaults to True.
-            is_output (bool, optional): is this just an output layer. Defaults to False.
-
-        Returns:
-            Array: layer outputs.
-            
-        The only reason this is separate from `SandwichLayer.explicit_call()` is
-        so that the direct-to-explicit mapping and model call can be split up outside
-        of the SandwichLayer (e.g., in `LBDN`.) If Flax allowed us to access parts of
-        a model created in the `setup()` method this would not be needed...
-        """
-            
-        # If just the output layer, return Bx + b (or just Bx if no bias)
-        if is_output:
+        if self.is_output:
             x = dot_lax(u, e.B)
-            return x + e.b if use_bias else x
+            return x + e.b if self.use_bias else x
                 
-        # Regular sandwich layer
         x = jnp.sqrt(2.0) * dot_lax(u, ((jnp.diag(1 / e.psi_d)) @ e.B))
-        if use_bias: 
+        if self.use_bias: 
             x += e.b
-        return jnp.sqrt(2.0) * dot_lax(activation(x), (e.A_T * e.psi_d.T))
+        return jnp.sqrt(2.0) * dot_lax(self.activation(x), (e.A_T * e.psi_d.T))
     
-    @staticmethod
-    def _direct_to_explicit(ps:DirectSandwichParams) -> ExplicitSandwichParams:
+    def _direct_to_explicit(self) -> ExplicitSandwichParams:
         """Convert from direct Sandwich params to explicit form for eval.
 
         Args:
@@ -186,27 +153,10 @@ class SandwichLayer(nn.Module):
             ExplicitSandwichParams: explicit Sandwich params.
         """
         # Clip d to avoid over/underflow and return
+        ps = self.direct
         A_T, B_T = cayley(ps.a / l2_norm(ps.XY) * ps.XY, return_split=True)
         psi_d = jnp.exp(jnp.clip(ps.d, a_min=-20.0, a_max=20.0))
         return ExplicitSandwichParams(A_T, B_T.T, psi_d, ps.b)
-    
-    @staticmethod
-    def params_to_explicit(ps: dict) -> ExplicitSandwichParams:
-        """Convert from Flax params dict to explicit Sandwich params.
-
-        Args:
-            ps (dict): Flax params dict `{"params": {<model_params>}}`.
-
-        Returns:
-            ExplicitSandwichParams: explicit Sandwich params.
-        """
-        direct = DirectSandwichParams(
-            XY = ps["params"]["XY"],
-            a = ps["params"]["a"],
-            d = ps["params"]["d"],
-            b = ps["params"]["b"]
-        )
-        return SandwichLayer._direct_to_explicit(direct)
 
 
 class LBDN(nn.Module):
@@ -224,7 +174,9 @@ class LBDN(nn.Module):
         >>> model = LBDN(nu, layers, ny, gamma=gamma)
         >>> params = model.init(jax.random.key(0), jnp.ones((6,nu)))
         >>> jax.tree_map(jnp.shape, params)
-        {'params': {'SandwichLayer_0': {'XY': (13, 8), 'a': (1,), 'b': (8,), 'd': (8,)}, 'SandwichLayer_1': {'XY': (24, 16), 'a': (1,), 'b': (16,), 'd': (16,)}, 'SandwichLayer_2': {'XY': (18, 2), 'a': (1,), 'b': (2,)}, 'ln_gamma': (1,)}}
+        {'params': {'SandwichLayer_0': {'XY': (13, 8), 'a': (1,), 'b': (8,), 'd': (8,)}, 
+        'SandwichLayer_1': {'XY': (24, 16), 'a': (1,), 'b': (16,), 'd': (16,)}, 
+        'SandwichLayer_2': {'XY': (18, 2), 'a': (1,), 'b': (2,)}, 'ln_gamma': (1,)}}
     
     Attributes:
         input_size: the number of input features.
@@ -277,31 +229,32 @@ class LBDN(nn.Module):
             log_gamma = self.param("ln_gamma", init.constant(log_gamma),(1,), dtype)
         
         # Build a list of Sandwich layers, but treat the output seperately
-        in_layers = (self.input_size,) + self.hidden_sizes[:-1]
-        layers = [
-            SandwichLayer(
-                input_size=in_layers[k],
-                features=self.hidden_sizes[k], 
-                activation=self.activation,
-                use_bias=self.use_bias,
-                kernel_init=self.kernel_init
-            )
-            for k in range(len(self.hidden_sizes))
-        ]
+        layers = []
+        is_output = False
+        kernel_init = self.kernel_init
+        in_layers = (self.input_size,) + self.hidden_sizes
+        out_layers = self.hidden_sizes + (self.output_size,)
         
-        kinit = init.zeros_init() if self.init_output_zero else self.kernel_init
-        layers.append(
-            SandwichLayer(
-                input_size=self.hidden_sizes[-1],
-                features=self.output_size, 
-                is_output=True, 
-                use_bias=self.use_bias,
-                kernel_init=kinit
+        for k in range(len(in_layers)):
+            
+            if k == len(in_layers): # Output layer
+                is_output = True
+                if self.init_output_zero:
+                    kernel_init = init.zeros_init()
+            
+            layers.append(
+                SandwichLayer(
+                    input_size=in_layers[k],
+                    features=out_layers[k], 
+                    activation=self.activation,
+                    use_bias=self.use_bias,
+                    kernel_init=kernel_init,
+                    is_output=is_output
+                )
             )
-        )
         
-        self.log_gamma = log_gamma
         self.layers = layers
+        self.direct = DirectLBDNParams([s.direct for s in layers], log_gamma)
         
     def __call__(self, inputs: Array) -> Array:
         """Call an LBDN model.
@@ -312,113 +265,46 @@ class LBDN(nn.Module):
         Returns:
             Array: model outputs.
         """
-        direct = self._get_direct_params()
-        explicit = self._direct_to_explicit(direct)
-        return self.explicit_call(inputs, explicit)
-    
-    def _get_direct_params(self) -> DirectLBDNParams:
-        """Get the direct params for an LBDN.
+        explicit = self._direct_to_explicit()
+        return self._explicit_call(inputs, explicit)
 
-        Returns:
-            DirectLBDNParams: direct LBDN params.
-        """
-        return DirectLBDNParams([s.direct for s in self.layers], self.log_gamma)
-
-    def explicit_call(self, u: Array, explicit: ExplicitLBDNParams):
+    def explicit_call(self, params: dict, u: Array, explicit: ExplicitLBDNParams):
         """Evaluate the explicit model for an LBDN model.
 
         Args:
+            params (dict): Flax model parameters dictionary.
             u (Array): model inputs.
             e (ExplicitLBDNParams): explicit params.
 
         Returns:
             Array: model outputs.
         """
-        return self._explicit_call(
-            u, explicit, self.gamma, self.activation, self.use_bias
-        )
-        
-    @staticmethod
-    def _explicit_call(
-        u: Array, 
-        explicit: ExplicitLBDNParams,
-        gamma: jnp.float32, # type: ignore
-        activation: ActivationFn,
-        use_bias: bool = True
-    ) -> Array:
-        """Static method for explicit call of an LBDN model
-
-        Args:
-            u (Array): layer inputs.
-            explicit (ExplicitLBDNParams): explicit params.
-            gamma (jnp.float32): Lipschitz bound to impose.
-            activation (ActivationFn): activation function.
-            use_bias (bool, optional): whether to use bias vector. Defaults to True.
-
-        Returns:
-            Array: model outputs.
-        
-        Like with the `SandwichLayer`, the only reason this is separate from `LBDN.
-        explicit_call()` is so that the direct-to-explicit mapping and model call can be 
-        split up outside of the LBDN model (e.g., in `ScalableREN`).
-        """
-        # log_gamma not stored in the params dict if it's not trainable
-        if explicit.log_gamma is None:
-            sqrt_gamma = jnp.sqrt(gamma)
-        else:
-            sqrt_gamma = jnp.sqrt(jnp.exp(explicit.log_gamma))
+        return self.apply(params, u, explicit, method="_explicit_call")
+    
+    def _explicit_call(self, u: Array, explicit: ExplicitLBDNParams):
+        sqrt_gamma = jnp.sqrt(jnp.exp(explicit.log_gamma))
         x = sqrt_gamma * u
         
-        # Evaluate the Sandwich layers
-        for e in explicit.layers[:-1]:
-            x = SandwichLayer._explicit_call(
-                x, e, activation, use_bias, is_output=False
-            )
-        x = SandwichLayer._explicit_call(
-            x, explicit.layers[-1], activation, use_bias, is_output=True
-        )
+        for k, layer in enumerate(self.layers):
+            x = layer._explicit_call(x, explicit.layers[k])
         
-        # Finish with the second part of the Lipschitz bound
         return sqrt_gamma * x
 
-    @staticmethod
-    def _direct_to_explicit(ps: DirectLBDNParams) -> ExplicitLBDNParams:
+    def direct_to_explicit(self, params: dict):
         """Convert from direct LBDN params to explicit form for eval.
 
         Args:
-            ps (DirectLBDNParams): direct LBDN params.
-
+            params (dict): Flax model parameters dictionary.
+            
         Returns:
             ExplicitLBDNParams: explicit LBDN params.
         """
+        return self.apply(params, method="_direct_to_explicit")
+    
+    def _direct_to_explicit(self) -> ExplicitLBDNParams:
+        ps = self.direct
         layer_explicit_params = [
-            SandwichLayer._direct_to_explicit(ps_k) for ps_k in ps.layers
+            layer._direct_to_explicit() for layer in self.layers
         ]
         return ExplicitLBDNParams(layer_explicit_params, ps.log_gamma)
-    
-    @staticmethod
-    def params_to_explicit(ps: dict) -> ExplicitLBDNParams:
-        """Convert from Flax params dict to explicit LBDN params.
-
-        Args:
-            ps (dict): Flax params dict `{"params": {<model_params>}}`.
-
-        Returns:
-            ExplicitLBDNParams: explicit LBDN params.
-        """
-        
-        # Grab all the layer paramters
-        layer_keys = [k for k in ps["params"].keys() if "layers_" in k]
-        explicit = []
-        for key in layer_keys:
-            layer_ps = {"params": ps["params"][key]}
-            explicit.append(SandwichLayer.params_to_explicit(layer_ps))
-            
-        # Check to see if there's a trainable Lipschitz bound
-        if "log_gamma" in ps["params"].keys():
-            log_gamma = ps["params"]["log_gamma"]
-        else:
-            log_gamma = None
-        
-        return ExplicitLBDNParams(explicit, log_gamma)
     
