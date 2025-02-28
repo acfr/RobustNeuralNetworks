@@ -223,14 +223,13 @@ class ScalableREN(nn.Module):
         
         explicit = self._direct_to_explicit()
         return self._explicit_call(state, inputs, explicit)
-    
-    def explicit_call(
-        self, params:dict, x: Array, u: Array, e: ExplicitSRENParams
+        
+    def _explicit_call(
+        self, x: Array, u: Array, e: ExplicitSRENParams
     ) -> Tuple[Array, Array]:
         """Evaluate explicit model for a scalable REN.
 
         Args:
-            params (dict): Flax model parameters dictionary.
             x (Array): internal model state.
             u (Array): model inputs.
             e (ExplicitSRENParams): explicit params.
@@ -238,11 +237,6 @@ class ScalableREN(nn.Module):
         Returns:
             Tuple[Array, Array]: (next_states, outputs).
         """
-        return self.apply(params, x, u, e, method="_explicit_call")
-        
-    def _explicit_call(
-        self, x: Array, u: Array, e: ExplicitSRENParams
-    ) -> Tuple[Array, Array]:
 
         # Equilibirum layer
         v = x @ e.C1.T + u @ e.D12.T + e.bv
@@ -253,20 +247,16 @@ class ScalableREN(nn.Module):
         y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
         return x1, y
     
-    def simulate_sequence(self, params: dict, x0, u) -> Tuple[Array, Array]:
+    def _simulate_sequence(self, x0, u) -> Tuple[Array, Array]:
         """Simulate a scalable REN over a sequence of inputs.
 
         Args:
-            params (dict): Flax model parameters dictionary.
             x0: array of initial states, shape is (batches, ...).
             u: array of inputs as a sequence, shape is (time, batches, ...).
             
         Returns:
             Tuple[Array, Array]: (final_state, outputs in (time, batches, ...)).
         """
-        return self.apply(params, x0, u, method="_simulate_sequence")
-    
-    def _simulate_sequence(self, x0, u) -> Tuple[Array, Array]:
         explicit = self._direct_to_explicit()
         def rollout(carry, ut):
             xt, = carry
@@ -292,20 +282,16 @@ class ScalableREN(nn.Module):
         rng, _ = jax.random.split(rng)
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
-    
-    def direct_to_explicit(self, params: dict) -> ExplicitSRENParams:
+        
+    def _direct_to_explicit(self) -> ExplicitSRENParams:
         """Convert from direct to explicit scalable REN params.
 
         Args:
-            params (dict): Flax model parameters dictionary.
+            None
 
         Returns:
             ExplicitSRENParams: explicit params for scalable REN.
         """
-        return self.apply(params, method="_direct_to_explicit")
-        
-    def _direct_to_explicit(self) -> ExplicitSRENParams:
-
         ps = self.direct
         
         # Get all elements of the banded X-matrix first
@@ -354,3 +340,46 @@ class ScalableREN(nn.Module):
         """The RENs have this method. This way we can use the same
         high-level code."""
         pass
+
+
+    #################### Convenient Wrappers ####################
+
+    def explicit_call(
+        self, params:dict, x: Array, u: Array, e: ExplicitSRENParams
+    ) -> Tuple[Array, Array]:
+        """Evaluate explicit model for a scalable REN.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            x (Array): internal model state.
+            u (Array): model inputs.
+            e (ExplicitSRENParams): explicit params.
+
+        Returns:
+            Tuple[Array, Array]: (next_states, outputs).
+        """
+        return self.apply(params, x, u, e, method="_explicit_call")
+    
+    def simulate_sequence(self, params: dict, x0, u) -> Tuple[Array, Array]:
+        """Simulate a scalable REN over a sequence of inputs.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            x0: array of initial states, shape is (batches, ...).
+            u: array of inputs as a sequence, shape is (time, batches, ...).
+            
+        Returns:
+            Tuple[Array, Array]: (final_state, outputs in (time, batches, ...)).
+        """
+        return self.apply(params, x0, u, method="_simulate_sequence")
+    
+    def direct_to_explicit(self, params: dict) -> ExplicitSRENParams:
+        """Convert from direct to explicit scalable REN params.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+
+        Returns:
+            ExplicitSRENParams: explicit params for scalable REN.
+        """
+        return self.apply(params, method="_direct_to_explicit")

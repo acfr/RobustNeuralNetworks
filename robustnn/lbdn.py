@@ -267,7 +267,43 @@ class LBDN(nn.Module):
         """
         explicit = self._direct_to_explicit()
         return self._explicit_call(inputs, explicit)
+    
+    def _explicit_call(self, u: Array, explicit: ExplicitLBDNParams):
+        """Evaluate the explicit model for an LBDN model.
 
+        Args:
+            u (Array): model inputs.
+            e (ExplicitLBDNParams): explicit params.
+
+        Returns:
+            Array: model outputs.
+        """
+        sqrt_gamma = jnp.sqrt(jnp.exp(explicit.log_gamma))
+        x = sqrt_gamma * u
+        
+        for k, layer in enumerate(self.layers):
+            x = layer._explicit_call(x, explicit.layers[k])
+        
+        return sqrt_gamma * x
+    
+    def _direct_to_explicit(self) -> ExplicitLBDNParams:
+        """Convert from direct LBDN params to explicit form for eval.
+
+        Args:
+            None
+            
+        Returns:
+            ExplicitLBDNParams: explicit LBDN params.
+        """
+        ps = self.direct
+        layer_explicit_params = [
+            layer._direct_to_explicit() for layer in self.layers
+        ]
+        return ExplicitLBDNParams(layer_explicit_params, ps.log_gamma)
+    
+    
+    #################### Convenient Wrappers ####################
+    
     def explicit_call(self, params: dict, u: Array, explicit: ExplicitLBDNParams):
         """Evaluate the explicit model for an LBDN model.
 
@@ -281,15 +317,6 @@ class LBDN(nn.Module):
         """
         return self.apply(params, u, explicit, method="_explicit_call")
     
-    def _explicit_call(self, u: Array, explicit: ExplicitLBDNParams):
-        sqrt_gamma = jnp.sqrt(jnp.exp(explicit.log_gamma))
-        x = sqrt_gamma * u
-        
-        for k, layer in enumerate(self.layers):
-            x = layer._explicit_call(x, explicit.layers[k])
-        
-        return sqrt_gamma * x
-
     def direct_to_explicit(self, params: dict):
         """Convert from direct LBDN params to explicit form for eval.
 
@@ -300,11 +327,3 @@ class LBDN(nn.Module):
             ExplicitLBDNParams: explicit LBDN params.
         """
         return self.apply(params, method="_direct_to_explicit")
-    
-    def _direct_to_explicit(self) -> ExplicitLBDNParams:
-        ps = self.direct
-        layer_explicit_params = [
-            layer._direct_to_explicit() for layer in self.layers
-        ]
-        return ExplicitLBDNParams(layer_explicit_params, ps.log_gamma)
-    
