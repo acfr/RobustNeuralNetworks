@@ -9,7 +9,7 @@ from flax.struct import dataclass
 from flax.typing import Dtype, Array
 
 from robustnn import lbdn
-from robustnn.utils import l2_norm, cayley
+from robustnn.utils import l2_norm
 from robustnn.utils import ActivationFn, Initializer
 
 
@@ -24,14 +24,12 @@ class DirectSRENParams:
     These are the free, trainable parameters for a Scalable REN,
     excluding those in the LBDN layer.
     """
-    p1: Array
-    p2: Array
-    p3: Array
-    Xbar: Array
-    Y1: Array
-    Y2: Array
-    Y3: Array
+    p: Array
+    X: Array
+    Y: Array
+    B1: Array
     B2: Array
+    C1: Array
     D12: Array
     C2: Array
     D21: Array
@@ -89,6 +87,7 @@ class ScalableREN(nn.Module):
         
         init_output_zero: initialize the network so its output is zero (default: False).
         identity_output: enforce that output layer is ``y_t = x_t``. (default: False).
+        do_polar_param: Use the polar parameterization for the H matrix (default: True).
         eps: regularising parameter for positive-definite matrices (default: machine 
             precision for `jnp.float32`).
             
@@ -135,6 +134,7 @@ class ScalableREN(nn.Module):
     init_output_zero: bool = False
     identity_output: bool = False
     
+    do_polar_param: bool = True
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
     _gamma: jnp.float32 = 1.0 # type: ignore
     
@@ -161,24 +161,13 @@ class ScalableREN(nn.Module):
             kernel_init=self.kernel_init,
         )
         
-        # Most of these matrices have underspecified number of cols. Fix
-        # it as smallest of (nx, nv) for now.
-        d = min(nx, nv)
-        n1 = nv         # To make X11 square (Cayley)
-        n2 = d
-        n3 = nv         # To make X43 square (Cayley)
-        n4 = d
-        
         # Initialise remaining free parameters
-        Xbar = self.param("Xbar", self.kernel_init, (nx, n1 + 2*n2 + n3), dtype)
-        p1 = self.param("p1", init.constant(l2_norm(Xbar, eps=self.eps)), (1,), dtype)
-        Y1 = self.param("Y1", self.kernel_init, (nx, nx), dtype)
+        X = self.param("X", self.kernel_init, (2*nx, 2*nx), dtype)
+        p = self.param("p", init.constant(l2_norm(X, eps=self.eps)), (1,), dtype)
+        Y = self.param("Y", self.kernel_init, (nx, nx), dtype)
         
-        Y2 = self.param("Y2", self.kernel_init, (n1, nv), dtype)
-        p2 = self.param("p2", init.constant(l2_norm(Y2, eps=self.eps)), (1,), dtype)
-        
-        Y3 = self.param("Y3", self.kernel_init, (n3 + n4, nv), dtype)
-        p3 = self.param("p3", init.constant(l2_norm(Y3, eps=self.eps)), (1,), dtype)
+        B1 = self.param("B1", self.kernel_init, (nx, nv), dtype)
+        C1 = self.param("C1", self.kernel_init, (nv, nx), dtype)
         
         B2 = self.param("B2", self.kernel_init, (nx, nu), dtype)
         D12 = self.param("D12", self.kernel_init, (nv, nu), dtype)
@@ -205,9 +194,7 @@ class ScalableREN(nn.Module):
             D22 = self.param("D22", init.zeros_init(), (ny, nu), dtype)
             
         self.direct = DirectSRENParams(
-            p1, p2, p3, Xbar, Y1, Y2, Y3, B2, 
-            D12, C2, D21, D22, bx, bv, by,
-            self.network.direct
+            p, X, Y, B1, B2, C1, D12, C2, D21, D22, bx, bv, by, self.network.direct
         )
         
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
@@ -293,46 +280,49 @@ class ScalableREN(nn.Module):
             ExplicitSRENParams: explicit params for scalable REN.
         """
         ps = self.direct
+        nx = self.state_size
         
-        # Get all elements of the banded X-matrix first
-        X_e = ps.p1 * ps.Xbar / l2_norm(ps.Xbar)
-        X11_T = cayley(ps.p2 * ps.Y2 / l2_norm(ps.Y2))
-        X43_T, X44_T = cayley(ps.p3 * ps.Y3 / l2_norm(ps.Y3), return_split=True)
-        X11, X43, X44 = X11_T.T, X43_T.T, X44_T.T
+        H = self._x_to_h_contracting(ps.X, ps.p, ps.B1, ps.C1)
+        H11 = H[:nx, :nx]
+        H21 = H[nx:, :nx]
+        H22 = H[nx:, nx:]
         
-        # Some shapes
-        n1 = X11.shape[1]
-        n3 = X43.shape[1]
-        n4 = X44.shape[1]
-        n2 = X_e.shape[1] - (n1 + n4 + n3)
-        
-        # Split them up into the components we need
-        X21 = X_e[:, :n1]
-        X22 = X_e[:, n1:(n1+n2)]
-        X32 = X_e[:, (n1+n2):(n1+2*n2)]
-        X33 = X_e[:, (n1+2*n2):]
-        
-        # Compute the implicit params
-        E = (X_e @ X_e.T + ps.Y1 - ps.Y1.T) / 2
-        A_imp = X32 @ X22.T
-        B1_imp = X33 @ X43.T
-        C1_imp = X11 @ X21.T
+        E = (H11 + H22 + ps.Y - ps.Y.T) / 2
+        A = jnp.linalg.solve(E, H21)
+        B1 = jnp.linalg.solve(E, ps.B1)
         
         return ExplicitSRENParams(
-            A = jnp.linalg.solve(E, A_imp),
-            B1 = jnp.linalg.solve(E, B1_imp),
-            B2 = ps.B2,
-            C1 = C1_imp,
-            D12 = ps.D12,
-            C2 = ps.C2,
-            D21 = ps.D21,
-            D22 = ps.D22,
-            bx = ps.bx,
-            bv = ps.bv,
-            by = ps.by,
+            A, B1, ps.B2, ps.C1, ps.C2, ps.D12, ps.D21, ps.D22, ps.bx, ps.bv, ps.by,
             network_params = self.network._direct_to_explicit()
         )
             
+    def _x_to_h_contracting(self, X: Array, p: Array, B1: Array, C1: Array) -> Array:
+        """Convert scalable REN X matrix to part of H matrix used in the contraction
+        setup (using polar parameterization if required).
+
+        Args:
+            X (Array): REN X matrix.
+            p (Array): polar parameter.
+            B1 (Array): REN B1 matrix from implicit model.
+            C1 (Array): REN C1 matrix from explicit model.
+
+        Returns:
+            Array: REN H matrix.
+        """
+        nx = jnp.shape(B1)[0]
+        nX = jnp.shape(X)[0]
+        
+        H = X.T @ X
+        if self.do_polar_param:
+            H = p**2 * H / (l2_norm(X)**2)
+            
+        H = H + jnp.block([
+            [C1.T @ C1, jnp.zeros((nx, nx))],
+            [jnp.zeros((nx, nx)), B1 @ B1.T],
+        ]) + self.eps * jnp.identity(nX)
+        
+        return H 
+    
     
     #################### Compatibility with RENs ####################
     

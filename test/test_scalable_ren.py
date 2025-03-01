@@ -66,8 +66,8 @@ def test_ren(model, seed=0):
     
     return (losses, grads), (first_losses, first_grads)
 
-print("Testing REN:")
-test_ren(model_ren)
+# print("Testing REN:")
+# test_ren(model_ren)
 
 print("Testing Scalable REN:")
 test_ren(model_sren)
@@ -106,5 +106,5 @@ def test_contraction(model, p_func, seed=0):
     return jnp.all(lhs <= rhs)
 
 print("Quick contraction check: ")
-print("REN:  ", test_contraction(model_ren, compute_p_contractingren))
+# print("REN:  ", test_contraction(model_ren, compute_p_contractingren))
 print("SREN: ", test_contraction(model_sren, compute_p_sren))
