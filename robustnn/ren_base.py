@@ -399,12 +399,12 @@ class RENBase(nn.Module):
         self.direct = DirectRENParams(p, X, B2, D12, Y1, C2, D21, 
                                       D22, X3, Y3, Z3, bx, bv, by)
         
-    def _x_long_memory_init(self, B2, D12):
+    def _x_long_memory_init(self, B2: Array, D12: Array):
         """Initialise the X matrix so E, F, P (and therefore A) are I.
 
         Args:
-            B2 (_type_): B2 matrix (used in init).
-            D12 (_type_): D12 matrix (used in init).
+            B2 (Array): B2 matrix (used in init).
+            D12 (Array): D12 matrix (used in init).
             
         Returns:
             function: initialiser function with signature 

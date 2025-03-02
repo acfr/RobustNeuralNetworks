@@ -19,14 +19,14 @@ dirpath = Path(__file__).resolve().parent
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
-# TODO: Tune these. 1e-5 is the benchmark tolerance
+# Tune these. 1e-5 is the benchmark tolerance
 ren_config = {
     "experiment": "pde",
     "network": "contracting_ren",
-    "epochs": 100,
-    "lr": 1e-3,
+    "epochs": 150,
+    "lr": 2e-3,
     "min_lr": 1e-6,
-    "lr_patience": 5,
+    "lr_patience": 4,
     "batches": 200,
     "time_steps": 100_000,
     
@@ -40,12 +40,11 @@ ren_config = {
 }
 
 # Should have size: 94665 params (ish)
-# TODO: Tune this. Performance not great yet
 sren_config = deepcopy(ren_config)
 sren_config["network"] = "scalable_ren"
 sren_config["nx"] = 51
-sren_config["nv"] = 68
-sren_config["nh"] = (64,) * 7
+sren_config["nv"] = 64
+sren_config["nh"] = (64,) * 8
 sren_config["init_method"] = "random"
 
 
@@ -213,5 +212,5 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
-train_and_test(ren_config)
 train_and_test(sren_config)
+train_and_test(ren_config)

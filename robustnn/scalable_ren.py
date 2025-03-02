@@ -75,7 +75,7 @@ class ScalableREN(nn.Module):
         activation: Activation function to use (default: relu).
         
         kernel_init: initializer for weights (default: lecun_normal()).
-        recurrent_kernel_init: currently unused (default: lecun_normal()).
+        recurrent_kernel_init: initialiser for X matrix (default: lecun_normal()).
         bias_init: initializer for the bias parameters (default: zeros_init()).
         carry_init: initializer for the internal state vector (default: zeros_init()).
         param_dtype: the dtype passed to parameter initializers (default: float32).
@@ -141,61 +141,7 @@ class ScalableREN(nn.Module):
     def setup(self):
         """Initialise the scalable REN direct params."""
         
-        if self.init_method not in get_valid_init():
-            raise ValueError("Undefined init method '{}'".format(self.init_method))
-        
-        nu = self.input_size
-        nx = self.state_size
-        nv = self.features
-        ny = self.output_size
-        nh = self.hidden
-        dtype = self.param_dtype
-        
-        # Initialise an LBDN for the equilibrium layer
-        self.network = lbdn.LBDN(
-            input_size=nv,
-            hidden_sizes=nh,
-            output_size=nv,
-            gamma=self._gamma,
-            activation=self.activation,
-            kernel_init=self.kernel_init,
-        )
-        
-        # Initialise remaining free parameters
-        X = self.param("X", self.kernel_init, (2*nx, 2*nx), dtype)
-        p = self.param("p", init.constant(l2_norm(X, eps=self.eps)), (1,), dtype)
-        Y = self.param("Y", self.kernel_init, (nx, nx), dtype)
-        
-        B1 = self.param("B1", self.kernel_init, (nx, nv), dtype)
-        C1 = self.param("C1", self.kernel_init, (nv, nx), dtype)
-        
-        B2 = self.param("B2", self.kernel_init, (nx, nu), dtype)
-        D12 = self.param("D12", self.kernel_init, (nv, nu), dtype)
-        bx = self.param("bx", self.bias_init, (nx,), dtype)
-        bv = self.param("bv", self.bias_init, (nv,), dtype)
-        
-        # Output layer params
-        if self.init_output_zero:
-            out_kernel_init = init.zeros_init()
-            out_bias_init = init.zeros_init()
-        else:
-            out_kernel_init = self.kernel_init
-            out_bias_init = self.bias_init
-        
-        if self.identity_output:
-            C2 = jnp.identity(nx)
-            D21 = jnp.zeros((ny, nv), dtype)
-            D22 = jnp.zeros((ny, nu), dtype)
-            by = jnp.zeros((ny,), dtype)
-        else:
-            by = self.param("by", out_bias_init, (ny,), dtype)
-            C2 = self.param("C2", out_kernel_init, (ny, nx), dtype)
-            D21 = self.param("D21", out_kernel_init, (ny, nv), dtype)
-            D22 = self.param("D22", init.zeros_init(), (ny, nu), dtype)
-            
-        self.direct = DirectSRENParams(
-            p, X, Y, B1, B2, C1, D12, C2, D21, D22, bx, bv, by, self.network.direct
-        )
+        self._init_params()
         
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
         """Call a scalable REN model
@@ -322,6 +268,100 @@ class ScalableREN(nn.Module):
         ]) + self.eps * jnp.identity(nX)
         
         return H 
+    
+    
+    #################### Initialization Functions ####################
+    
+    def _init_params(self):
+        """Initialise all direct params for a scalable REN and store."""
+        
+        if self.init_method not in get_valid_init():
+            raise ValueError("Undefined init method '{}'".format(self.init_method))
+        
+        nu = self.input_size
+        nx = self.state_size
+        nv = self.features
+        ny = self.output_size
+        nh = self.hidden
+        dtype = self.param_dtype
+        
+        # Initialise an LBDN for the equilibrium layer
+        self.network = lbdn.LBDN(
+            input_size=nv,
+            hidden_sizes=nh,
+            output_size=nv,
+            gamma=self._gamma,
+            activation=self.activation,
+            kernel_init=self.kernel_init,
+        )
+        
+        # Initialise free parameters
+        Y = self.param("Y", self.kernel_init, (nx, nx), dtype)
+        
+        B1 = self.param("B1", self.kernel_init, (nx, nv), dtype)
+        C1 = self.param("C1", self.kernel_init, (nv, nx), dtype)
+        
+        B2 = self.param("B2", self.kernel_init, (nx, nu), dtype)
+        D12 = self.param("D12", self.kernel_init, (nv, nu), dtype)
+        bx = self.param("bx", self.bias_init, (nx,), dtype)
+        bv = self.param("bv", self.bias_init, (nv,), dtype)
+        
+        # Special choice for X matrix (TODO later)            
+        X = self.param("X", self.recurrent_kernel_init, (2*nx, 2*nx), dtype)
+        p = self.param("p", init.constant(l2_norm(X, eps=self.eps)), (1,), dtype)
+        
+        # Output layer params
+        if self.init_output_zero:
+            out_kernel_init = init.zeros_init()
+            out_bias_init = init.zeros_init()
+        else:
+            out_kernel_init = self.kernel_init
+            out_bias_init = self.bias_init
+        
+        if self.identity_output:
+            C2 = jnp.identity(nx)
+            D21 = jnp.zeros((ny, nv), dtype)
+            D22 = jnp.zeros((ny, nu), dtype)
+            by = jnp.zeros((ny,), dtype)
+        else:
+            by = self.param("by", out_bias_init, (ny,), dtype)
+            C2 = self.param("C2", out_kernel_init, (ny, nx), dtype)
+            D21 = self.param("D21", out_kernel_init, (ny, nv), dtype)
+            D22 = self.param("D22", init.zeros_init(), (ny, nu), dtype)
+            
+        self.direct = DirectSRENParams(
+            p, X, Y, B1, B2, C1, D12, C2, D21, D22, bx, bv, by, self.network.direct
+        )
+    
+    # def _x_long_memory_init(self, B1: Array, C1: Array):
+    #     """Initialise the X matrix so E, F, P (and therefore A) are I.
+
+    #     Args:
+    #         B1 (Array): B1 matrix (used in init).
+    #         C1 (Array): C1 matrix (used in init).
+            
+    #     Returns:
+    #         function: initialiser function with signature 
+    #             `init_func(key, shape, dtype) -> Array`
+    #     """
+    #     def init_func(key, shape, dtype) -> Array:
+            
+    #         dtype = self.param_dtype
+    #         nx = B1.shape[0]
+            
+    #         E = jnp.identity(nx, dtype)
+    #         H21 = jnp.identity(nx, dtype) # Implicit A matrix
+    #         H22 = jnp.identity(nx, dtype) # Implicit P matrix
+    #         H11 = (E + E.T - H22)
+    #         H_minus_terms = jnp.block([
+    #             [H11 - C1.T @ C1, H21.T],
+    #             [H21, H22 - B1 @ B1.T]
+    #         ]) + self.eps * jnp.identity(shape[0])
+            
+    #         # This doesn't make sure H_minus_terms is posdef!!!
+    #         return jnp.linalg.cholesky(H_minus_terms, upper=True)
+        
+    #     return init_func
     
     
     #################### Compatibility with RENs ####################
