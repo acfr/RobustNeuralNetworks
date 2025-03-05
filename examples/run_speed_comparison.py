@@ -25,7 +25,7 @@ batches = 64
 horizon = 256
 
 # Combinations to run through
-batches_ = [2**n for n in range(11)]
+batches_ = [2**n for n in range(12)]
 horizons_ = [2**n for n in range(11)]
 neurons_ = [2**n for n in range(2, 10)]
 
