@@ -35,7 +35,7 @@ def test_ren(model, seed=0):
     rng, key1, key2, key3, key4 = jax.random.split(rng, 5)
     
     # Dummy inputs and states
-    states = model.initialize_carry(key1, (batches, nu))
+    states = model.initialize_carry(key1, (batches, None))
     states = jax.random.normal(key2, states.shape)
     inputs = jax.random.normal(key3, (horizon, batches, nu))
     
@@ -66,11 +66,11 @@ def test_ren(model, seed=0):
     
     return (losses, grads), (first_losses, first_grads)
 
-print("Testing REN:")
-test_ren(model_ren)
-
 print("Testing Scalable REN:")
 test_ren(model_sren)
+
+print("Testing REN:")
+test_ren(model_ren)
 
 
 ############################################################
