@@ -27,7 +27,7 @@ horizon = 256
 # Combinations to run through
 batches_ = [2**n for n in range(11)]
 horizons_ = [2**n for n in range(11)]
-neurons_ = [2**n for n in range(10)]
+neurons_ = [2**n for n in range(2, 10)]
 
 print("Batches to test:  ", batches_)
 print("Horizons to test: ", horizons_)
@@ -136,7 +136,7 @@ def time_model(model, batches, horizon, n_repeats, do_backwards=True):
     }
 
 
-def run_timing(nv_ren, batches, horizon, n_repeats=10):
+def run_timing(nv_ren, batches, horizon, n_repeats=1000):
     """Run the timing for both REN and scalable REN."""
     # Choose size of scalable-REN to match num params
     nv_sren = nv_ren // 2
