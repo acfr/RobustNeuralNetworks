@@ -106,3 +106,11 @@ plt.yscale("log")
 plt.legend()
 plt.savefig(filepath / f"{filename}_nv_backwards.pdf")
 plt.close()
+
+# Also print hidden layer sizes vs. nv just for my interest
+nv_ren = results["nv_ren"]["nv"]
+nv_sren = results["nv_sren"]["nv"]
+nh_sren = results["nv_sren"]["nh"]
+
+for k in range(len(nv_ren)):
+    print("REN nv: ", nv_ren[k], " S-REN nv: ", nv_sren[k], " S-REN nh: ", nh_sren[k])
