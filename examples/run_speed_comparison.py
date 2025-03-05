@@ -1,4 +1,5 @@
 import jax
+import jax.numpy as jnp
 import timeit
 
 from robustnn import ren
@@ -34,13 +35,14 @@ print("Neurons to test:  ", neurons_)
 
 
 def build_models(nv_ren, nv_sren, nh_sren):
+    """Build the REN and Scalable REN models."""
     model_ren = ren.ContractingREN(nu, nx, nv_ren, ny)
     model_sren = sren.ScalableREN(nu, nx, nv_sren, ny, nh_sren)
     return model_ren, model_sren
 
 
 def initialise_model(model, batches, horizon, seed=0):
-    
+    """Initialise params, states, and define input sequence."""
     # Sort out RNG keys
     rng = jax.random.key(seed)
     rng, key1, key2, key3 = jax.random.split(rng, 4)
@@ -56,14 +58,14 @@ def initialise_model(model, batches, horizon, seed=0):
 
 
 def time_forwards(model, params, states, inputs, n_repeats):
-    
+    """Time the forwards pass of a model."""
     # Define a simple forwards pass for timing
     @jax.jit
     def forward(params, x0, u):
         x1, _ = model.simulate_sequence(params, x0, u)
         return x1
     
-    # Time compilation + eval
+    # Time compilation
     start = timeit.default_timer()
     forward(params, states, inputs).block_until_ready()
     compile_time = timeit.default_timer() - start
@@ -73,16 +75,39 @@ def time_forwards(model, params, states, inputs, n_repeats):
         lambda: forward(params, states, inputs).block_until_ready(),
         number=n_repeats
     )
-    
     return compile_time / n_repeats, eval_time / n_repeats
 
 
 def time_backwards(model, params, states, inputs, n_repeats):
-    return 0, 0 # TODO: Fill this in!!
+    """Time the backwards pass of a model (computing grads)."""
+    # Dummy loss function to backpropagate through
+    @jax.jit
+    def loss(params, x0, u):
+        x1, y = model.simulate_sequence(params, x0, u)
+        return jnp.sum(x1**2) + jnp.sum(y[-1]**2)
+    
+    grad_func = jax.jit(jax.grad(loss))
+    
+    def grad_test(params, x0, u):
+        grads = grad_func(params, x0, u)
+        jax.tree.map(lambda x: x.block_until_ready, grads)
+        return grads
+    
+    # Time compilation
+    start = timeit.default_timer()
+    grad_test(params, states, inputs)
+    compile_time = timeit.default_timer() - start
+    
+    # Time evaluation
+    eval_time = timeit.timeit(
+        lambda: grad_test(params, states, inputs),
+        number=n_repeats
+    )
+    return compile_time / n_repeats, eval_time / n_repeats
     
     
 def time_model(model, batches, horizon, n_repeats=10, do_backwards=True):
-    
+    """Time forwards and backwards passes, print and store results."""
     # Initialise the model params and count them
     params, states, inputs = initialise_model(model, batches, horizon)
     num_params = count_num_params(params)
@@ -112,7 +137,7 @@ def time_model(model, batches, horizon, n_repeats=10, do_backwards=True):
 
 
 def run_timing(nv_ren, batches, horizon, n_repeats=1000):
-    
+    """Run the timing for both REN and scalable REN."""
     # Choose size of scalable-REN to match num params
     nv_sren = nv_ren // 2
     nh = utils.choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers)
@@ -122,9 +147,9 @@ def run_timing(nv_ren, batches, horizon, n_repeats=1000):
     m_ren, m_sren = build_models(nv_ren, nv_sren, nh_sren)
     
     # Time the forwards and backwards passes
-    print("REN: ")
+    print("### REN: ###")
     results_ren = time_model(m_ren, batches, horizon, n_repeats=n_repeats)
-    print("Scalable REN:")
+    print("### Scalable REN: ###")
     results_sren = time_model(m_sren, batches, horizon, n_repeats=n_repeats)
     
     # Add hidden layer info from the scalable REN to look at later
