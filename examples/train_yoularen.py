@@ -42,10 +42,11 @@ ren_config = {
     "seed": 0,
 }
 
+# Should have size: 14835 params (ish)
 sren_config = deepcopy(ren_config)
 sren_config["network"] = "scalable_ren"
 sren_config["nx"] = 10
-sren_config["nv"] = 28
+sren_config["nv"] = 37
 sren_config["nh"] = (32,) * 5
 sren_config["init_method"] = "random"
 
