@@ -16,22 +16,22 @@ ny = 10     # Number of outputs
 nx = 64     # Number of states
 
 # Nominal model sizes
-nv_ren = 64                             # TODO: Can we make this 128?
+nv_ren = 128
 nv_sren = nv_ren // 2
 n_layers = 4
 
 # Nominal data sizes
-batches = 32                            # TODO: Can we make this 64?
-horizon = 128                           # TODO: Can we make this 256 or 512?
+batches = 64
+horizon = 256
 
 # Combinations to run through
-batches_ = [2**n for n in range(2, 7)]  # TODO: 11
-horizons_ = [2**n for n in range(2, 7)] # TODO: 11
-neurons_ = [2**n for n in range(2, 6)]  # TODO: (2, 10)
+batches_ = [2**n for n in range(11)]
+horizons_ = [2**n for n in range(11)]
+neurons_ = [2**n for n in range(10)]
 
 print("Batches to test:  ", batches_)
 print("Horizons to test: ", horizons_)
-print("Neurons to test:  ", neurons_)
+print("Neurons to test:  ", neurons_, "\n")
 
 
 def build_models(nv_ren, nv_sren, nh_sren):
@@ -75,7 +75,7 @@ def time_forwards(model, params, states, inputs, n_repeats):
         lambda: forward(params, states, inputs).block_until_ready(),
         number=n_repeats
     )
-    return compile_time / n_repeats, eval_time / n_repeats
+    return compile_time, eval_time / n_repeats
 
 
 def time_backwards(model, params, states, inputs, n_repeats):
@@ -103,10 +103,10 @@ def time_backwards(model, params, states, inputs, n_repeats):
         lambda: grad_test(params, states, inputs),
         number=n_repeats
     )
-    return compile_time / n_repeats, eval_time / n_repeats
+    return compile_time, eval_time / n_repeats
     
     
-def time_model(model, batches, horizon, n_repeats=10, do_backwards=True):
+def time_model(model, batches, horizon, n_repeats, do_backwards=True):
     """Time forwards and backwards passes, print and store results."""
     # Initialise the model params and count them
     params, states, inputs = initialise_model(model, batches, horizon)
@@ -136,7 +136,7 @@ def time_model(model, batches, horizon, n_repeats=10, do_backwards=True):
     }
 
 
-def run_timing(nv_ren, batches, horizon, n_repeats=1000):
+def run_timing(nv_ren, batches, horizon, n_repeats=10):
     """Run the timing for both REN and scalable REN."""
     # Choose size of scalable-REN to match num params
     nv_sren = nv_ren // 2
@@ -148,9 +148,9 @@ def run_timing(nv_ren, batches, horizon, n_repeats=1000):
     
     # Time the forwards and backwards passes
     print("### REN: ###")
-    results_ren = time_model(m_ren, batches, horizon, n_repeats=n_repeats)
+    results_ren = time_model(m_ren, batches, horizon, n_repeats)
     print("### Scalable REN: ###")
-    results_sren = time_model(m_sren, batches, horizon, n_repeats=n_repeats)
+    results_sren = time_model(m_sren, batches, horizon, n_repeats)
     
     # Add hidden layer info from the scalable REN to look at later
     results_sren["nh"] = m_sren.hidden
