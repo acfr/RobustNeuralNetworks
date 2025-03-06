@@ -8,7 +8,7 @@ from robustnn.utils import count_num_params
 
 import utils.speed as utils
     
-filename = "timing_results"
+filename = "timing_results_v1"
 
 # Choose a fixed problem size
 nu = 10     # Number of inputs
@@ -22,15 +22,15 @@ n_layers = 4
 
 # Nominal data sizes
 batches = 64
-horizon = 256
+horizon = 128
 
 # Combinations to run through
-batches_ = [2**n for n in range(12)]
+batches_ = [2**n for n in range(4, 13)]
 horizons_ = [2**n for n in range(11)]
-neurons_ = [2**n for n in range(2, 10)]
+neurons_ = [2**n for n in range(2, 11)]
 
-print("Batches to test:  ", batches_)
 print("Horizons to test: ", horizons_)
+print("Batches to test:  ", batches_)
 print("Neurons to test:  ", neurons_, "\n")
 
 
@@ -84,7 +84,7 @@ def time_backwards(model, params, states, inputs, n_repeats):
     @jax.jit
     def loss(params, x0, u):
         x1, y = model.simulate_sequence(params, x0, u)
-        return jnp.sum(x1**2) + jnp.sum(y[-1]**2)
+        return jnp.mean(x1**2) + jnp.mean(y**2)
     
     grad_func = jax.jit(jax.grad(loss))
     

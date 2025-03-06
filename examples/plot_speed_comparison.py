@@ -1,6 +1,4 @@
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import LogLocator, LogFormatter
 
 from pathlib import Path
 from utils.plot_utils import startup_plotting
@@ -25,6 +23,13 @@ def format_plot(xlabel, ylabel, filename_suffix, x):
     plt.grid(True, which='both', linestyle=':', linewidth=0.75)
     plt.savefig(filepath / f"{filename}_{filename_suffix}.pdf", bbox_inches='tight')
     plt.close()
+    
+# Choose colours and linestyles
+color_r = "#009E73"
+color_s = "#D55E00"
+
+ls_fwd = "solid"
+ls_bck = "dashed"
 
 # Plot eval time vs. sequence length (forward)
 x = results["horizon_ren"]["horizon"]
@@ -35,10 +40,10 @@ y_sren_fwd = results["horizon_sren"]["forwards_eval"]
 y_sren_bck = results["horizon_sren"]["backwards_eval"]
 
 plt.figure(figsize=(4.2, 2.5))
-plt.plot(x, y_ren_fwd, color="#E69F00", label="REN (Forward)")
-plt.plot(x, y_ren_bck, color="#009E73", label="REN (Backward)")
-plt.plot(x, y_sren_fwd, color="#E69F00", linestyle="dashed", label="Scalable REN (Forward)")
-plt.plot(x, y_sren_bck, color="#009E73", linestyle="dashed", label="Scalable REN (Backward)")
+plt.plot(x, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
+plt.plot(x, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
+plt.plot(x, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
+plt.plot(x, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
 
 format_plot("Sequence length", "Evaluation time (s)", "sequence", x)
 
@@ -51,10 +56,10 @@ y_sren_fwd = results["batches_sren"]["forwards_eval"][4:]
 y_sren_bck = results["batches_sren"]["backwards_eval"][4:]
 
 plt.figure(figsize=(4.2, 2.5))
-plt.plot(x, y_ren_fwd, color="#E69F00", label="REN (Forward)")
-plt.plot(x, y_ren_bck, color="#009E73", label="REN (Backward)")
-plt.plot(x, y_sren_fwd, color="#E69F00", linestyle="dashed", label="Scalable REN (Forward)")
-plt.plot(x, y_sren_bck, color="#009E73", linestyle="dashed", label="Scalable REN (Backward)")
+plt.plot(x, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
+plt.plot(x, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
+plt.plot(x, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
+plt.plot(x, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
 
 format_plot("Batch size", "Evaluation time (s)", "batches", x)
 
@@ -67,10 +72,10 @@ y_sren_fwd = results["nv_sren"]["forwards_eval"]
 y_sren_bck = results["nv_sren"]["backwards_eval"]
 
 plt.figure(figsize=(4.2, 2.5))
-plt.plot(x, y_ren_fwd, color="#E69F00", label="REN (Forward)")
-plt.plot(x, y_ren_bck, color="#009E73", label="REN (Backward)")
-plt.plot(x, y_sren_fwd, color="#E69F00", linestyle="dashed", label="Scalable REN (Forward)")
-plt.plot(x, y_sren_bck, color="#009E73", linestyle="dashed", label="Scalable REN (Backward)")
+plt.plot(x, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
+plt.plot(x, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
+plt.plot(x, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
+plt.plot(x, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
 
 format_plot("Number of model params", "Evaluation time (s)", "modelsize", x)
 
