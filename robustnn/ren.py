@@ -186,7 +186,7 @@ class ContractingREN(ren.RENBase):
             D21 = out_kernel_init(keys[11], (ny, nv), dtype)    
         D22 = jnp.zeros((ny, nu), dtype)
         
-        # Randomly generate explicit params
+        # Randomly generated explicit params
         return ren.ExplicitRENParams(
             A, B1, B2, C1, C2, D11, D12, D21, D22, bx, bv, by
         )

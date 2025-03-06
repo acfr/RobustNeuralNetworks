@@ -1,5 +1,7 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
+import cvxpy as cp
 
 from typing import Tuple, Sequence
 
@@ -14,7 +16,7 @@ from robustnn.utils import ActivationFn, Initializer
 
 
 def get_valid_init():
-    return ["random"]
+    return ["random", "random_explicit", "long_memory_explicit", "external_explicit"]
 
 
 @dataclass
@@ -84,9 +86,18 @@ class ScalableREN(nn.Module):
             currently supported for the scalable REN (TODO). Options are:
         
         - "random" (default): Random sampling with `recurrent_kernel_init`.
+        - "random_explicit": Randomly sample explicit model, not direct params.
+        - "long_memory_explicit": Long-term init of explicit model not direct params.
         
         init_output_zero: initialize the network so its output is zero (default: False).
         identity_output: enforce that output layer is ``y_t = x_t``. (default: False).
+        
+        init_as_linear: Tuple of (A, B, C, D) matrices to initialise the contracting REN 
+            as a linear system. The linear system must be stable. Default is `()`, which 
+            defaults back to `init_method`.
+        explicit_init: initialise the REN from some ExplicitSRENParams (default: None).
+            If this is not `None`, it supercedes all other initialisation options.
+            
         do_polar_param: Use the polar parameterization for the H matrix (default: True).
         eps: regularising parameter for positive-definite matrices (default: machine 
             precision for `jnp.float32`).
@@ -133,6 +144,10 @@ class ScalableREN(nn.Module):
     init_method: str = "random"
     init_output_zero: bool = False
     identity_output: bool = False
+    
+    init_as_linear: Tuple = ()
+    explicit_init: ExplicitSRENParams = None
+    _direct_explicit_init: DirectSRENParams = None
     
     do_polar_param: bool = True
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
@@ -273,6 +288,29 @@ class ScalableREN(nn.Module):
     #################### Initialization Functions ####################
     
     def _init_params(self):
+        """High-level init wrapper to initialise direct params either randomly
+        or from an explicit model.
+        """
+        # Check if the user has followed instructions
+        if self._check_do_explicit_init():
+            if self._direct_explicit_init is None:
+                raise ValueError(
+                    "You have chosen to init a REN from an explicit model but have " +
+                    "not called the `explicit_pre_init` method yet. Call this before " + 
+                    "calling the typical `model.init()` and/or `model.apply()` " +
+                    "methods in Flax."
+                )
+        
+        if self.init_method not in get_valid_init():
+            raise ValueError("Undefined init method '{}'".format(self.init_method))
+        
+        # Run the appropriate init
+        if self._check_do_explicit_init():
+            self._init_from_explicit()
+        else:
+            self._init_params_direct()
+            
+    def _init_params_direct(self):
         """Initialise all direct params for a scalable REN and store."""
         
         if self.init_method not in get_valid_init():
@@ -333,45 +371,245 @@ class ScalableREN(nn.Module):
             p, X, Y, B1, B2, C1, D12, C2, D21, D22, bx, bv, by, self.network.direct
         )
     
-    # def _x_long_memory_init(self, B1: Array, C1: Array):
-    #     """Initialise the X matrix so E, F, P (and therefore A) are I.
-
-    #     Args:
-    #         B1 (Array): B1 matrix (used in init).
-    #         C1 (Array): C1 matrix (used in init).
-            
-    #     Returns:
-    #         function: initialiser function with signature 
-    #             `init_func(key, shape, dtype) -> Array`
-    #     """
-    #     def init_func(key, shape, dtype) -> Array:
-            
-    #         dtype = self.param_dtype
-    #         nx = B1.shape[0]
-            
-    #         E = jnp.identity(nx, dtype)
-    #         H21 = jnp.identity(nx, dtype) # Implicit A matrix
-    #         H22 = jnp.identity(nx, dtype) # Implicit P matrix
-    #         H11 = (E + E.T - H22)
-    #         H_minus_terms = jnp.block([
-    #             [H11 - C1.T @ C1, H21.T],
-    #             [H21, H22 - B1 @ B1.T]
-    #         ]) + self.eps * jnp.identity(shape[0])
-            
-    #         # This doesn't make sure H_minus_terms is posdef!!!
-    #         return jnp.linalg.cholesky(H_minus_terms, upper=True)
-        
-    #     return init_func
     
+    #################### Explicit Initialisation ####################
     
-    #################### Compatibility with RENs ####################
+    def _check_do_explicit_init(self):
+        return ((self.explicit_init is not None) or 
+                ("explicit" in self.init_method))
     
     def explicit_pre_init(self):
-        """The RENs have this method. This way we can use the same
-        high-level code."""
-        pass
+        """A non-jittable method allowing initialisation from an explicit model.
+        
+        Call this before running `model.init()`, `model.apply()`, or anything else
+        if you want to initialise the scalable REN from an explicit model. This is
+        to avoid having non-jittable code in the `setup()` or `__call__()` methods.
+        """
+        # Can initialise from linear model if needed
+        if self.init_as_linear:
+            self._init_linear_sys()
+        
+        # Skip if not required
+        if not self._check_do_explicit_init():
+            return None
+        
+        # Get and check an explicit model
+        explicit = self.explicit_init
+        if explicit is None:
+            explicit = self._generate_explicit_params()
+            
+        # Compute direct params reproducing this explicit model and store
+        direct = self._explicit_to_direct(explicit)
+        self._direct_explicit_init = direct
+        
+    def _init_linear_sys(self):
+        """Initialise the scalable contracting REN as a (stable) linear system."""
+        
+        # Extract params and system sizes
+        A, B, C, D = self.init_as_linear
+        nu = self.input_size
+        nx = self.state_size
+        nv = self.features
+        ny = self.output_size
+        dtype = self.param_dtype
+        
+        # Error checking
+        nx_a = A.shape[0]
+        assert (A.shape[0] <= nx and A.shape[1] == A.shape[0])
+        assert B.shape == (nx_a, nu)
+        assert C.shape == (ny, nx_a)
+        assert D.shape == (ny, nu)
+        
+        # Fill out A matrix to match the required number of states
+        dnx = nx - nx_a
+        A = jnp.block([
+            [A, jnp.zeros((nx_a, dnx), dtype)],
+            [jnp.zeros((dnx, nx_a), dtype), jnp.zeros((dnx, dnx), dtype)],
+        ])
+        B = jnp.vstack([B, jnp.zeros((dnx, nu), dtype)])
+        C = jnp.hstack([C, jnp.zeros((ny, dnx), dtype)])
+        
+        # Set up an explicit model to initialise from in the pre-init
+        explicit = ExplicitSRENParams(
+            A = A,
+            B1 = jnp.zeros((nx_a, nv), dtype),
+            B2 = B,
+            C1 = jnp.zeros((nv, nx_a), dtype),
+            C2 = C,
+            D12 = jnp.zeros((nv, nu), dtype),
+            D21 = jnp.zeros((ny, nv), dtype),
+            D22 = D,
+            bx = jnp.zeros((nx,), dtype),
+            bv = jnp.zeros((nv,), dtype),
+            by = jnp.zeros((ny,), dtype),
+        )
+        self.explicit_init = explicit
+    
+    def _generate_explicit_params(self):
+        """Randomly generate explicit parameterisation for a scalable REN."""
+        # Sizes and dtype
+        nu = self.input_size
+        nx = self.state_size
+        nv = self.features
+        ny = self.output_size
+        dtype = self.param_dtype
+        
+        # Random seed
+        rng = jax.random.key(self.seed)
+        keys = jax.random.split(rng, 11)
+        
+        # Get orthogonal/diagonal matrices for a stable A-matrix
+        if self.init_method == "random_explicit":
+            D = jax.random.uniform(keys[0], nx)
+        elif self.init_method == "long_memory_explicit":
+            D = 1 - 0.01*jax.random.uniform(keys[0], nx)
+        U = init.orthogonal()(keys[1], (nx,nx), dtype)
+        V = init.orthogonal()(keys[2], (nx,nx), dtype)
+        
+        # State and equilibrium layers
+        # C1 will be chosen so that the contraction LMI is feasible,
+        # so it is actually ignored. 
+        A = V @ jnp.diag(D) @ U.T
+        B1 = self.kernel_init(keys[3], (nx, nv), dtype)
+        B2 = self.kernel_init(keys[4], (nx, nu), dtype)
+        bx = self.bias_init(keys[5], (nx,), dtype)
+        
+        C1 = self.kernel_init(keys[0], (nv, nx), dtype)
+        D12 = self.kernel_init(keys[6], (nv, nu), dtype)
+        bv = self.bias_init(keys[7], (nv,), dtype)
+        
+        # Choose output layer specially
+        if self.init_output_zero:
+            out_kernel_init = init.zeros_init()
+            out_bias_init = init.zeros_init()
+        else:
+            out_kernel_init = self.kernel_init
+            out_bias_init = self.bias_init
+            
+        if self.identity_output:
+            C2 = jnp.identity(nx)
+            D21 = jnp.zeros((ny, nv), dtype)
+            by = jnp.zeros((ny,), dtype)
+        else:
+            by = out_bias_init(keys[8], (ny,), dtype)
+            C2 = out_kernel_init(keys[9], (ny, nx), dtype)
+            D21 = out_kernel_init(keys[10], (ny, nv), dtype)    
+        D22 = jnp.zeros((ny, nu), dtype)
+        
+        # Randomly generated explicit params
+        return ExplicitSRENParams(
+            A, B1, B2, C1, C2, D12, D21, D22, bx, bv, by
+        )
+    
+    def _explicit_to_direct(self, e: ExplicitSRENParams) -> DirectSRENParams:
+        """Find direct scalable REN parameterisation that admits the given explicit params.
 
+        Args:
+            e (ExplicitSRENParams): Explicit scalable REN params (e.g. from init).
 
+        Returns:
+            DirectSRENParams: Direct scalable REN params (these are learnable).
+        """
+        nx = self.state_size
+        nv = self.features
+        
+        # Create variables
+        P = cp.Variable((nx, nx), symmetric=True)
+        C1 = cp.Variable((nv, nx))
+        
+        # Generate constraints for contraction and small-gain
+        AB = np.block([[e.A, e.B1]])
+        lhs = cp.bmat([
+            [P - C1.T @ C1, np.zeros((nx, nx))],
+            [np.zeros((nx, nx)), np.identity(nx)]
+        ])
+        lhs -= AB.T @ P @ AB
+        constraints = [
+            lhs >> 0,
+            P >> np.identity(nx)
+        ]
+        
+        # Solve SDP
+        prob = cp.Problem(cp.Minimize(cp.norm(P)), constraints)
+        prob.solve(solver=cp.MOSEK)
+        if prob.status != cp.OPTIMAL:
+            raise ValueError("Could not find valid P, Lambda for explicit params.")
+        
+        P = jnp.array(P.value)
+        C1 = jnp.array(C1.value)
+        
+        # Compute the implicit model params
+        E = P
+        A_imp = E @ e.A
+        B1_imp = E @ e.B1
+        
+        Hdiff = jnp.block([
+            [E.T + E - P, A_imp.T],
+            [A_imp, P]
+        ]) - jnp.block([
+            [C1.T @ C1, jnp.zeros((nx, nx))],
+            [jnp.zeros((nx, nx)), B1_imp @ B1_imp.T]
+        ])
+        X = jnp.linalg.cholesky(Hdiff, upper=True)
+        
+        return DirectSRENParams(
+            p = l2_norm(X, eps=self.eps),
+            X = X,
+            Y1 = E,
+            B1 = B1_imp, 
+            B2 = e.B2,
+            C1 = C1,
+            D12 = e.D12,
+            C2 = e.C2,
+            D21 = e.D21,
+            D22 = e.D22,
+            bx = e.bx,
+            bv = e.bv,
+            by = e.by
+        )
+        
+    def _init_from_explicit(self):
+        """Initialise direct params from an existing explicit scalable REN model.
+        
+        This method requires the `explicit_pre_init` method to have been
+        called first to correctly populate the `_direct_explicit_init` field.
+        """
+        direct = self._direct_explicit_init
+        dtype = self.param_dtype
+        ps = {}
+        for field in direct.__dataclass_fields__:
+            val = getattr(direct, field)
+            ps[field] = self.param(field, init.constant(val), val.shape, dtype)
+        self.direct = DirectSRENParams(**ps)
+
+    def _check_valid_explicit(self, e: ExplicitSRENParams):
+        """Error checking to help with explicit init."""
+        
+        nu = self.input_size
+        nx = self.state_size
+        nv = self.features
+        ny = self.output_size
+        
+        assert e.A.shape == (nx, nx)
+        assert e.B1.shape == (nx, nv)
+        assert e.B2.shape == (nx, nu)
+        
+        assert e.C1.shape == (nv, nx)
+        assert e.D12.shape == (nv, nu)
+        
+        assert e.C2.shape == (ny, nx)
+        assert e.D21.shape == (ny, nv)
+        assert e.D22.shape == (ny, nu)
+        
+        assert e.bx.shape == (nx,)
+        assert e.bv.shape == (nv,)
+        assert e.by.shape == (ny,)
+        
+        # A matrix must be stable for contraction
+        eig_norms = jnp.abs(jnp.linalg.eigvals(e.A))
+        assert jnp.all(eig_norms < 1.0)
+        
+        
     #################### Convenient Wrappers ####################
 
     def explicit_call(

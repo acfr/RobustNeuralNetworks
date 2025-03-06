@@ -36,19 +36,6 @@ def tril_equlibrium_layer(activation, D11, b):
         Di_wi = wi @ Di_T
         w_eq = w_eq.at[..., i].set(activation(Di_wi + bi))
     return w_eq
-    # D11_T = D11.T
-    # def scan_fn(carry, unused_t):
-    #     w_eq, i = carry
-    #     Di_T = D11_T[..., i]
-    #     bi = b[..., i]
-    #     Di_wi = w_eq @ Di_T
-    #     w_eq = w_eq.at[..., i].set(activation(Di_wi + bi))
-    #     return (w_eq, i+1), None
-    
-    # w_eq = jnp.zeros_like(b)
-    # (w_eq, _), _ = jax.lax.scan(scan_fn, (w_eq, 0), length=D11.shape[0])
-    # return w_eq
-    # NOTE: The above is slower because we can't do dynamic slicing in JITted funcs :(
         
 
 @dataclass
@@ -547,7 +534,7 @@ class RENBase(nn.Module):
         B1_imp = E @ e.B1
         B2_imp = E @ e.B2
         
-        C1_imp = C1_imp.value
+        C1_imp = jnp.array(C1_imp.value)
         D11_imp = Lambda @ e.D11
         D12_imp = Lambda @ e.D12
         
