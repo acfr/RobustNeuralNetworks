@@ -101,7 +101,8 @@ class ScalableREN(nn.Module):
         do_polar_param: Use the polar parameterization for the H matrix (default: True).
         eps: regularising parameter for positive-definite matrices (default: machine 
             precision for `jnp.float32`).
-            
+        seed: random seed for randomly initialising explicit model (default: 0). 
+        
     Example usage:
 
         >>> import jax, jax.numpy as jnp
@@ -151,6 +152,7 @@ class ScalableREN(nn.Module):
     
     do_polar_param: bool = True
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
+    seed: int = 0
     _gamma: jnp.float32 = 1.0 # type: ignore
     
     def setup(self):
@@ -288,7 +290,8 @@ class ScalableREN(nn.Module):
     #################### Initialization Functions ####################
     
     def _init_params(self):
-        """High-level init wrapper to initialise direct params either randomly
+        """
+        High-level init wrapper to initialise direct params either randomly
         or from an explicit model.
         """
         # Check if the user has followed instructions
@@ -320,18 +323,10 @@ class ScalableREN(nn.Module):
         nx = self.state_size
         nv = self.features
         ny = self.output_size
-        nh = self.hidden
         dtype = self.param_dtype
         
         # Initialise an LBDN for the equilibrium layer
-        self.network = lbdn.LBDN(
-            input_size=nv,
-            hidden_sizes=nh,
-            output_size=nv,
-            gamma=self._gamma,
-            activation=self.activation,
-            kernel_init=self.kernel_init,
-        )
+        self._network_init()
         
         # Initialise free parameters
         Y = self.param("Y", self.kernel_init, (nx, nx), dtype)
@@ -369,6 +364,17 @@ class ScalableREN(nn.Module):
             
         self.direct = DirectSRENParams(
             p, X, Y, B1, B2, C1, D12, C2, D21, D22, bx, bv, by, self.network.direct
+        )
+    
+    def _network_init(self):
+        """Initialise the LBDN for the equilibrium layer"""
+        self.network = lbdn.LBDN(
+            input_size=self.features,
+            hidden_sizes=self.hidden,
+            output_size=self.features,
+            gamma=self._gamma,
+            activation=self.activation,
+            kernel_init=self.kernel_init,
         )
     
     
@@ -498,7 +504,7 @@ class ScalableREN(nn.Module):
         
         # Randomly generated explicit params
         return ExplicitSRENParams(
-            A, B1, B2, C1, C2, D12, D21, D22, bx, bv, by
+            A, B1, B2, C1, C2, D12, D21, D22, bx, bv, by, network_params=None
         )
     
     def _explicit_to_direct(self, e: ExplicitSRENParams) -> DirectSRENParams:
@@ -515,15 +521,15 @@ class ScalableREN(nn.Module):
         
         # Create variables
         P = cp.Variable((nx, nx), symmetric=True)
-        C1 = cp.Variable((nv, nx))
+        C1_T_C1 = cp.Variable((nx, nx))
         
         # Generate constraints for contraction and small-gain
         AB = np.block([[e.A, e.B1]])
         lhs = cp.bmat([
-            [P - C1.T @ C1, np.zeros((nx, nx))],
-            [np.zeros((nx, nx)), np.identity(nx)]
+            [P - C1_T_C1, np.zeros((nx, nv))],
+            [np.zeros((nv, nx)), np.identity(nv)]
         ])
-        lhs -= AB.T @ P @ AB
+        lhs = lhs - AB.T @ P @ AB
         constraints = [
             lhs >> 0,
             P >> np.identity(nx)
@@ -536,7 +542,9 @@ class ScalableREN(nn.Module):
             raise ValueError("Could not find valid P, Lambda for explicit params.")
         
         P = jnp.array(P.value)
-        C1 = jnp.array(C1.value)
+        C1 = jnp.linalg.cholesky(jnp.array(C1_T_C1.value))
+        print(C1)
+        raise NotImplementedError() #TODO: Finish this another time.
         
         # Compute the implicit model params
         E = P
@@ -565,7 +573,8 @@ class ScalableREN(nn.Module):
             D22 = e.D22,
             bx = e.bx,
             bv = e.bv,
-            by = e.by
+            by = e.by,
+            network_params=None
         )
         
     def _init_from_explicit(self):
@@ -573,14 +582,19 @@ class ScalableREN(nn.Module):
         
         This method requires the `explicit_pre_init` method to have been
         called first to correctly populate the `_direct_explicit_init` field.
-        """
+        """      
+        # Set up all the LTI parameters
         direct = self._direct_explicit_init
         dtype = self.param_dtype
         ps = {}
         for field in direct.__dataclass_fields__:
+            if field == "network_params": continue
             val = getattr(direct, field)
             ps[field] = self.param(field, init.constant(val), val.shape, dtype)
-        self.direct = DirectSRENParams(**ps)
+            
+        # Initialise network and store
+        self._network_init()
+        self.direct = DirectSRENParams(**ps, network_params=self.network.direct)
 
     def _check_valid_explicit(self, e: ExplicitSRENParams):
         """Error checking to help with explicit init."""

@@ -77,7 +77,7 @@ plt.plot(x, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
 plt.plot(x, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
 plt.plot(x, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
 
-format_plot("Number of model params", "Evaluation time (s)", "modelsize", x)
+format_plot("Number of model parameters", "Evaluation time (s)", "modelsize", x)
 
 # Also print hidden layer sizes vs. nv just for my interest
 nv_ren = results["nv_ren"]["nv"]
