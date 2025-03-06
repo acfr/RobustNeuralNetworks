@@ -8,7 +8,7 @@ from robustnn.utils import count_num_params
 
 import utils.speed as utils
     
-filename = "timing_results_v1"
+filename = "timing_results_v2"
 
 # Choose a fixed problem size
 nu = 10     # Number of inputs
