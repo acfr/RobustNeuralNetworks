@@ -1,4 +1,6 @@
+import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import LogLocator, LogFormatter
 
 from pathlib import Path
 from utils.plot_utils import startup_plotting
@@ -9,103 +11,68 @@ startup_plotting()
 dirpath = Path(__file__).resolve().parent
 
 # Load the saved data
-filename = "timing_results"
-filepath = dirpath / f"../results/timing/"
+filename = "timing_results_v0"
+filepath = dirpath / "../results/timing/"
 results = utils.load_results(filepath / f"{filename}.pickle")
+
+def format_plot(xlabel, ylabel, filename_suffix, x):
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.xscale("log", base=2 if "size" not in filename_suffix else 10)
+    plt.yscale("log")
+    plt.xlim(min(x), max(x))
+    plt.legend(ncol=2, loc='upper center', bbox_to_anchor=(0.5, -0.22))
+    plt.grid(True, which='both', linestyle=':', linewidth=0.75)
+    plt.savefig(filepath / f"{filename}_{filename_suffix}.pdf", bbox_inches='tight')
+    plt.close()
 
 # Plot eval time vs. sequence length (forward)
 x = results["horizon_ren"]["horizon"]
-y_ren = results["horizon_ren"]["forwards_eval"]
-y_sren = results["horizon_sren"]["forwards_eval"]
 
-plt.plot(x, y_ren, label="REN")
-plt.plot(x, y_sren, label="Scalable REN")
-plt.xlabel("Sequence length")
-plt.ylabel("Evaluation time (s)")
-plt.title("Forward Pass")
-plt.xscale("log", base=2)
-plt.yscale("log")
-plt.legend()
-plt.savefig(filepath / f"{filename}_sequence_forward.pdf")
-plt.close()
+y_ren_fwd = results["horizon_ren"]["forwards_eval"]
+y_ren_bck = results["horizon_ren"]["backwards_eval"]
+y_sren_fwd = results["horizon_sren"]["forwards_eval"]
+y_sren_bck = results["horizon_sren"]["backwards_eval"]
 
-# ...and backwards
-y_ren = results["horizon_ren"]["backwards_eval"]
-y_sren = results["horizon_sren"]["backwards_eval"]
+plt.figure(figsize=(4.2, 2.5))
+plt.plot(x, y_ren_fwd, color="#E69F00", label="REN (Forward)")
+plt.plot(x, y_ren_bck, color="#009E73", label="REN (Backward)")
+plt.plot(x, y_sren_fwd, color="#E69F00", linestyle="dashed", label="Scalable REN (Forward)")
+plt.plot(x, y_sren_bck, color="#009E73", linestyle="dashed", label="Scalable REN (Backward)")
 
-plt.plot(x, y_ren, label="REN")
-plt.plot(x, y_sren, label="Scalable REN")
-plt.xlabel("Sequence length")
-plt.ylabel("Evaluation time (s)")
-plt.title("Backwards Pass")
-plt.xscale("log", base=2)
-plt.yscale("log")
-plt.legend()
-plt.savefig(filepath / f"{filename}_sequence_backwards.pdf")
-plt.close()
+format_plot("Sequence length", "Evaluation time (s)", "sequence", x)
 
 # Plot eval time vs. batch size (forward)
-x = results["batches_ren"]["batches"]
-y_ren = results["batches_ren"]["forwards_eval"]
-y_sren = results["batches_sren"]["forwards_eval"]
+x = results["batches_ren"]["batches"][4:]
 
-plt.plot(x, y_ren, label="REN")
-plt.plot(x, y_sren, label="Scalable REN")
-plt.xlabel("Batch size")
-plt.ylabel("Evaluation time (s)")
-plt.title("Forward Pass")
-plt.xscale("log", base=2)
-plt.yscale("log")
-plt.legend()
-plt.savefig(filepath / f"{filename}_batches_forward.pdf")
-plt.close()
+y_ren_fwd = results["batches_ren"]["forwards_eval"][4:]
+y_ren_bck = results["batches_ren"]["backwards_eval"][4:]
+y_sren_fwd = results["batches_sren"]["forwards_eval"][4:]
+y_sren_bck = results["batches_sren"]["backwards_eval"][4:]
 
-# ...and backwards
-y_ren = results["batches_ren"]["backwards_eval"]
-y_sren = results["batches_sren"]["backwards_eval"]
+plt.figure(figsize=(4.2, 2.5))
+plt.plot(x, y_ren_fwd, color="#E69F00", label="REN (Forward)")
+plt.plot(x, y_ren_bck, color="#009E73", label="REN (Backward)")
+plt.plot(x, y_sren_fwd, color="#E69F00", linestyle="dashed", label="Scalable REN (Forward)")
+plt.plot(x, y_sren_bck, color="#009E73", linestyle="dashed", label="Scalable REN (Backward)")
 
-plt.plot(x, y_ren, label="REN")
-plt.plot(x, y_sren, label="Scalable REN")
-plt.xlabel("Batch size")
-plt.ylabel("Evaluation time (s)")
-plt.title("Backwards Pass")
-plt.xscale("log", base=2)
-plt.yscale("log")
-plt.legend()
-plt.savefig(filepath / f"{filename}_batches_backwards.pdf")
-plt.close()
+format_plot("Batch size", "Evaluation time (s)", "batches", x)
 
 # Plot eval time vs. number of model params (forward)
-# x = results["nv_ren"]["nv"]
 x = results["nv_ren"]["num_params"]
-y_ren = results["nv_ren"]["forwards_eval"]
-y_sren = results["nv_sren"]["forwards_eval"]
 
-plt.plot(x, y_ren, label="REN")
-plt.plot(x, y_sren, label="Scalable REN")
-plt.xlabel("Model size")
-plt.ylabel("Evaluation time (s)")
-plt.title("Forward Pass")
-plt.xscale("log", base=2)
-plt.yscale("log")
-plt.legend()
-plt.savefig(filepath / f"{filename}_nv_forward.pdf")
-plt.close()
+y_ren_fwd = results["nv_ren"]["forwards_eval"]
+y_ren_bck = results["nv_ren"]["backwards_eval"]
+y_sren_fwd = results["nv_sren"]["forwards_eval"]
+y_sren_bck = results["nv_sren"]["backwards_eval"]
 
-# ...and backwards
-y_ren = results["nv_ren"]["backwards_eval"]
-y_sren = results["nv_sren"]["backwards_eval"]
+plt.figure(figsize=(4.2, 2.5))
+plt.plot(x, y_ren_fwd, color="#E69F00", label="REN (Forward)")
+plt.plot(x, y_ren_bck, color="#009E73", label="REN (Backward)")
+plt.plot(x, y_sren_fwd, color="#E69F00", linestyle="dashed", label="Scalable REN (Forward)")
+plt.plot(x, y_sren_bck, color="#009E73", linestyle="dashed", label="Scalable REN (Backward)")
 
-plt.plot(x, y_ren, label="REN")
-plt.plot(x, y_sren, label="Scalable REN")
-plt.xlabel("Model size")
-plt.ylabel("Evaluation time (s)")
-plt.title("Backwards Pass")
-plt.xscale("log", base=2)
-plt.yscale("log")
-plt.legend()
-plt.savefig(filepath / f"{filename}_nv_backwards.pdf")
-plt.close()
+format_plot("Number of model params", "Evaluation time (s)", "modelsize", x)
 
 # Also print hidden layer sizes vs. nv just for my interest
 nv_ren = results["nv_ren"]["nv"]
