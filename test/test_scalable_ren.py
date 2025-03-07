@@ -1,13 +1,11 @@
 import jax
 import jax.numpy as jnp
 
-from datetime import datetime
-
 from robustnn import scalable_ren as sren
 from robustnn.utils import count_num_params
-
 from utils import compute_p_sren
 
+jax.config.update("jax_default_matmul_precision", "highest")
 
 # Problem size
 nu = 5
@@ -18,8 +16,8 @@ horizon = 2
 # Initialise a scalable REN
 nx = 3                  # Number of states
 nv = 4                  # Number of equilibirum layer states
-nh = (2,)*2             # Number of hidden layers in the LBDN
-init_method = "long_memory"
+nh = (2,) * 2           # Number of hidden layers in the LBDN
+init_method = "long_memory_explicit"
 model = sren.ScalableREN(nu, nx, nv, ny, nh, init_method=init_method, seed=42)
 model.explicit_pre_init()
     

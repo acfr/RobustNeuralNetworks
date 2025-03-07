@@ -11,7 +11,7 @@ from flax.struct import dataclass
 from flax.typing import Dtype, Array
 
 from robustnn import lbdn
-from robustnn.utils import l2_norm
+from robustnn.utils import l2_norm, solve_discrete_lyapunov_direct
 from robustnn.utils import ActivationFn, Initializer
 
 
@@ -479,6 +479,7 @@ class ScalableREN(nn.Module):
             bx = jnp.zeros((nx,), dtype),
             bv = jnp.zeros((nv,), dtype),
             by = jnp.zeros((ny,), dtype),
+            network_params=None
         )
         self.explicit_init = explicit
     
@@ -504,8 +505,8 @@ class ScalableREN(nn.Module):
         V = init.orthogonal()(keys[2], (nx,nx), dtype)
         
         # State and equilibrium layers
-        # C1 will be chosen so that the contraction LMI is feasible,
-        # so it is actually ignored. 
+        # At the moment, B1, C1 will be chosen so that 
+        # the contraction LMI is feasible, so they are actually ignored. 
         A = V @ jnp.diag(D) @ U.T
         B1 = self.kernel_init(keys[3], (nx, nv), dtype)
         B2 = self.kernel_init(keys[4], (nx, nu), dtype)
@@ -549,38 +550,48 @@ class ScalableREN(nn.Module):
         """
         nx = self.state_size
         nv = self.features
+        dtype = self.param_dtype
         
-        # Create variables
-        P = cp.Variable((nx, nx), symmetric=True)
-        C1_T_C1 = cp.Variable((nx, nx))
+        # # Create variables
+        # P = cp.Variable((nx, nx), symmetric=True)
+        # C1 = cp.Variable((nv, nx))
+        # B1 = cp.Variable((nx, nv))
+        # A = e.A
         
-        # Generate constraints for contraction and small-gain
-        AB = np.block([[e.A, e.B1]])
-        lhs = cp.bmat([
-            [P - C1_T_C1, np.zeros((nx, nv))],
-            [np.zeros((nv, nx)), np.identity(nv)]
-        ])
-        lhs = lhs - AB.T @ P @ AB
-        constraints = [
-            lhs >> 0,
-            P >> np.identity(nx)
-        ]
+        # # Generate constraints for contraction and small-gain
+        # # TODO: At the moment this results in B1, C1 = 0. Fix later.
+        # lhs = cp.bmat([
+        #     [jnp.identity(nv), C1, jnp.zeros((nv, nv + nx))],
+        #     [C1.T, P, jnp.zeros((nx, nv)), A.T],
+        #     [jnp.zeros((nv, nv + nx)), jnp.identity(nv), B1.T],
+        #     [jnp.zeros((nx, nv)), A, B1, 2*jnp.identity(nx) - P]
+        # ])
+        # constraints = [
+        #     lhs >> 0,
+        #     P >> np.identity(nx)
+        # ]
         
-        # Solve SDP
-        prob = cp.Problem(cp.Minimize(cp.norm(P)), constraints)
-        prob.solve(solver=cp.MOSEK)
-        if prob.status != cp.OPTIMAL:
-            raise ValueError("Could not find valid P, Lambda for explicit params.")
+        # # Solve SDP
+        # prob = cp.Problem(cp.Minimize(cp.norm(P)), constraints)
+        # prob.solve(solver=cp.MOSEK)
+        # if prob.status != cp.OPTIMAL:
+        #     print("Problem status: ", prob.status)
+        #     raise ValueError("Could not find valid P, Lambda for explicit params.")
         
-        P = jnp.array(P.value)
-        C1 = jnp.linalg.cholesky(jnp.array(C1_T_C1.value))
-        print(C1)
-        raise NotImplementedError() #TODO: Finish this another time.
+        # P = jnp.array(P.value)
+        # C1 = jnp.array(C1.value)
+        # B1 = jnp.array(B1.value)
+        
+        # TODO: SDP approach currently not working. Just assume B1, C1 = 0
+        # for now and solve P - AT @ P @ A >= 0.
+        B1 = jnp.zeros((nx, nv), dtype)
+        C1 = jnp.zeros((nv, nx), dtype)
+        P = solve_discrete_lyapunov_direct(e.A.T, jnp.identity(nx))
         
         # Compute the implicit model params
         E = P
         A_imp = E @ e.A
-        B1_imp = E @ e.B1
+        B1_imp = E @ B1
         
         Hdiff = jnp.block([
             [E.T + E - P, A_imp.T],
@@ -588,13 +599,13 @@ class ScalableREN(nn.Module):
         ]) - jnp.block([
             [C1.T @ C1, jnp.zeros((nx, nx))],
             [jnp.zeros((nx, nx)), B1_imp @ B1_imp.T]
-        ])
+        ]) + self.eps * jnp.identity(2*nx)
         X = jnp.linalg.cholesky(Hdiff, upper=True)
         
         return DirectSRENParams(
             p = l2_norm(X, eps=self.eps),
             X = X,
-            Y1 = E,
+            Y = E,
             B1 = B1_imp, 
             B2 = e.B2,
             C1 = C1,
