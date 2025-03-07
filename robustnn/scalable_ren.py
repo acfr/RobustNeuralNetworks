@@ -394,14 +394,17 @@ class ScalableREN(nn.Module):
             nx = self.state_size
             dtype = self.param_dtype
             
+            key, rng = jax.random.split(key)
+            eigs = 0.05 * jax.random.uniform(rng, (nx,))
+            
             E = jnp.identity(nx, dtype)
-            A = jnp.identity(nx, dtype)
+            A = jnp.identity(nx, dtype) - jnp.diag(eigs)
             P = jnp.identity(nx, dtype)
             
             H = jnp.block([
                 [(E + E.T - P), A.T],
                 [A, P]
-            ]) + self.eps * jnp.identity(shape[0])
+            ])
             
             X = jnp.linalg.cholesky(H, upper=True)
             return X

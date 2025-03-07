@@ -46,10 +46,22 @@ ren_config = {
 sren_config = deepcopy(ren_config)
 sren_config["network"] = "scalable_ren"
 sren_config["nx"] = 10
-sren_config["nv"] = 37
-sren_config["nh"] = (32,) * 5
-sren_config["init_method"] = "random"
+# sren_config["nv"] = 37
+# sren_config["nh"] = (32,) * 5
 
+# Reverse-engineer width of hidden layers
+sren_config["nv"] = ren_config["nv"] // 2
+sren_config["layers"] = 2
+nu, ny = 1, 1
+nh = utils.choose_lbdn_width(
+    nu, 
+    ren_config["nx"], 
+    ny, 
+    ren_config["nv"], 
+    sren_config["nv"], 
+    sren_config["layers"]
+)
+sren_config["nh"] = (nh,) * sren_config["layers"]
 
 def build_ren(config):
     """Build a REN for the Youla-REN policy."""
@@ -195,5 +207,5 @@ def train_and_test(config):
     
 
 # Test it out
-train_and_test(ren_config)
+# train_and_test(ren_config)
 train_and_test(sren_config)

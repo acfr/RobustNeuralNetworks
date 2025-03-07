@@ -6,6 +6,7 @@ from robustnn import ren
 from robustnn import scalable_ren as sren
 from robustnn.utils import count_num_params
 
+from utils.utils import choose_lbdn_width
 import utils.speed as utils
     
 filename = "timing_results_v2"
@@ -140,7 +141,7 @@ def run_timing(nv_ren, batches, horizon, n_repeats=1000):
     """Run the timing for both REN and scalable REN."""
     # Choose size of scalable-REN to match num params
     nv_sren = nv_ren // 2
-    nh = utils.choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers)
+    nh = choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers)
     
     # Build models
     nh_sren = (nh,) * n_layers
