@@ -19,7 +19,7 @@ horizon = 2
 nx = 3                  # Number of states
 nv = 4                  # Number of equilibirum layer states
 nh = (2,)*2             # Number of hidden layers in the LBDN
-init_method = "random_explicit"
+init_method = "long_memory"
 model = sren.ScalableREN(nu, nx, nv, ny, nh, init_method=init_method, seed=42)
 model.explicit_pre_init()
     

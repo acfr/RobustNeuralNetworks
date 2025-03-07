@@ -16,7 +16,8 @@ from robustnn.utils import ActivationFn, Initializer
 
 
 def get_valid_init():
-    return ["random", "random_explicit", "long_memory_explicit", "external_explicit"]
+    return ["random", "long_memory", "random_explicit", "long_memory_explicit", 
+            "external_explicit"]
 
 
 @dataclass
@@ -312,7 +313,18 @@ class ScalableREN(nn.Module):
             self._init_from_explicit()
         else:
             self._init_params_direct()
-            
+    
+    def _network_init(self):
+        """Initialise the LBDN for the equilibrium layer"""
+        self.network = lbdn.LBDN(
+            input_size=self.features,
+            hidden_sizes=self.hidden,
+            output_size=self.features,
+            gamma=self._gamma,
+            activation=self.activation,
+            kernel_init=self.kernel_init,
+        )
+        
     def _init_params_direct(self):
         """Initialise all direct params for a scalable REN and store."""
         
@@ -328,19 +340,26 @@ class ScalableREN(nn.Module):
         # Initialise an LBDN for the equilibrium layer
         self._network_init()
         
-        # Initialise free parameters
-        Y = self.param("Y", self.kernel_init, (nx, nx), dtype)
-        
-        B1 = self.param("B1", self.kernel_init, (nx, nv), dtype)
-        C1 = self.param("C1", self.kernel_init, (nv, nx), dtype)
-        
+        # Initialise free parameters        
         B2 = self.param("B2", self.kernel_init, (nx, nu), dtype)
         D12 = self.param("D12", self.kernel_init, (nv, nu), dtype)
         bx = self.param("bx", self.bias_init, (nx,), dtype)
         bv = self.param("bv", self.bias_init, (nv,), dtype)
         
-        # Special choice for X matrix (TODO later)            
-        X = self.param("X", self.recurrent_kernel_init, (2*nx, 2*nx), dtype)
+        # Long-horizon initialisation or not
+        if self.init_method == "random":
+            x_init = self.recurrent_kernel_init
+            Y = self.param("Y", self.kernel_init, (nx, nx), dtype)
+            B1 = self.param("B1", self.kernel_init, (nx, nv), dtype)
+            C1 = self.param("C1", self.kernel_init, (nv, nx), dtype)
+            
+        elif self.init_method == "long_memory":
+            x_init = self._x_long_memory_init()
+            Y = self.param("Y", init.constant(jnp.identity(nx)), (nx, nx), dtype)
+            B1 = self.param("B1", init.zeros_init(), (nx, nv), dtype)
+            C1 = self.param("C1", init.zeros_init(), (nv, nx), dtype)
+            
+        X = self.param("X", x_init, (2*nx, 2*nx), dtype)
         p = self.param("p", init.constant(l2_norm(X, eps=self.eps)), (1,), dtype)
         
         # Output layer params
@@ -365,17 +384,29 @@ class ScalableREN(nn.Module):
         self.direct = DirectSRENParams(
             p, X, Y, B1, B2, C1, D12, C2, D21, D22, bx, bv, by, self.network.direct
         )
-    
-    def _network_init(self):
-        """Initialise the LBDN for the equilibrium layer"""
-        self.network = lbdn.LBDN(
-            input_size=self.features,
-            hidden_sizes=self.hidden,
-            output_size=self.features,
-            gamma=self._gamma,
-            activation=self.activation,
-            kernel_init=self.kernel_init,
-        )
+        
+    def _x_long_memory_init(self):
+        """Initialise the X matrix so A is close to the identity.
+        
+        Assumes B1, C1 = 0 and Y = E = I.
+        """
+        def init_func(key, shape, dtype) -> Array:
+            nx = self.state_size
+            dtype = self.param_dtype
+            
+            E = jnp.identity(nx, dtype)
+            A = jnp.identity(nx, dtype)
+            P = jnp.identity(nx, dtype)
+            
+            H = jnp.block([
+                [(E + E.T - P), A.T],
+                [A, P]
+            ]) + self.eps * jnp.identity(shape[0])
+            
+            X = jnp.linalg.cholesky(H, upper=True)
+            return X
+        
+        return init_func
     
     
     #################### Explicit Initialisation ####################
