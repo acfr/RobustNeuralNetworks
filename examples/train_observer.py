@@ -23,17 +23,17 @@ jax.config.update("jax_default_matmul_precision", "highest")
 ren_config = {
     "experiment": "pde",
     "network": "contracting_ren",
-    "epochs": 150,
+    "epochs": 200,                  # (train for longer for better final result)
     "lr": 2e-3,
     "min_lr": 1e-6,
-    "lr_patience": 4,
+    "lr_patience": 10,
     "batches": 200,
     "time_steps": 100_000,
     
     "nx": 51,
     "nv": 200,
-    "activation": "tanh",
-    "init_method": "random",
+    "activation": "relu",           # (tanh smoother learning for REN)
+    "init_method": "long_memory",
     "polar": True,
     
     "seed": 0,
@@ -42,10 +42,20 @@ ren_config = {
 # Should have size: 94665 params (ish)
 sren_config = deepcopy(ren_config)
 sren_config["network"] = "scalable_ren"
-sren_config["nx"] = 51
-sren_config["nv"] = 64
-sren_config["nh"] = (64,) * 8
-sren_config["init_method"] = "random"
+
+# Reverse-engineer width of hidden layers
+sren_config["nv"] = ren_config["nv"] // 4
+sren_config["layers"] = 4
+nu, ny = 1, 1
+nh = utils.choose_lbdn_width(
+    nu, 
+    ren_config["nx"], 
+    ny, 
+    ren_config["nv"], 
+    sren_config["nv"], 
+    sren_config["layers"]
+)
+sren_config["nh"] = (nh,) * sren_config["layers"]
 
 
 def build_ren(input_data, config):
@@ -149,6 +159,7 @@ def train_and_test(config):
     
     # Re-build and initialise the observer
     model = build_ren(y, config)
+    model.explicit_pre_init()
     
     # Simulate the observer through time
     key = jax.random.key(config["seed"])
@@ -212,5 +223,5 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
+# train_and_test(ren_config)
 train_and_test(sren_config)
-train_and_test(ren_config)

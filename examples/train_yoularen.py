@@ -19,8 +19,6 @@ dirpath = Path(__file__).resolve().parent
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
-# Slightly better results with (nx, nv) = (50, 500), 
-# but not worth computation time
 ren_config = {
     "experiment": "youla",
     "network": "contracting_ren",
