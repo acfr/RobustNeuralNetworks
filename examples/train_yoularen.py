@@ -201,5 +201,8 @@ def train_and_test(config):
     
 
 # Test it out
-train_and_test(ren_config)
-train_and_test(sren_config)
+for seed in range(1,10):
+    ren_config["seed"] = seed
+    sren_config["seed"] = seed
+    train_and_test(ren_config)
+    train_and_test(sren_config)

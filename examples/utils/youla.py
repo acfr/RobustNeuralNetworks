@@ -166,6 +166,7 @@ def train_yoularen(
     max_steps: int = 200, 
     verbose: bool = True,
     seed: int = 0,
+    test_seed: int = 0,
 ):
     """Train a Youla-REN with analytic policy gradients.
 
@@ -216,7 +217,9 @@ def train_yoularen(
     
     # Random seeds
     rng = jax.random.key(seed)
-    key1, key2, key3, key4, rng = jax.random.split(rng, 5)
+    test_rng = jax.random.key(test_seed)
+    key1, key2, rng = jax.random.split(rng, 3)
+    test_rng1, test_rng2 = jax.random.split(test_rng)
     
     # Set up optimizer with learning rate scheduler
     steps = decay_steps * num_epochs_per_reset
@@ -243,8 +246,8 @@ def train_yoularen(
     
     # Test dataset
     test_x0 = env.init_state(test_batches)
-    test_q0 = model.initialize_carry(key4, (test_batches, y_tilde.shape[-1]))
-    test_disturbances = generate_disturbance(key3, max_steps, batches)
+    test_q0 = model.initialize_carry(test_rng1, (test_batches, y_tilde.shape[-1]))
+    test_disturbances = generate_disturbance(test_rng2, max_steps, batches)
     
     # Loop through for training
     test_loss = []

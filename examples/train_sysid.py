@@ -20,11 +20,10 @@ dirpath = Path(__file__).resolve().parent
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
-# TODO: Performance not great here yet. Tune more.
 ren_config = {
     "experiment": "f16",
     "network": "contracting_ren",
-    "seq_len": 256,            # TODO: Worth tuning this. Smaller better? Was 1024.
+    "seq_len": 256,
     "epochs": 70,
     "clip_grad": 10,
     "seed": 0,
@@ -179,5 +178,8 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
-train_and_test(sren_config)
-# train_and_test(ren_config)
+for seed in range(10):
+    ren_config["seed"] = seed
+    sren_config["seed"] = seed
+    train_and_test(ren_config)
+    train_and_test(sren_config)
