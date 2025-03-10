@@ -11,6 +11,7 @@ dirpath = Path(__file__).resolve().parent
 # Load the saved data
 filename = "timing_results_v1"
 filepath = dirpath / "../results/timing/"
+savepath = dirpath / "../paperfigs/timing/"
 results = utils.load_results(filepath / f"{filename}.pickle")
 
 def format_plot(xlabel, ylabel, filename_suffix, x):
@@ -21,7 +22,7 @@ def format_plot(xlabel, ylabel, filename_suffix, x):
     plt.xlim(min(x), max(x))
     plt.legend(ncol=2, loc='upper center', bbox_to_anchor=(0.5, -0.22))
     plt.grid(True, which='both', linestyle=':', linewidth=0.75)
-    plt.savefig(filepath / f"{filename}_{filename_suffix}.pdf", bbox_inches='tight')
+    plt.savefig(savepath / f"{filename}_{filename_suffix}.pdf", bbox_inches='tight')
     plt.close()
     
 # Choose colours and linestyles

@@ -10,12 +10,6 @@ from utils import utils
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
 
-# For each experiment:
-#
-#   Next steps will be to add the following:
-#       - Plot aggregated mean loss vs. time
-#         (will require interpolation)
-# Let's do this.
 
 def get_loss_key(experiment):
     if experiment == "youla":
@@ -28,20 +22,42 @@ def get_loss_key(experiment):
 
 
 def get_reward_data(data: list, experiment: str):
+    
+    # Get basic loss data
     losses = np.array([d["results"][get_loss_key(experiment)] for d in data])
     times = np.array([d["results"]["times"] for d in data])
     
+    # Store time delta
+    # TODO: Should we include the JITted time here or not?
+    times = (times[:, :] - times[:, 0:1])
+    times = np.vectorize(lambda td: td.total_seconds())(times)
+    
+    # Interpolate over time
+    npoints = len(losses[0])
+    time = np.linspace(0, times.max(), npoints)
+    time_losses = np.array([
+        np.interp(time, times[k], losses[k])
+        for k in range(times.shape[0])
+    ])
+    
+    # Return aggregated results
     return {
         "losses": losses.mean(axis=0),
         "stdev": losses.std(axis=0),
         "max": losses.max(axis=0),
         "min": losses.min(axis=0),
-        "times": times # TODO: interpolate times and aggregate
+        "time": time,
+        "time_losses": time_losses.mean(axis=0),
+        "time_stdev": time_losses.std(axis=0),
+        "time_max": time_losses.max(axis=0),
+        "time_min": time_losses.min(axis=0),
     }
     
 
 def aggregate_results(experiment: str, key: str, opts: Sequence[str]):
-    
+    """
+    Aggregate results for different model/hyperparam combinations.
+    """
     # Read in the pickle files for this experiment
     data = []
     fpath = dirpath / f"../results/{experiment}/"
@@ -60,7 +76,19 @@ def aggregate_results(experiment: str, key: str, opts: Sequence[str]):
     # Return data for plotting
     return results
 
+
+def format_plot(xlabel, ylabel, filename_suffix, x1, x2):
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.yscale("log")
+    plt.xlim(min([min(x1), min(x2)]), max([max(x1), max(x2)]))
+    plt.legend()
+    plt.grid(True, which='both', linestyle=':', linewidth=0.75)
+    plt.tight_layout()
+    plt.savefig(dirpath / f"../paperfigs/performance/{filename_suffix}.pdf")
+    plt.close()
     
+
 def plot_results(experiment, ylabel ):
     
     model_results = aggregate_results(
@@ -71,7 +99,7 @@ def plot_results(experiment, ylabel ):
     color_r = "#009E73"
     color_s = "#D55E00"
 
-    # Make model plots
+    # Make loss plots for different models
     y1 = model_results["contracting_ren"]["losses"]
     y2 = model_results["scalable_ren"]["losses"]
     y1min = model_results["contracting_ren"]["max"]
@@ -85,16 +113,26 @@ def plot_results(experiment, ylabel ):
     plt.plot(x, y2, color=color_s, label="Scalable REN")
     plt.fill_between(x, y1min, y1max, alpha=0.2, color=color_r)
     plt.fill_between(x, y2min, y2max, alpha=0.2, color=color_s)
+    
+    format_plot("Training epochs", ylabel, f"{experiment}_loss", x, x)
+    
+    # Now do loss vs. time plots
+    y1 = model_results["contracting_ren"]["time_losses"]
+    y2 = model_results["scalable_ren"]["time_losses"]
+    y1min = model_results["contracting_ren"]["time_max"]
+    y1max = model_results["contracting_ren"]["time_min"]
+    y2min = model_results["scalable_ren"]["time_max"]
+    y2max = model_results["scalable_ren"]["time_min"]
+    x1 = model_results["contracting_ren"]["time"]
+    x2 = model_results["scalable_ren"]["time"]
+    
+    plt.figure(figsize=(4.5, 3))
+    plt.plot(x1, y1, color=color_r, label="REN")
+    plt.plot(x2, y2, color=color_s, label="Scalable REN")
+    plt.fill_between(x1, y1min, y1max, alpha=0.2, color=color_r)
+    plt.fill_between(x2, y2min, y2max, alpha=0.2, color=color_s)
 
-    plt.xlabel("Training epochs")
-    plt.ylabel(ylabel)
-    plt.yscale("log")
-    plt.xlim(min(x), max(x))
-    plt.legend()
-    plt.grid(True, which='both', linestyle=':', linewidth=0.75)
-    plt.tight_layout()
-    plt.savefig(dirpath / f"../paperfigs/performance/{experiment}_loss.pdf")
-    plt.close()
+    format_plot("Elapsed training time (s)", ylabel, f"{experiment}_timeloss", x1, x2)
 
 
 plot_results("f16", "Training loss")
