@@ -19,15 +19,12 @@ dirpath = Path(__file__).resolve().parent
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
-# Slightly better results with (nx, nv) = (50, 500), 
-# but not worth computation time
 ren_config = {
     "experiment": "youla",
     "network": "contracting_ren",
-    "epochs": 100,
-    "lr": 1e-3,
-    "min_lr": 1e-6,
-    "lr_patience": 10,
+    "epochs": 80,
+    "lr": 1e-2,
+    "decay_steps": 60,
     "batches": 64,
     "test_batches": 64,
     "max_steps": 800,   
@@ -35,7 +32,7 @@ ren_config = {
     
     "nx": 10,
     "nv": 100,
-    "activation": "relu",
+    "activation": "tanh",
     "init_method": "long_memory",
     "polar": True,
     
@@ -45,11 +42,20 @@ ren_config = {
 # Should have size: 14835 params (ish)
 sren_config = deepcopy(ren_config)
 sren_config["network"] = "scalable_ren"
-sren_config["nx"] = 10
-sren_config["nv"] = 37
-sren_config["nh"] = (32,) * 5
-sren_config["init_method"] = "random"
 
+# Reverse-engineer width of hidden layers
+sren_config["nv"] = ren_config["nv"] // 2
+sren_config["layers"] = 4
+nu, ny = 1, 1
+nh = utils.choose_lbdn_width(
+    nu, 
+    ren_config["nx"], 
+    ny, 
+    ren_config["nv"], 
+    sren_config["nv"], 
+    sren_config["layers"]
+)
+sren_config["nh"] = (nh,) * sren_config["layers"]
 
 def build_ren(config):
     """Build a REN for the Youla-REN policy."""
@@ -98,8 +104,7 @@ def run_youla_ren_training(config):
         rollout_length  = config["rollout_length"],
         max_steps       = config["max_steps"],
         lr              = config["lr"],
-        min_lr          = config["min_lr"],
-        lr_patience     = config["lr_patience"],
+        decay_steps     = config["decay_steps"],
         seed            = config["seed"]
     )
     results["num_params"] = count_num_params(params)
@@ -120,6 +125,7 @@ def train_and_test(config):
     
     # Re-build REN and environment
     model = build_ren(config)
+    model.explicit_pre_init()
     env = youla.ExampleSystem()
     
     # Generate test data

@@ -1,25 +1,25 @@
 import jax
 import jax.numpy as jnp
 
-from datetime import datetime
-
 from robustnn import scalable_ren as sren
 from robustnn.utils import count_num_params
-
 from utils import compute_p_sren
 
+jax.config.update("jax_default_matmul_precision", "highest")
 
 # Problem size
-nu = 10
-ny = 20
-batches = 50
-horizon = 512
+nu = 5
+ny = 2
+batches = 4
+horizon = 2
 
 # Initialise a scalable REN
-nx = 50             # Number of states
-nv = 100            # Number of equilibirum layer states
-nh = (128,)*6       # Number of hidden layers in the LBDN
-model = sren.ScalableREN(nu, nx, nv, ny, nh)
+nx = 3                  # Number of states
+nv = 4                  # Number of equilibirum layer states
+nh = (2,) * 2           # Number of hidden layers in the LBDN
+init_method = "long_memory_explicit"
+model = sren.ScalableREN(nu, nx, nv, ny, nh, init_method=init_method, seed=42)
+model.explicit_pre_init()
     
 # Random seeds
 rng = jax.random.key(0)
@@ -34,26 +34,24 @@ inputs = jax.random.normal(key3, (horizon, batches, nu))
 params = model.init(key4, states, inputs[0])
 print("Number of params: ", count_num_params(params))
 
-# Dummy loss function that calls the REN on a sequence of data
+# Call forward pass
+jit_call = jax.jit(model.simulate_sequence)
+new_state, out = jit_call(params, states, inputs)
+print(new_state)
+print(out)
+
+# Test taking a gradient
 @jax.jit
 def loss(params, x0, u):
     x1, y = model.simulate_sequence(params, x0, u)
     return jnp.sum(x1**2) + jnp.sum(y**2)
 
-# Roughly time how long it takes to run forward eval. Run it once for JIT first
-first_losses = loss(params, states, inputs)
+grad_func = jax.jit(jax.grad(loss, argnums=(0,1,2)))
+gs = grad_func(params, states, inputs)
 
-print("Start forward: ", datetime.now())
-losses = loss(params, states, inputs)
-print("End forward:   ", datetime.now())
-
-# Do the same for the backwards pass
-grad_func = jax.jit(jax.grad(loss))
-first_grads = grad_func(params, states, inputs)
-
-print("Start backward: ", datetime.now())
-grads = grad_func(params, states, inputs)
-print("End backward:   ", datetime.now())
+print(loss(params, states, inputs))
+print("States grad: ", gs[1])
+print("Input grad: ", gs[2])
 
 
 ############################################################

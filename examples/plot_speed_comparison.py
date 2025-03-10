@@ -9,7 +9,7 @@ startup_plotting()
 dirpath = Path(__file__).resolve().parent
 
 # Load the saved data
-filename = "timing_results_v0"
+filename = "timing_results_v1"
 filepath = dirpath / "../results/timing/"
 results = utils.load_results(filepath / f"{filename}.pickle")
 
@@ -48,12 +48,12 @@ plt.plot(x, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Ba
 format_plot("Sequence length", "Evaluation time (s)", "sequence", x)
 
 # Plot eval time vs. batch size (forward)
-x = results["batches_ren"]["batches"][4:]
+x = results["batches_ren"]["batches"]
 
-y_ren_fwd = results["batches_ren"]["forwards_eval"][4:]
-y_ren_bck = results["batches_ren"]["backwards_eval"][4:]
-y_sren_fwd = results["batches_sren"]["forwards_eval"][4:]
-y_sren_bck = results["batches_sren"]["backwards_eval"][4:]
+y_ren_fwd = results["batches_ren"]["forwards_eval"]
+y_ren_bck = results["batches_ren"]["backwards_eval"]
+y_sren_fwd = results["batches_sren"]["forwards_eval"]
+y_sren_bck = results["batches_sren"]["backwards_eval"]
 
 plt.figure(figsize=(4.2, 2.5))
 plt.plot(x, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
@@ -77,7 +77,7 @@ plt.plot(x, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
 plt.plot(x, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
 plt.plot(x, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
 
-format_plot("Number of model params", "Evaluation time (s)", "modelsize", x)
+format_plot("Number of model parameters", "Evaluation time (s)", "modelsize", x)
 
 # Also print hidden layer sizes vs. nv just for my interest
 nv_ren = results["nv_ren"]["nv"]

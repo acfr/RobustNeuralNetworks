@@ -51,4 +51,4 @@ gs = grad_func(states, inputs)
 
 print(loss(states, inputs))
 print("States grad: ", gs[0])
-print("Output grad: ", gs[1])
+print("Input grad: ", gs[1])

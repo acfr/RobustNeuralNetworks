@@ -60,6 +60,7 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
         """
         new_x, y_pred = model.simulate_sequence(params, x, u)
         loss = jnp.mean(l2_norm(y - y_pred, axis=(-2, -1))**2)
+        # TODO: Is this actually correct?
         return loss, new_x
     
     grad_loss = jax.jit(jax.value_and_grad(loss_fn, has_aux=True))

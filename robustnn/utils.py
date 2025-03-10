@@ -71,6 +71,8 @@ def solve_discrete_lyapunov_direct(a, q):
     """
     JAX implementation of `scipy.linalg.solve_discrete_lyapunov`.
     Only solves via the direct method.
+    
+    A @ P @ A.T - P + Q = 0
     """
     a = jnp.asarray(a)
     q = jnp.asarray(q)

@@ -1,5 +1,6 @@
 import flax.linen as linen
 import jax.numpy as jnp
+import numpy as np
 import pickle
 
 from pathlib import Path
@@ -63,3 +64,29 @@ def load_results_from_config(config):
     """Short-cut to load from config dictionary."""
     filepath, _ = generate_fname(config)
     return load_results(filepath)
+
+
+def choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers):
+    """Choose width of LBDN layers in scalable REN so that
+    number of params matches up with a REN of the same size.
+    
+    Assumes fixed hidden width in the LBDN of n_layers layers.
+    Eg: hidden = (nh, ) * n_layers
+    """
+    
+    # Difference between num. REN and num. S-REN (LTI) params
+    diff = (
+        (4*nx*nv_ren + nv_ren**2) + 
+        nv_ren*(nu + ny + 1) - 
+        nv_sren*(nu + ny + 2*nx + 1)
+    )
+    
+    # Coefficients for width of LBDN layers
+    n_layers -= 1
+    a = (1 + 2*n_layers)
+    b = 2*(nv_sren + n_layers + 1)
+    c = (nv_sren**2 + 2*nv_sren + n_layers + 2) - diff
+    
+    # Solve quadratic equation
+    nh = (-b + np.sqrt(b**2 - 4*a*c)) / (2*a)
+    return int(np.ceil(nh))

@@ -36,19 +36,6 @@ def tril_equlibrium_layer(activation, D11, b):
         Di_wi = wi @ Di_T
         w_eq = w_eq.at[..., i].set(activation(Di_wi + bi))
     return w_eq
-    # D11_T = D11.T
-    # def scan_fn(carry, unused_t):
-    #     w_eq, i = carry
-    #     Di_T = D11_T[..., i]
-    #     bi = b[..., i]
-    #     Di_wi = w_eq @ Di_T
-    #     w_eq = w_eq.at[..., i].set(activation(Di_wi + bi))
-    #     return (w_eq, i+1), None
-    
-    # w_eq = jnp.zeros_like(b)
-    # (w_eq, _), _ = jax.lax.scan(scan_fn, (w_eq, 0), length=D11.shape[0])
-    # return w_eq
-    # NOTE: The above is slower because we can't do dynamic slicing in JITted funcs :(
         
 
 @dataclass
@@ -367,17 +354,20 @@ class RENBase(nn.Module):
         B2 = self.param("B2", self.kernel_init, (nx, nu), dtype)
         D12 = self.param("D12", self.kernel_init, (nv, nu), dtype)
         
-        if self.init_method == "random":
-            x_init = self.recurrent_kernel_init
-        elif self.init_method == "long_memory":
-            x_init = self._x_long_memory_init(B2, D12)
-        X = self.param("X", x_init, (2*nx + nv, 2*nx + nv), dtype)
-        
-        p = self.param("p", init.constant(l2_norm(X, eps=self.eps)), (1,), dtype)
-        Y1 = self.param("Y1", self.kernel_init, (nx, nx), dtype)
-        
         bx = self.param("bx", self.bias_init, (nx,), dtype)
         bv = self.param("bv", self.bias_init, (nv,), dtype)
+        
+        # Special construction for X matrix
+        if self.init_method == "random":
+            x_init = self.recurrent_kernel_init
+            Y1 = self.param("Y1", self.kernel_init, (nx, nx), dtype)
+            
+        elif self.init_method == "long_memory":
+            x_init = self._x_long_memory_init(B2, D12)
+            Y1 = self.param("Y1", init.constant(jnp.identity(nx)), (nx, nx), dtype)
+        
+        X = self.param("X", x_init, (2*nx + nv, 2*nx + nv), dtype)
+        p = self.param("p", init.constant(l2_norm(X, eps=self.eps)), (1,), dtype)
         
         # Output layer params
         if self.init_output_zero:
@@ -425,18 +415,20 @@ class RENBase(nn.Module):
         """
         def init_func(key, shape, dtype) -> Array:
             dtype = self.param_dtype
-            key, rng = jax.random.split(key, 2)
+            key, rng1, rng2 = jax.random.split(key, 3)
             
             nx = B2.shape[0]
             nv = D12.shape[0]
             
+            eigs = 0.05 * jax.random.uniform(rng1, (nx,))
+            
             E = jnp.identity(nx, dtype)
-            F = jnp.identity(nx, dtype)
+            F = jnp.identity(nx, dtype) - jnp.diag(eigs)
             P = jnp.identity(nx, dtype)
             
             B1 = jnp.zeros((nx, nv), dtype)
             C1 = jnp.zeros((nv, nx), dtype)
-            D11 = self.kernel_init(rng, (nv, nv), dtype)
+            D11 = self.kernel_init(rng2, (nv, nv), dtype)
             
             # Need eigvals of Lambda large enough so that H22 is pos def
             eigs, _ = jnp.linalg.eigh(D11 + D11.T)
@@ -547,7 +539,7 @@ class RENBase(nn.Module):
         B1_imp = E @ e.B1
         B2_imp = E @ e.B2
         
-        C1_imp = C1_imp.value
+        C1_imp = jnp.array(C1_imp.value)
         D11_imp = Lambda @ e.D11
         D12_imp = Lambda @ e.D12
         
