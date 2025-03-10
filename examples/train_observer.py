@@ -44,17 +44,10 @@ sren_config = deepcopy(ren_config)
 sren_config["network"] = "scalable_ren"
 
 # Reverse-engineer width of hidden layers
+# so number of params is similar
 sren_config["nv"] = ren_config["nv"] // 4
 sren_config["layers"] = 4
-nu, ny = 1, 1
-nh = utils.choose_lbdn_width(
-    nu, 
-    ren_config["nx"], 
-    ny, 
-    ren_config["nv"], 
-    sren_config["nv"], 
-    sren_config["layers"]
-)
+nh = 96
 sren_config["nh"] = (nh,) * sren_config["layers"]
 
 
@@ -223,5 +216,5 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
-# train_and_test(ren_config)
+train_and_test(ren_config)
 train_and_test(sren_config)

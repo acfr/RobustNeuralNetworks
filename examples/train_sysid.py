@@ -26,7 +26,7 @@ ren_config = {
     "network": "contracting_ren",
     "seq_len": 256,            # TODO: Worth tuning this. Smaller better? Was 1024.
     "epochs": 70,
-    "clip_grad": 1e-1,
+    "clip_grad": 10,
     "seed": 0,
     "schedule": {
         "init_value": 1e-3,
@@ -38,17 +38,26 @@ ren_config = {
     "nv": 150,
     "activation": "relu",
     "init_method": "long_memory",
-    "polar": False,
+    "polar": True,
 } 
 
 # Should have size: 96995 params (ish)
-# TODO: Tune this. Haven't checked performance yet
 sren_config = deepcopy(ren_config)
 sren_config["network"] = "scalable_ren"
-sren_config["nx"] = 75
-sren_config["nv"] = 64
-sren_config["nh"] = (64,) * 6
-sren_config["init_method"] = "random"
+
+# Reverse-engineer width of hidden layers
+sren_config["nv"] = ren_config["nv"] // 2
+sren_config["layers"] = 4
+nu, ny = 2, 3
+nh = utils.choose_lbdn_width(
+    nu, 
+    ren_config["nx"], 
+    ny, 
+    ren_config["nv"], 
+    sren_config["nv"], 
+    sren_config["layers"]
+)
+sren_config["nh"] = (nh,) * sren_config["layers"]
 
 
 def build_ren(config):
@@ -171,4 +180,4 @@ def train_and_test(config):
 
 # Test it out on nominal config
 train_and_test(sren_config)
-train_and_test(ren_config)
+# train_and_test(ren_config)
