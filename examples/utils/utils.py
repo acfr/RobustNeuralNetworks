@@ -1,6 +1,7 @@
-import flax.linen as linen
+import flax.linen as linen # This is used in eval()
 import jax.numpy as jnp
 import numpy as np
+import scipy.signal as signal
 import pickle
 
 from pathlib import Path
@@ -90,3 +91,46 @@ def choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers):
     # Solve quadratic equation
     nh = (-b + np.sqrt(b**2 - 4*a*c)) / (2*a)
     return int(np.ceil(nh))
+
+
+def add_state_space(sys1, sys2):
+    """Adds two discrete-time state-space models."""
+    if sys1.dt != sys2.dt:
+        raise ValueError("Systems must have the same sampling time to be added.")
+    
+    A = np.block([
+        [sys1.A, np.zeros((sys1.A.shape[0], sys2.A.shape[1]))],
+        [np.zeros((sys2.A.shape[0], sys1.A.shape[1])), sys2.A]
+    ])
+    B = np.vstack([sys1.B, sys2.B])
+    C = np.hstack([sys1.C, sys2.C])
+    D = sys1.D + sys2.D
+
+    return signal.StateSpace(A, B, C, D, dt=sys1.dt)
+
+
+def laguerre_terms(k: int, a: float, dt=None):
+    """Build state-space versions of Laguerre terms."""
+    A = -a * np.eye(k) + np.triu(-2*a * np.ones((k, k)), 1)
+    A = np.block([
+        [A, 2*a * np.ones((k, 1))],
+        [np.zeros((1, k)), -a]
+    ])
+    B = np.sqrt(2*a) * np.vstack([np.zeros((k, 1)), np.ones((1,1))])
+    C = np.hstack([-np.ones((1, k)), np.ones((1,1))])
+    D = np.zeros((1,1))
+    
+    sys = signal.StateSpace(A, B, C, D)
+    sys = sys.to_discrete(dt, method='bilinear')
+    return sys
+
+
+def laguerre_composition(eigs, kmax=1, dt=1):
+    """Compose a bunch of kth order (discrete) Laguerre terms
+    for a sequence of interesting frequencies in `eigs`.
+    """
+    sys = laguerre_terms(kmax, eigs[0], dt)
+    for k in range(1, len(eigs)):
+        sys_k = laguerre_terms(kmax, eigs[k], dt)
+        sys = add_state_space(sys, sys_k)
+    return sys.A, sys.B, sys.C, sys.D

@@ -17,7 +17,7 @@ from robustnn.utils import ActivationFn, Initializer
 
 def get_valid_init():
     return ["random", "long_memory", "random_explicit", "long_memory_explicit", 
-            "external_explicit"]
+            "external_explicit", "linear"]
 
 
 @dataclass
@@ -468,6 +468,7 @@ class ScalableREN(nn.Module):
         ])
         B = jnp.vstack([B, jnp.zeros((dnx, nu), dtype)])
         C = jnp.hstack([C, jnp.zeros((ny, dnx), dtype)])
+        D = jnp.array(D)
         
         # Set up an explicit model to initialise from in the pre-init
         explicit = ExplicitSRENParams(

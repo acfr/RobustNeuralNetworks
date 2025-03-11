@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from pathlib import Path
@@ -36,8 +37,13 @@ ren_config = {
     "nx": 75,
     "nv": 150,
     "activation": "relu",
-    "init_method": "long_memory",
+    "init_method": "long_memory", # TODO: Test linear
     "polar": True,
+    
+    "linear_init": {
+        "kmax": 3,
+        "num_eigs": 25
+    },
 } 
 
 # Should have size: 96995 params (ish)
@@ -59,6 +65,31 @@ nh = utils.choose_lbdn_width(
 sren_config["nh"] = (nh,) * sren_config["layers"]
 
 
+################################################
+# Explicit init
+################################################
+
+if ren_config["init_method"] == "external_explicit":
+    
+    dt = 1.0 / 400.0 # Data collected at 400 Hz
+    kmax = ren_config["linear_init"]["kmax"]
+    num_eigs = ren_config["linear_init"]["num_eigs"]
+    assert (kmax * num_eigs == ren_config["nx"])
+
+    # Randomly generate a bunch of eigenvalues in the region of interest
+    np.random.seed(ren_config["seed"])
+    min_freq = 2*np.pi * 2                  # 2 Hz
+    max_freq = 2*np.pi * 15                 # 15 Hz
+    eigs = np.random.uniform(min_freq, max_freq, num_eigs)
+
+    # Generate the initial linear system
+    init_lsys = utils.laguerre_composition(eigs, kmax, dt)
+else:
+    init_lsys = ()
+    
+
+################################################
+
 def build_ren(config):
     """Build a REN for the PDE observer."""
     if config["network"] == "contracting_ren":
@@ -69,7 +100,8 @@ def build_ren(config):
             3,
             activation=utils.get_activation(config["activation"]), 
             init_method=config["init_method"],
-            do_polar_param=config["polar"]
+            do_polar_param=config["polar"],
+            init_as_linear=init_lsys,
         )
     elif config["network"] == "scalable_ren":
         model = sren.ScalableREN(
@@ -80,6 +112,7 @@ def build_ren(config):
             config["nh"],
             activation=utils.get_activation(config["activation"]),
             init_method=config["init_method"],
+            init_as_linear=init_lsys,
         )
     return model
     
@@ -177,9 +210,11 @@ def train_and_test(config):
     plt.close()
 
 
-# Test it out on nominal config
-for seed in range(10):
-    ren_config["seed"] = seed
-    sren_config["seed"] = seed
-    train_and_test(ren_config)
-    train_and_test(sren_config)
+# # Test it out on nominal config
+# for seed in range(10):
+#     ren_config["seed"] = seed
+#     sren_config["seed"] = seed
+#     train_and_test(ren_config)
+#     train_and_test(sren_config)
+train_and_test(sren_config)
+train_and_test(ren_config)

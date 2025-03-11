@@ -86,6 +86,7 @@ class ContractingREN(ren.RENBase):
         ])
         B = jnp.vstack([B, jnp.zeros((dnx, nu), dtype)])
         C = jnp.hstack([C, jnp.zeros((ny, dnx), dtype)])
+        D = jnp.array(D)
         
         # Set up an explicit model to initialise from in the pre-init
         explicit = ren.ExplicitRENParams(

@@ -54,7 +54,12 @@ def get_reward_data(data: list, experiment: str):
     }
     
 
-def aggregate_results(experiment: str, key: str, opts: Sequence[str]):
+def aggregate_results(
+    experiment: str, 
+    key: str, 
+    opts: Sequence[str],
+    fixed: dict = {},
+):
     """
     Aggregate results for different model/hyperparam combinations.
     """
@@ -67,10 +72,16 @@ def aggregate_results(experiment: str, key: str, opts: Sequence[str]):
         data.append({"config": d[0], "results": d[2]})
     
     # Separate the data into multiple groups for comparison
+    # This allows us to pick and choose combinations of hyperparams
+    # to keep fixed or vary, depending on what we want to compare
     results = {}
     n_groups = len(opts)
     for k in range(n_groups):
-        group_data = [d for d in data if (d["config"][key] == opts[k])]
+        group_data = [
+            d for d in data if (d["config"][key] == opts[k] and all(
+                [d["config"][fk] == fixed[fk] for fk in fixed])
+            )
+        ]
         results[opts[k]] = get_reward_data(group_data, experiment)
         
     # Return data for plotting
@@ -91,8 +102,13 @@ def format_plot(xlabel, ylabel, filename_suffix, x1, x2, yscale):
 
 def plot_results(experiment, ylabel, yscale="log"):
     
+    # Get data aggregated for each model, and make sure
+    # they're all using the same init_method (i.e., don't load other files)
     model_results = aggregate_results(
-        experiment, key="network", opts=["contracting_ren", "scalable_ren"]
+        experiment, 
+        key="network", 
+        opts=["contracting_ren", "scalable_ren"],
+        fixed={"init_method": "long_memory"}
     )
 
     # Choose colours

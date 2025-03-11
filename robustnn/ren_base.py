@@ -17,7 +17,7 @@ from robustnn.utils import ActivationFn, Initializer
 
 def get_valid_init():
     return ["random", "long_memory", "random_explicit", "long_memory_explicit",
-            "external_explicit"]
+            "external_explicit", "linear"]
     
 
 @partial(jax.jit, static_argnums=(0,))
