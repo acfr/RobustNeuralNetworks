@@ -77,10 +77,10 @@ def aggregate_results(experiment: str, key: str, opts: Sequence[str]):
     return results
 
 
-def format_plot(xlabel, ylabel, filename_suffix, x1, x2):
+def format_plot(xlabel, ylabel, filename_suffix, x1, x2, yscale):
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.yscale("log")
+    plt.yscale(yscale)
     plt.xlim(min([min(x1), min(x2)]), max([max(x1), max(x2)]))
     plt.legend()
     plt.grid(True, which='both', linestyle=':', linewidth=0.75)
@@ -89,7 +89,7 @@ def format_plot(xlabel, ylabel, filename_suffix, x1, x2):
     plt.close()
     
 
-def plot_results(experiment, ylabel ):
+def plot_results(experiment, ylabel, yscale="log"):
     
     model_results = aggregate_results(
         experiment, key="network", opts=["contracting_ren", "scalable_ren"]
@@ -108,13 +108,13 @@ def plot_results(experiment, ylabel ):
     y2max = model_results["scalable_ren"]["min"]
     x = np.arange(len(y1))
 
-    plt.figure(figsize=(4.5, 3))
+    plt.figure(figsize=(4, 2.7))
     plt.plot(x, y1, color=color_r, label="REN")
     plt.plot(x, y2, color=color_s, label="Scalable REN")
     plt.fill_between(x, y1min, y1max, alpha=0.2, color=color_r)
     plt.fill_between(x, y2min, y2max, alpha=0.2, color=color_s)
     
-    format_plot("Training epochs", ylabel, f"{experiment}_loss", x, x)
+    format_plot("Training epochs", ylabel, f"{experiment}_loss", x, x, yscale)
     
     # Now do loss vs. time plots
     y1 = model_results["contracting_ren"]["time_losses"]
@@ -126,15 +126,18 @@ def plot_results(experiment, ylabel ):
     x1 = model_results["contracting_ren"]["time"]
     x2 = model_results["scalable_ren"]["time"]
     
-    plt.figure(figsize=(4.5, 3))
+    plt.figure(figsize=(4, 2.7))
     plt.plot(x1, y1, color=color_r, label="REN")
     plt.plot(x2, y2, color=color_s, label="Scalable REN")
     plt.fill_between(x1, y1min, y1max, alpha=0.2, color=color_r)
     plt.fill_between(x2, y2min, y2max, alpha=0.2, color=color_s)
+    
+    # ax = plt.gca()
+    # ax.figure.set_size_inches(3.5, 2.5)
 
-    format_plot("Elapsed training time (s)", ylabel, f"{experiment}_timeloss", x1, x2)
+    format_plot("Elapsed training time (s)", ylabel, f"{experiment}_timeloss", x1, x2, yscale)
 
 
 plot_results("f16", "Training loss")
 plot_results("pde", "Training loss")
-plot_results("youla", "Test loss")
+plot_results("youla", "Test loss", "linear")
