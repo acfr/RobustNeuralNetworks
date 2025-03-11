@@ -31,7 +31,7 @@ ren_config = {
     "clip_grad": 10,
     "seed": 0,
     "schedule": {
-        "init_value": 1e-2,
+        "init_value": 1e-3,
         "decay_steps": 20,
         "decay_rate": 0.1,
         "end_value": 1e-6,
