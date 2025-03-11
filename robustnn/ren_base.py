@@ -473,7 +473,8 @@ class RENBase(nn.Module):
     
     def _check_do_explicit_init(self):
         return ((self.explicit_init is not None) or 
-                ("explicit" in self.init_method))
+                ("explicit" in self.init_method) or
+                (self.init_method == "linear"))
     
     def _init_from_explicit(self):
         """Initialise direct params from an existing explicit REN model.

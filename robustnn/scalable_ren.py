@@ -416,7 +416,8 @@ class ScalableREN(nn.Module):
     
     def _check_do_explicit_init(self):
         return ((self.explicit_init is not None) or 
-                ("explicit" in self.init_method))
+                ("explicit" in self.init_method) or
+                (self.init_method == "linear"))
     
     def explicit_pre_init(self):
         """A non-jittable method allowing initialisation from an explicit model.

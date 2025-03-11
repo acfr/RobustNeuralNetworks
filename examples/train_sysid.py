@@ -1,5 +1,7 @@
 import jax
 import jax.numpy as jnp
+from flax.linen import initializers as init
+
 import numpy as np
 import matplotlib.pyplot as plt
 from copy import deepcopy
@@ -37,12 +39,13 @@ ren_config = {
     "nx": 75,
     "nv": 150,
     "activation": "relu",
-    "init_method": "long_memory", # TODO: Test linear
+    # "init_method": "long_memory",
+    "init_method": "linear",
     "polar": True,
     
     "linear_init": {
-        "kmax": 3,
-        "num_eigs": 25
+        "kmax": 2,      # Try 4
+        "num_eigs": 25  # Try 15
     },
 } 
 
@@ -69,21 +72,30 @@ sren_config["nh"] = (nh,) * sren_config["layers"]
 # Explicit init
 ################################################
 
-if ren_config["init_method"] == "external_explicit":
+if ren_config["init_method"] == "linear":
     
+    # Setup and size checks
     dt = 1.0 / 400.0 # Data collected at 400 Hz
     kmax = ren_config["linear_init"]["kmax"]
     num_eigs = ren_config["linear_init"]["num_eigs"]
-    assert (kmax * num_eigs == ren_config["nx"])
+    assert ((kmax+1) * num_eigs == ren_config["nx"])
 
-    # Randomly generate a bunch of eigenvalues in the region of interest
+    # Random seeds
     np.random.seed(ren_config["seed"])
+    rng = jax.random.key(ren_config["seed"])
+    key1, key2, key3 = jax.random.split(rng, 3)
+    
+    # Randomly generate a bunch of eigenvalues in the region of interest
     min_freq = 2*np.pi * 2                  # 2 Hz
     max_freq = 2*np.pi * 15                 # 15 Hz
     eigs = np.random.uniform(min_freq, max_freq, num_eigs)
-
+    
     # Generate the initial linear system
-    init_lsys = utils.laguerre_composition(eigs, kmax, dt)
+    A, _, _, _ = utils.laguerre_composition(eigs, kmax, dt)
+    B = init.glorot_normal()(key1, (A.shape[0], nu))
+    C = init.glorot_normal()(key2, (ny, A.shape[0]))
+    D = init.glorot_normal()(key3, (ny, nu))
+    init_lsys = (A, B, C, D)
 else:
     init_lsys = ()
     
@@ -130,6 +142,7 @@ def run_sys_id_test(config):
 
     # Initialise a REN
     model = build_ren(config)
+    model.explicit_pre_init()
 
     # Make training/validation data sets
     n_segments = train[0].shape[0] / config["seq_len"]
