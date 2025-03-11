@@ -1,5 +1,8 @@
 import jax
 import jax.numpy as jnp
+from flax.linen import initializers as init
+
+import numpy as np
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from pathlib import Path
@@ -28,7 +31,7 @@ ren_config = {
     "clip_grad": 10,
     "seed": 0,
     "schedule": {
-        "init_value": 1e-3,
+        "init_value": 1e-2,
         "decay_steps": 20,
         "decay_rate": 0.1,
         "end_value": 1e-6,
@@ -36,8 +39,13 @@ ren_config = {
     "nx": 75,
     "nv": 150,
     "activation": "relu",
-    "init_method": "long_memory",
+    "init_method": "linear",
     "polar": True,
+    
+    "linear_init": {
+        "kmax": 2,      # Try 4
+        "num_eigs": 25  # Try 15
+    },
 } 
 
 # Should have size: 96995 params (ish)
@@ -59,6 +67,40 @@ nh = utils.choose_lbdn_width(
 sren_config["nh"] = (nh,) * sren_config["layers"]
 
 
+################################################
+# Explicit init
+################################################
+
+if ren_config["init_method"] == "linear":
+    
+    # Setup and size checks
+    dt = 1.0 / 400.0 # Data collected at 400 Hz
+    kmax = ren_config["linear_init"]["kmax"]
+    num_eigs = ren_config["linear_init"]["num_eigs"]
+    assert ((kmax+1) * num_eigs == ren_config["nx"])
+
+    # Random seeds
+    np.random.seed(ren_config["seed"])
+    rng = jax.random.key(ren_config["seed"])
+    key1, key2, key3 = jax.random.split(rng, 3)
+    
+    # Randomly generate a bunch of eigenvalues in the region of interest
+    min_freq = 2*np.pi * 2                  # 2 Hz
+    max_freq = 2*np.pi * 15                 # 15 Hz
+    eigs = np.random.uniform(min_freq, max_freq, num_eigs)
+    
+    # Generate the initial linear system
+    A, _, _, _ = utils.laguerre_composition(eigs, kmax, dt)
+    B = init.glorot_normal()(key1, (A.shape[0], nu))
+    C = init.glorot_normal()(key2, (ny, A.shape[0]))
+    D = jnp.zeros((ny, nu))
+    init_lsys = (A, B, C, D)
+else:
+    init_lsys = ()
+    
+
+################################################
+
 def build_ren(config):
     """Build a REN for the PDE observer."""
     if config["network"] == "contracting_ren":
@@ -69,7 +111,8 @@ def build_ren(config):
             3,
             activation=utils.get_activation(config["activation"]), 
             init_method=config["init_method"],
-            do_polar_param=config["polar"]
+            do_polar_param=config["polar"],
+            init_as_linear=init_lsys,
         )
     elif config["network"] == "scalable_ren":
         model = sren.ScalableREN(
@@ -79,7 +122,8 @@ def build_ren(config):
             3,
             config["nh"],
             activation=utils.get_activation(config["activation"]),
-            init_method=config["init_method"]
+            init_method=config["init_method"],
+            init_as_linear=init_lsys,
         )
     return model
     
@@ -179,8 +223,5 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
-for seed in range(10):
-    ren_config["seed"] = seed
-    sren_config["seed"] = seed
-    train_and_test(ren_config)
-    train_and_test(sren_config)
+train_and_test(sren_config)
+train_and_test(ren_config)
