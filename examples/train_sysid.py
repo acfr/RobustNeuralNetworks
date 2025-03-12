@@ -46,7 +46,7 @@ sren_config["network"] = "scalable_ren"
 
 # Reverse-engineer width of hidden layers
 sren_config["nv"] = ren_config["nv"] // 2
-sren_config["layers"] = 4
+sren_config["layers"] = 3
 nu, ny = 2, 3
 nh = utils.choose_lbdn_width(
     nu, 
