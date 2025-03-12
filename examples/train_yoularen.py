@@ -23,7 +23,7 @@ ren_config = {
     "experiment": "youla",
     "network": "contracting_ren",
     "epochs": 80,
-    "lr": 1e-2,
+    "lr": 8e-3,
     "decay_steps": 60,
     "batches": 64,
     "test_batches": 64,
@@ -31,7 +31,7 @@ ren_config = {
     "rollout_length": 200,
     
     "nx": 10,
-    "nv": 100,
+    "nv": 400,
     "activation": "tanh",
     "init_method": "long_memory",
     "polar": True,
@@ -44,7 +44,7 @@ sren_config = deepcopy(ren_config)
 sren_config["network"] = "scalable_ren"
 
 # Reverse-engineer width of hidden layers
-sren_config["nv"] = ren_config["nv"] // 2
+sren_config["nv"] = ren_config["nv"] // 4
 sren_config["layers"] = 4
 nu, ny = 1, 1
 nh = utils.choose_lbdn_width(
@@ -201,7 +201,7 @@ def train_and_test(config):
     
 
 # Test it out
-for seed in range(1,10):
+for seed in range(10):
     ren_config["seed"] = seed
     sren_config["seed"] = seed
     train_and_test(ren_config)
