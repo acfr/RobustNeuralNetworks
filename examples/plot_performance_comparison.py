@@ -148,6 +148,10 @@ def plot_results(experiment, ylabel, yscale="log"):
     plt.fill_between(x1, y1min, y1max, alpha=0.2, color=color_r)
     plt.fill_between(x2, y2min, y2max, alpha=0.2, color=color_s)
     
+    # Plot a marker at the end to signify training is done
+    plt.scatter(x1[-1:], y1[-1:], c=color_r, s=20, marker="o")
+    plt.scatter(x2[-1:], y2[-1:], c=color_s, s=20, marker="o")
+    
     # ax = plt.gca()
     # ax.figure.set_size_inches(3.5, 2.5)
 
