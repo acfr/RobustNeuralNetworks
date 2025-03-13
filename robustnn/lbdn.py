@@ -8,7 +8,6 @@ Authors: Nic Barbara (Mar '24, Feb '25), Jack Naylor (Sep '23) from the ACFR.
 These networks are compatible with other FLAX modules.
 '''
 
-import jax
 import jax.numpy as jnp
 
 from typing import Sequence, Optional

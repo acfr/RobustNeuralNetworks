@@ -25,7 +25,7 @@ ren_config = {
     "network": "contracting_ren",
     "seq_len": 256,
     "epochs": 70,
-    "clip_grad": 10,
+    "clip_grad": 0.1,
     "seed": 0,
     "schedule": {
         "init_value": 1e-3,
@@ -37,7 +37,7 @@ ren_config = {
     "nv": 150,
     "activation": "relu",
     "init_method": "long_memory",
-    "polar": True,
+    "polar": False,
 } 
 
 # Should have size: 96995 params (ish)
@@ -69,7 +69,7 @@ def build_ren(config):
             3,
             activation=utils.get_activation(config["activation"]), 
             init_method=config["init_method"],
-            do_polar_param=config["polar"]
+            do_polar_param=config["polar"],
         )
     elif config["network"] == "scalable_ren":
         model = sren.ScalableREN(
@@ -79,7 +79,8 @@ def build_ren(config):
             3,
             config["nh"],
             activation=utils.get_activation(config["activation"]),
-            init_method=config["init_method"]
+            init_method=config["init_method"],
+            do_polar_param=config["polar"],
         )
     return model
     
@@ -182,5 +183,5 @@ def train_and_test(config):
 for seed in range(10):
     ren_config["seed"] = seed
     sren_config["seed"] = seed
-    train_and_test(ren_config)
     train_and_test(sren_config)
+    train_and_test(ren_config)

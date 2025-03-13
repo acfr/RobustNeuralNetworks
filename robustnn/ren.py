@@ -162,12 +162,12 @@ class ContractingREN(ren.RENBase):
         A = V @ jnp.diag(D) @ U.T
         B1 = self.kernel_init(keys[3], (nx, nv), dtype)
         B2 = self.kernel_init(keys[4], (nx, nu), dtype)
-        bx = self.bias_init(keys[5], (nx,), dtype)
+        bx = self.x_bias_init(keys[5], (nx,), dtype)
         
         C1 = self.kernel_init(keys[0], (nv, nx), dtype)
         D11 = jnp.tril(self.kernel_init(keys[6], (nv, nv), dtype), k=-1)
         D12 = self.kernel_init(keys[7], (nv, nu), dtype)
-        bv = self.bias_init(keys[8], (nv,), dtype)
+        bv = self.v_bias_init(keys[8], (nv,), dtype)
         
         # Choose output layer specially
         if self.init_output_zero:
@@ -175,7 +175,7 @@ class ContractingREN(ren.RENBase):
             out_bias_init = init.zeros_init()
         else:
             out_kernel_init = self.kernel_init
-            out_bias_init = self.bias_init
+            out_bias_init = self.y_bias_init
             
         if self.identity_output:
             C2 = jnp.identity(nx)

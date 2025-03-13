@@ -11,7 +11,7 @@ from flax.linen import initializers as init
 from flax.struct import dataclass
 from flax.typing import Dtype, Array
 
-from robustnn.utils import l2_norm, identity_init
+from robustnn.utils import l2_norm, identity_init, custom_glorot_normal
 from robustnn.utils import ActivationFn, Initializer
 
 
@@ -119,8 +119,11 @@ class RENBase(nn.Module):
         
         kernel_init: initializer for weights (default: lecun_normal()).
         recurrent_kernel_init: initializer for the REN `X` matrix (default: lecun_normal()).
-        bias_init: initializer for the bias parameters (default: zeros_init()).
         carry_init: initializer for the internal state vector (default: zeros_init()).
+        x_bias_init: initializer for the state bias parameters (default: zeros_init()).
+        v_bias_init: initializer for the feedback bias parameters 
+            (default: glorot_normal()).
+        y_bias_init: initializer for the output bias parameters (default: zeros_init()).
         param_dtype: the dtype passed to parameter initializers (default: float32).
         
         init_method: parameter initialisation method to choose from. Options are:
@@ -151,8 +154,10 @@ class RENBase(nn.Module):
     
     kernel_init: Initializer = init.lecun_normal()
     recurrent_kernel_init: Initializer = init.lecun_normal()
-    bias_init: Initializer = init.zeros_init()
     carry_init: Initializer = init.zeros_init()
+    x_bias_init: Initializer = init.zeros_init()
+    v_bias_init: Initializer = custom_glorot_normal()
+    y_bias_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
     
     init_method: str = "random"
@@ -354,8 +359,8 @@ class RENBase(nn.Module):
         B2 = self.param("B2", self.kernel_init, (nx, nu), dtype)
         D12 = self.param("D12", self.kernel_init, (nv, nu), dtype)
         
-        bx = self.param("bx", self.bias_init, (nx,), dtype)
-        bv = self.param("bv", self.bias_init, (nv,), dtype)
+        bx = self.param("bx", self.x_bias_init, (nx,), dtype)
+        bv = self.param("bv", self.v_bias_init, (nv,), dtype)
         
         # Special construction for X matrix
         if self.init_method == "random":
@@ -375,7 +380,7 @@ class RENBase(nn.Module):
             out_bias_init = init.zeros_init()
         else:
             out_kernel_init = self.kernel_init
-            out_bias_init = self.bias_init
+            out_bias_init = self.y_bias_init
         
         if self.identity_output:
             C2 = jnp.identity(nx)

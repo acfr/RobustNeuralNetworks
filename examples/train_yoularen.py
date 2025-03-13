@@ -78,6 +78,7 @@ def build_ren(config):
             config["nh"],
             activation=utils.get_activation(config["activation"]),
             init_method=config["init_method"],
+            do_polar_param=config["polar"],
         )
     return model
 
