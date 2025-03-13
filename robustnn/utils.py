@@ -67,16 +67,6 @@ def identity_init():
     return init_func
 
 
-def custom_glorot_normal():
-    """
-    Custom implementation of a glorot normal initialiser
-    which works with single-dimension arrays too.
-    """
-    def init_func(key, shape, dtype) -> Array:
-        return jax.random.normal(key, shape, dtype) / jnp.sqrt(jnp.array(shape))
-    return init_func
-
-
 def solve_discrete_lyapunov_direct(a, q):
     """
     JAX implementation of `scipy.linalg.solve_discrete_lyapunov`.

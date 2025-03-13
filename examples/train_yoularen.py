@@ -23,7 +23,7 @@ ren_config = {
     "experiment": "youla",
     "network": "contracting_ren",
     "epochs": 80,
-    "lr": 8e-3,
+    "lr": 5e-3,
     "decay_steps": 60,
     "batches": 64,
     "test_batches": 64,

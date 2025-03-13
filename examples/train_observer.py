@@ -158,7 +158,7 @@ def train_and_test(config):
         return im
     
     # Print number of params
-    print("NRMSE: ", results["NRMSE"])
+    print("NRMSE: ", results["nrmse"])
     print("Number of params: ", results["num_params"])
     
     # Plot the heat map

@@ -11,7 +11,7 @@ from flax.linen import initializers as init
 from flax.struct import dataclass
 from flax.typing import Dtype, Array
 
-from robustnn.utils import l2_norm, identity_init, custom_glorot_normal
+from robustnn.utils import l2_norm, identity_init
 from robustnn.utils import ActivationFn, Initializer
 
 
@@ -121,8 +121,7 @@ class RENBase(nn.Module):
         recurrent_kernel_init: initializer for the REN `X` matrix (default: lecun_normal()).
         carry_init: initializer for the internal state vector (default: zeros_init()).
         x_bias_init: initializer for the state bias parameters (default: zeros_init()).
-        v_bias_init: initializer for the feedback bias parameters 
-            (default: glorot_normal()).
+        v_bias_init: initializer for the feedback bias parameters (default: zeros_init()).
         y_bias_init: initializer for the output bias parameters (default: zeros_init()).
         param_dtype: the dtype passed to parameter initializers (default: float32).
         
@@ -156,7 +155,7 @@ class RENBase(nn.Module):
     recurrent_kernel_init: Initializer = init.lecun_normal()
     carry_init: Initializer = init.zeros_init()
     x_bias_init: Initializer = init.zeros_init()
-    v_bias_init: Initializer = custom_glorot_normal()
+    v_bias_init: Initializer = init.zeros_init()
     y_bias_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
     

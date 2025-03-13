@@ -11,7 +11,7 @@ from flax.struct import dataclass
 from flax.typing import Dtype, Array
 
 from robustnn import lbdn
-from robustnn.utils import l2_norm, solve_discrete_lyapunov_direct, custom_glorot_normal
+from robustnn.utils import l2_norm, solve_discrete_lyapunov_direct
 from robustnn.utils import ActivationFn, Initializer
 
 
@@ -81,8 +81,7 @@ class ScalableREN(nn.Module):
         recurrent_kernel_init: initialiser for X matrix (default: lecun_normal()).
         carry_init: initializer for the internal state vector (default: zeros_init()).
         x_bias_init: initializer for the state bias parameters (default: zeros_init()).
-        v_bias_init: initializer for the feedback bias parameters 
-            (default: glorot_normal()).
+        v_bias_init: initializer for the feedback bias parameters (default: zeros_init()).
         y_bias_init: initializer for the output bias parameters (default: zeros_init()).
         network_bias_init: initializer for the 1-Lipschitz network bias parameters 
             (default: zeros_init()).
@@ -146,7 +145,7 @@ class ScalableREN(nn.Module):
     recurrent_kernel_init: Initializer = init.lecun_normal()
     carry_init: Initializer = init.zeros_init()
     x_bias_init: Initializer = init.zeros_init()
-    v_bias_init: Initializer = custom_glorot_normal()
+    v_bias_init: Initializer = init.zeros_init()
     y_bias_init: Initializer = init.zeros_init()
     network_bias_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
