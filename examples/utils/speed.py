@@ -31,3 +31,57 @@ def load_results(filepath):
         buf = fin.read()
     data = pickle.loads(buf)
     return data[0]
+
+
+def compute_num_ren_params(model):
+    """Analytically compute number of REN params to save on computation."""
+    nu = model.input_size
+    nx = model.state_size
+    nv = model.features
+    ny = model.output_size
+    d = min(nu, ny)
+    return (
+        nx * nu +
+        nv * nu +
+        nx + nv + 
+        nx * nx +
+        (2*nx + nv)**2 + 1 +
+        ny +
+        ny * nx +
+        ny + nv +
+        ny + nu +
+        2*d * d +
+        abs(ny - nu) * d
+    )
+
+
+def compute_num_sren_params(model):
+    """
+    Analytically compute number of scalable REN 
+    params to save on computation. Assumes all
+    hidden layers have the same fixed width.
+    """
+    nu = model.input_size
+    nx = model.state_size
+    nv = model.features
+    ny = model.output_size
+    nh = model.hidden[0]
+    n_layers = len(model.hidden)-1
+    sren_ps = (
+        nx * nu +
+        nv * nu +
+        nx + nv + 
+        nx * nx +
+        nx * nv +
+        nv * nx +
+        2*nx * 2*nx + 1 +
+        ny +
+        ny * nx +
+        ny + nv +
+        ny + nu
+    )
+    a = (1 + 2*n_layers)
+    b = 2*(nv + n_layers + 1)
+    c = (nv**2 + 2*nv + n_layers + 2)
+    sren_ps += a * nh**2 + b * nh + c
+    return sren_ps

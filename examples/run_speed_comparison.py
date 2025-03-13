@@ -28,7 +28,7 @@ horizon = 128
 # Combinations to run through
 batches_ = [2**n for n in range(4, 13)]
 horizons_ = [2**n for n in range(11)]
-neurons_ = [2**n for n in range(2, 11)]
+neurons_ = [2**n for n in range(2, 15)]
 
 print("Horizons to test: ", horizons_)
 print("Batches to test:  ", batches_)
@@ -106,24 +106,25 @@ def time_backwards(model, params, states, inputs, n_repeats):
     )
     return compile_time, eval_time / n_repeats
     
-    
-def time_model(model, batches, horizon, n_repeats, do_backwards=True):
+def time_model(model, batches, horizon, n_repeats, run_timing):
     """Time forwards and backwards passes, print and store results."""
-    # Initialise the model params and count them
-    params, states, inputs = initialise_model(model, batches, horizon)
-    num_params = count_num_params(params)
     
-    # Time the forwards pass
-    cf_time, rf_time = time_forwards(model, params, states, inputs, n_repeats)
-    print(f"Forwards compile time: {cf_time:.6f} seconds")
-    print(f"Forwards eval time   : {rf_time:.6f} seconds")
-    
-    # Time the backwards pass
-    cb_time, rb_time = None, None
-    if do_backwards:
+    if run_timing:
+        # Initialise the model params and count them
+        params, states, inputs = initialise_model(model, batches, horizon)
+        num_params = count_num_params(params)
+        
+        # Time the forwards pass
+        cf_time, rf_time = time_forwards(model, params, states, inputs, n_repeats)
+        print(f"Forwards compile time: {cf_time:.6f} seconds")
+        print(f"Forwards eval time   : {rf_time:.6f} seconds")
+        
+        # Time the backwards pass
         cb_time, rb_time = time_backwards(model, params, states, inputs, n_repeats)
         print(f"Backwards compile time: {cb_time:.6f} seconds")
         print(f"Backwards eval time   : {rb_time:.6f} seconds")
+    else:
+        num_params, cf_time, rf_time, cb_time, rb_time = None, None, None, None, None
     
     return {
         "nv": model.features,
@@ -143,15 +144,22 @@ def run_timing(nv_ren, batches, horizon, n_repeats=1000):
     nv_sren = nv_ren // 2
     nh = choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers)
     
-    # Build models
+    # Build models and compute number of params
     nh_sren = (nh,) * n_layers
     m_ren, m_sren = build_models(nv_ren, nv_sren, nh_sren)
+    num_ren_ps = utils.compute_num_ren_params(m_ren)
+    num_sren_ps = utils.compute_num_sren_params(m_sren)
     
     # Time the forwards and backwards passes
+    # Only time it if it fits on our NVIDIA 4090 Ti
+    run_timing = False if (nv_ren > 2**10) else True
     print("### REN: ###")
-    results_ren = time_model(m_ren, batches, horizon, n_repeats)
+    results_ren = time_model(m_ren, batches, horizon, n_repeats, run_timing)
     print("### Scalable REN: ###")
-    results_sren = time_model(m_sren, batches, horizon, n_repeats)
+    results_sren = time_model(m_sren, batches, horizon, n_repeats, run_timing)
+    
+    results_ren["num_params"] = num_ren_ps
+    results_sren["num_params"] = num_sren_ps
     
     # Add hidden layer info from the scalable REN to look at later
     results_sren["nh"] = m_sren.hidden

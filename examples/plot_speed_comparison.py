@@ -10,7 +10,7 @@ startup_plotting()
 dirpath = Path(__file__).resolve().parent
 
 # Load the saved data
-filename = "timing_results_v1"
+filename = "timing_results_v2"
 filepath = dirpath / "../results/timing/"
 savepath = dirpath / "../paperfigs/timing/"
 results = utils.load_results(filepath / f"{filename}.pickle")
@@ -104,69 +104,40 @@ for k in range(len(nv_ren)):
     nact_sren[k] = np.prod(nh)
     nact_ren[k] = nv_ren[k]
     
-# We'll put the curves on different x-limits. We need to shift
-# the axes appropriately. In log scale, subtraction/addition are
-# division/multiplication
-xshift = min(nact_sren) / min(nact_ren)
-x1min = min(nact_ren)
-x1max = max(nact_sren) / xshift
-x2min = min(nact_ren) * xshift
-x2max = max(nact_sren)
-
+# Compute slope of curves
+slope1 = np.log(x1[-1] / x1[-2]) / np.log(nact_ren[-1] / nact_ren[-2])
+slope2 = np.log(x2[-1] / x2[-2]) / np.log(nact_sren[-1] / nact_sren[-2])
+    
 # Plot number of activations vs. number of model params
 plt.figure(figsize=(4.2, 2.5))
-ax1 = plt.gca()
-ax1.plot(nact_ren, x1, color=color_r, label="REN")
-ax1.set_xlabel("No. activations (REN)")
-ax1.set_ylabel("Number of parameters")
-ax1.set_xscale("log")
-ax1.set_yscale("log")
-ax1.set_xlim(x1min, x1max)
+plt.plot(nact_ren, x1, color=color_r, label="REN")
+plt.plot(nact_sren, x2, color=color_s, label="Scalable REN")
 
-ax2 = ax1.twiny()
-ax2.plot(nact_sren, x2, color=color_s, label="Scalable REN")
-ax2.set_xlabel("No. activations (SREN)")
-ax2.set_xscale("log")
-ax2.set_xlim(x2min, x2max)
+plt.annotate(
+    f"slope = {slope1:.2f}",
+    xy=(8e3, 1e7), 
+    xycoords='data',
+    fontsize=12,
+)
+plt.annotate(
+    f"slope = {slope2:.2f}",
+    xy=(3e9, 2.1e5), 
+    xycoords='data',
+    fontsize=12,
+)
 
-lines1, labels1 = ax1.get_legend_handles_labels()
-lines2, labels2 = ax2.get_legend_handles_labels()
-
-plt.sca(ax1)
-plt.legend(lines1 + lines2, labels1 + labels2, 
-           ncol=2, loc='upper center', bbox_to_anchor=(0.5, -0.22))
-plt.grid(True, which='both', linestyle=':', linewidth=0.75)
-plt.savefig(savepath / f"{filename}_activations_msize.pdf", bbox_inches='tight')
-plt.close()
-
+format_plot("No. activations", "No. parameters", "activations_params", 
+            [min(nact_ren), max(nact_sren)])
 
 # Plot number of activations vs. computation time
 x1 = nact_ren
 x2 = nact_sren
 
 plt.figure(figsize=(4.2, 2.5))
-ax1 = plt.gca()
-ax1.plot(x1, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
-ax1.plot(x1, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
-ax1.set_xlabel("No. activations (REN)")
-ax1.set_ylabel("Evaluation time (s)")
-ax1.set_xscale("log")
-ax1.set_yscale("log")
-ax1.set_xlim(x1min, x1max)
+plt.plot(x1, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
+plt.plot(x1, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
+plt.plot(x2, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
+plt.plot(x2, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
 
-ax2 = ax1.twiny()
-ax2.plot(x2, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
-ax2.plot(x2, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
-ax2.set_xlabel("No. activations (SREN)")
-ax2.set_xscale("log")
-ax2.set_xlim(x2min, x2max)
-
-lines1, labels1 = ax1.get_legend_handles_labels()
-lines2, labels2 = ax2.get_legend_handles_labels()
-
-plt.sca(ax1)
-plt.legend(lines1 + lines2, labels1 + labels2, 
-           ncol=2, loc='upper center', bbox_to_anchor=(0.5, -0.22))
-plt.grid(True, which='both', linestyle=':', linewidth=0.75)
-plt.savefig(savepath / f"{filename}_activations_time.pdf", bbox_inches='tight')
-plt.close()
+format_plot("No. activations", "Evaluation time (s)", "activations_time",
+            [min(nact_ren), max(nact_sren)])
