@@ -80,8 +80,13 @@ plt.plot(x1, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
 plt.plot(x2, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
 plt.plot(x2, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
 
+# Only plot the parts of the array that are filled in
+indx = y_ren_fwd == None
+indx = [not val for val in indx]
+xmin = min([min(x1), min(x2)])
+xmax = max([max(x1[indx]), max(x2[indx])])
 format_plot("No. model parameters", "Evaluation time (s)", 
-            "modelsize", x=[min([min(x1), min(x2)]), max([max(x1), max(x2)])])
+            "modelsize", x=[xmin, xmax])
 
 
 # ---------------------------------------------------------------
@@ -140,4 +145,4 @@ plt.plot(x2, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (F
 plt.plot(x2, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
 
 format_plot("No. activations", "Evaluation time (s)", "activations_time",
-            [min(nact_ren), max(nact_sren)])
+            [min(nact_ren[indx]), max(nact_sren[indx])])
