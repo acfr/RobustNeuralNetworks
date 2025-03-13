@@ -122,6 +122,10 @@ def run_observer_training(config):
         lr_patience=config["lr_patience"],
         seed=config["seed"]
     )
+    
+    # Test it out
+    valres = obsv.validate(model, params)
+    results = results | valres
     results["num_params"] = count_num_params(params)
 
     # Save results for later evaluation
@@ -135,30 +139,10 @@ def train_and_test(config):
     run_observer_training(config)
 
     # Load for testing
-    config, params, results = utils.load_results_from_config(config)
+    config, _, results = utils.load_results_from_config(config)
     _, fname = utils.generate_fname(config)
-
-    # Generate test data
-    def init_u_func(*args, **kwargs):
-        return 0.5*jnp.ones(*args, **kwargs)
-        
-    x_true, u = obsv.get_data(
-        time_steps=2001,
-        init_u_func=init_u_func,
-        init_x_func=jnp.ones,
-        nx=config["nx"],
-        seed=config["seed"],
-    )
-    y = obsv.measure(x_true, u)
-    
-    # Re-build and initialise the observer
-    model = build_ren(y, config)
-    model.explicit_pre_init()
-    
-    # Simulate the observer through time
-    key = jax.random.key(config["seed"])
-    x0 = model.initialize_carry(key, y[0].shape)
-    _, xhat = model.simulate_sequence(params, x0, y)
+    x_true = results["true_states"]
+    xhat = results["pred_states"]
     
     # Function for plotting the heat maps
     def plot_heatmap(data, i, ax):
@@ -174,6 +158,7 @@ def train_and_test(config):
         return im
     
     # Print number of params
+    print("NRMSE: ", results["NRMSE"])
     print("Number of params: ", results["num_params"])
     
     # Plot the heat map

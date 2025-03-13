@@ -25,7 +25,7 @@ ren_config = {
     "network": "contracting_ren",
     "seq_len": 256,
     "epochs": 70,
-    "clip_grad": 0.1,
+    "clip_grad": 10,
     "seed": 0,
     "schedule": {
         "init_value": 1e-3,
