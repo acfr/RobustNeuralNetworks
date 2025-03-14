@@ -104,7 +104,6 @@ for k in range(len(nv_ren)):
 nact_ren = np.zeros(len(nv_ren))
 nact_sren = np.zeros(len(nv_ren))
 for k in range(len(nv_ren)):
-    nv = nv_sren[k]
     nh = nh_sren[k]
     nact_sren[k] = np.prod(nh)
     nact_ren[k] = nv_ren[k]

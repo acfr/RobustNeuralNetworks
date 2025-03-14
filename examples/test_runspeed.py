@@ -9,7 +9,7 @@ from robustnn.utils import count_num_params
 from utils.utils import choose_lbdn_width
 from utils import speed
     
-filename = "timing_results_v2"
+filename = "timing_results_v3"
 
 # Choose a fixed problem size
 nu = 10     # Number of inputs
@@ -29,6 +29,9 @@ horizon = 128
 batches_ = [2**n for n in range(4, 13)]
 horizons_ = [2**n for n in range(11)]
 neurons_ = [2**n for n in range(2, 15)]
+
+widths_ = [2**n for n in range(13)]
+layers_ = list(range(1, 111, 10))
 
 print("Horizons to test: ", horizons_)
 print("Batches to test:  ", batches_)
@@ -137,15 +140,14 @@ def run_timing(batches, horizon, nv, nh=None, nlayers = None, n_repeats=1000):
         print("### REN: ###")
         model = ren.ContractingREN(nu, nx, nv, ny)
         num_ps = speed.compute_num_ren_params(model)
-        run_timing = True if (nv <= 2**10) else False
+        run_timing = False #True if (nv <= 2**10) else False
         
     else:
         print("### Scalable REN: ###")
         hidden = (nh,) * nlayers
         model = sren.ScalableREN(nu, nx, nv, ny, hidden)
         num_ps = speed.compute_num_sren_params(model)
-        run_timing = True if (nv <= 2**10) else False
-        # run_timing = True # Hopefully always feasible for S-REN?
+        run_timing = False #True # Hopefully always feasible for S-REN
         
     results = time_model(model, batches, horizon, n_repeats, run_timing)
     results["num_params"] = num_ps
@@ -188,19 +190,28 @@ results["batches_sren"] = speed.list_to_dicts(sren_results)
 speed.save_results(filename, results)
 
 # Time model size
-ren_results, sren_results = [], []
+ren_results = []
 for nv in neurons_:
-    nvs = nv // 2
-    nh = choose_lbdn_width(nu, nx, ny, nv, nvs, n_layers)
-    
     print(f"nv = {nv}")
     r1 = run_timing(batches, horizon, nv)
-    r2 = run_timing(batches, horizon, nvs, nh, n_layers)
+    ren_results.append(r1)
     print()
     
-    ren_results.append(r1)
-    sren_results.append(r2)
+sren_nh_results = []
+for nh in widths_:
+    print(f"nh = {nh}")
+    r2 = run_timing(batches, horizon, nv_sren, nh, n_layers)
+    sren_nh_results.append(r2)
+    print()
     
+sren_l_results = []
+for depth in layers_:
+    print(f"No. layers = {depth}")
+    r3 = run_timing(batches, horizon, nv_sren, nh_sren, depth)
+    sren_l_results.append(r3)
+    print()
+
 results["nv_ren"] = speed.list_to_dicts(ren_results)
-results["nv_sren"] = speed.list_to_dicts(sren_results)
+results["nh_sren"] = speed.list_to_dicts(sren_nh_results)
+results["layers_sren"] = speed.list_to_dicts(sren_l_results)
 speed.save_results(filename, results)
