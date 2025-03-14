@@ -37,7 +37,7 @@ ren_config = {
     "nv": 150,
     "activation": "relu",
     "init_method": "long_memory",
-    "polar": False,
+    "polar": True,
 } 
 
 # Should have size: 96995 params (ish)
@@ -47,17 +47,20 @@ sren_config["network"] = "scalable_ren"
 # Reverse-engineer width of hidden layers
 sren_config["nv"] = ren_config["nv"] // 2
 sren_config["layers"] = 3
-nu, ny = 2, 3
-nh = utils.choose_lbdn_width(
-    nu, 
-    ren_config["nx"], 
-    ny, 
-    ren_config["nv"], 
-    sren_config["nv"], 
-    sren_config["layers"]
-)
+nh = 87
 sren_config["nh"] = (nh,) * sren_config["layers"]
 
+# sren_config["layers"] = 3
+# nu, ny = 2, 3
+# nh = utils.choose_lbdn_width(
+#     nu, 
+#     ren_config["nx"], 
+#     ny, 
+#     ren_config["nv"], 
+#     sren_config["nv"], 
+#     sren_config["layers"]
+# )
+# sren_config["nh"] = (nh,) * sren_config["layers"]
 
 def build_ren(config):
     """Build a REN for the PDE observer."""

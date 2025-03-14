@@ -46,16 +46,19 @@ sren_config["network"] = "scalable_ren"
 # Reverse-engineer width of hidden layers
 sren_config["nv"] = ren_config["nv"] // 4
 sren_config["layers"] = 4
-nu, ny = 1, 1
-nh = utils.choose_lbdn_width(
-    nu, 
-    ren_config["nx"], 
-    ny, 
-    ren_config["nv"], 
-    sren_config["nv"], 
-    sren_config["layers"]
-)
+nh = 140
 sren_config["nh"] = (nh,) * sren_config["layers"]
+
+# nu, ny = 1, 1
+# nh = utils.choose_lbdn_width(
+#     nu, 
+#     ren_config["nx"], 
+#     ny, 
+#     ren_config["nv"], 
+#     sren_config["nv"], 
+#     sren_config["layers"]
+# )
+# sren_config["nh"] = (nh,) * sren_config["layers"]
 
 def build_ren(config):
     """Build a REN for the Youla-REN policy."""

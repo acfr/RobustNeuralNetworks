@@ -202,7 +202,7 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
-for seed in range(1,10):
+for seed in range(10):
     ren_config["seed"] = seed
     sren_config["seed"] = seed
     train_and_test(ren_config)

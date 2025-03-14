@@ -28,7 +28,7 @@ def get_reward_data(data: list, experiment: str):
     times = np.array([d["results"]["times"] for d in data])
     
     # Store time delta
-    # TODO: Should we include the JITted time here or not?
+    # NOTE: This includes the JITted time (first delta)
     times = (times[:, :] - times[:, 0:1])
     times = np.vectorize(lambda td: td.total_seconds())(times)
     
@@ -74,18 +74,18 @@ def aggregate_results(
     # Separate the data into multiple groups for comparison
     # This allows us to pick and choose combinations of hyperparams
     # to keep fixed or vary, depending on what we want to compare
-    results = {}
+    results, group_data = {}, {}
     n_groups = len(opts)
     for k in range(n_groups):
-        group_data = [
+        _group_data = [
             d for d in data if (d["config"][key] == opts[k] and all(
                 [d["config"][fk] == fixed[fk] for fk in fixed])
             )
         ]
-        results[opts[k]] = get_reward_data(group_data, experiment)
+        group_data[opts[k]] = _group_data
+        results[opts[k]] = get_reward_data(_group_data, experiment)
         
-    # Return data for plotting
-    return results
+    return results, group_data
 
 
 def format_plot(xlabel, ylabel, filename_suffix, x1, x2, yscale):
@@ -104,7 +104,7 @@ def plot_results(experiment, ylabel, yscale="log"):
     
     # Get data aggregated for each model, and make sure
     # they're all using the same init_method (i.e., don't load other files)
-    model_results = aggregate_results(
+    model_results, _ = aggregate_results(
         experiment, 
         key="network", 
         opts=["contracting_ren", "scalable_ren"],
@@ -161,3 +161,50 @@ def plot_results(experiment, ylabel, yscale="log"):
 plot_results("f16", "Training loss")
 plot_results("pde", "Training loss")
 plot_results("youla", "Test loss", "linear")
+
+
+# ---------------------------------------------------------------
+# Compute test metrics
+# ---------------------------------------------------------------
+
+def print_test_results(experiment):
+    
+    # Get data
+    models = ["contracting_ren", "scalable_ren"]
+    _, data = aggregate_results(
+        experiment, 
+        key="network", 
+        opts=models,
+        fixed={"init_method": "long_memory"}
+    )
+    
+    # Loop and print
+    for model in models:
+        N = len(data[model])
+        
+        # Test error
+        if experiment in ["pde", "f16"]:
+            test_data = np.array([
+                data[model][k]["results"]["nrmse"] 
+                for k in range(N)
+            ])
+        elif experiment == "youla":
+            test_data = np.array([
+                data[model][k]["results"]["test_loss"][-1] 
+                for k in range(N)
+            ])
+        test_data *= 100
+        
+        # Timing data (ignore first time which includes JIT compilation)
+        time_data = np.zeros(N)
+        for k in range(N):
+            t = np.array(data[model][k]["results"]["times"])[1:]
+            t = np.vectorize(lambda td: td.total_seconds())(t - t[0])
+            time_data[k] = np.mean(np.diff(t))
+            
+        print(f"{model}:\t {time_data.mean():.3g}\t {time_data.std():.2g}\t "+
+              f"{test_data.mean():.3g}\t {test_data.std():.2g}")
+
+experiment = ["f16", "pde", "youla"]
+for e in experiment:
+    print_test_results(e)
