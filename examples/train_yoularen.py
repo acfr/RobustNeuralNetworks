@@ -49,17 +49,6 @@ sren_config["layers"] = 4
 nh = 140
 sren_config["nh"] = (nh,) * sren_config["layers"]
 
-# nu, ny = 1, 1
-# nh = utils.choose_lbdn_width(
-#     nu, 
-#     ren_config["nx"], 
-#     ny, 
-#     ren_config["nv"], 
-#     sren_config["nv"], 
-#     sren_config["layers"]
-# )
-# sren_config["nh"] = (nh,) * sren_config["layers"]
-
 def build_ren(config):
     """Build a REN for the Youla-REN policy."""
     if config["network"] == "contracting_ren":
