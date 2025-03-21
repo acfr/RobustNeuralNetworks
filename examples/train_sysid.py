@@ -51,7 +51,7 @@ nh = 87
 sren_config["nh"] = (nh,) * sren_config["layers"]
 
 def build_ren(config):
-    """Build a REN for the PDE observer."""
+    """Build neural models."""
     if config["network"] == "contracting_ren":
         model = ren.ContractingREN(
             2, 
@@ -176,56 +176,3 @@ for seed in range(10):
     sren_config["seed"] = seed
     train_and_test(sren_config)
     train_and_test(ren_config)
-
-# # Change the sizes and run it again
-# def get_sren_sizes(sren_config, ren_config):
-#     sren_config["nv"] = ren_config["nv"] // 2
-#     nh = utils.choose_lbdn_width(
-#         2, 
-#         ren_config["nx"], 
-#         3, 
-#         ren_config["nv"],
-#         sren_config["nv"], 
-#         sren_config["layers"]
-#     )
-#     sren_config["nh"] = (nh,) * sren_config["layers"]
-#     return sren_config
-
-# # Small model
-# ren_config["nx"] = 32
-# sren_config["nx"] = 32
-
-# ren_config["nv"] = 8
-# sren_config = get_sren_sizes(sren_config, ren_config)
-# for seed in range(4):
-#     ren_config["seed"] = seed
-#     sren_config["seed"] = seed
-#     train_and_test(ren_config)
-#     train_and_test(sren_config)
-    
-# # Medium model
-# ren_config["nv"] = 32
-# sren_config = get_sren_sizes(sren_config, ren_config)
-# for seed in range(4):
-#     ren_config["seed"] = seed
-#     sren_config["seed"] = seed
-#     train_and_test(ren_config)
-#     train_and_test(sren_config)
-
-# # Bigger medium model
-# ren_config["nv"] = 64
-# sren_config = get_sren_sizes(sren_config, ren_config)
-# for seed in range(4):
-#     ren_config["seed"] = seed
-#     sren_config["seed"] = seed
-#     train_and_test(ren_config)
-#     train_and_test(sren_config)
-    
-# # Huge model model
-# ren_config["nv"] = 256
-# sren_config = get_sren_sizes(sren_config, ren_config)
-# for seed in range(4):
-#     ren_config["seed"] = seed
-#     sren_config["seed"] = seed
-#     train_and_test(ren_config)
-#     train_and_test(sren_config)
