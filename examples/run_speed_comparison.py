@@ -9,7 +9,7 @@ from robustnn.utils import count_num_params
 from utils.utils import choose_lbdn_width
 from utils import speed
     
-filename = "timing_results_v2"
+filename = "timing_results_v3"
 
 # Choose a fixed problem size
 nu = 10     # Number of inputs
@@ -144,8 +144,7 @@ def run_timing(batches, horizon, nv, nh=None, nlayers = None, n_repeats=1000):
         hidden = (nh,) * nlayers
         model = sren.ScalableREN(nu, nx, nv, ny, hidden)
         num_ps = speed.compute_num_sren_params(model)
-        run_timing = True if (nv <= 2**10) else False
-        # run_timing = True # Hopefully always feasible for S-REN?
+        run_timing = True # Hopefully always feasible for S-REN?
         
     results = time_model(model, batches, horizon, n_repeats, run_timing)
     results["num_params"] = num_ps

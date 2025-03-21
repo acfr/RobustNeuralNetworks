@@ -209,8 +209,8 @@ def choose_sizes(config, nv):
 neurons = [2**n for n in range(2, 11)]
 for nv in neurons:
     ren_config, sren_config = choose_sizes(config, nv)
+    print(f"R2DN {nv=}")
     train_and_test(sren_config)
-
-for nv in neurons:
-    ren_config, sren_config = choose_sizes(config, nv)
+    print(f"REN {nv=}")
     train_and_test(ren_config)
+    print()

@@ -10,7 +10,7 @@ startup_plotting()
 dirpath = Path(__file__).resolve().parent
 
 # Load the saved data
-filename = "timing_results_v2"
+filename = "timing_results_v3"
 filepath = dirpath / "../results/timing/"
 savepath = dirpath / "../paperfigs/timing/"
 results = utils.load_results(filepath / f"{filename}.pickle")
