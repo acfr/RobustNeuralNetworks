@@ -197,15 +197,6 @@ def train_and_test(config, verbose=True):
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_phasespace.pdf")
     plt.close()
 
-# Run for a bunch of RENs
-ren_config = deepcopy(config)
-ren_config["activation"] = "tanh"
-neurons = [2**n for n in range(4, 10)]
-for nv in neurons:
-    ren_config["nv"] = nv
-    print(f"REN {nv=}")
-    train_and_test(ren_config)
-
 # Run for a bunch of S-RENs
 sren_config = deepcopy(config)
 sren_config["network"] = "scalable_ren"
@@ -217,3 +208,12 @@ for layers in range(1,6):
     sren_config["nh"] = (nh,) * layers
     print(f"R2DN {layers=}")
     train_and_test(sren_config)
+
+# Run for a bunch of RENs
+ren_config = deepcopy(config)
+ren_config["activation"] = "tanh"
+neurons = [2**n for n in range(4, 10)]
+for nv in neurons:
+    ren_config["nv"] = nv
+    print(f"REN {nv=}")
+    train_and_test(ren_config)

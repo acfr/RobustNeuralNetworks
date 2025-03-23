@@ -140,7 +140,8 @@ def run_timing(filename, batches, horizon, n_repeats=1000):
 
 # Read all the files and save
 fpath = dirpath / f"../results/expressivity/"
-for f in fpath.iterdir():
+files = [f for f in fpath.iterdir()]
+for f in files:
     if f.is_file() and not (f.suffix == ".pdf"):
         print(f)
         run_timing(f, batches, horizon)
