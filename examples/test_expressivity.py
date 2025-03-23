@@ -35,10 +35,10 @@ config = {
     },
     "nx": 1,
     "polar": True,
-    "activation": "relu",
     "init_method": "random",
     "seed": 0,
 } 
+
 
 def generate_data(rng, nx=1, batches=128, batchsize=512):
     
@@ -61,13 +61,21 @@ def build_model(config):
     """Build neural models."""
     nu, nx, ny = config["nx"], config["nx"], config["nx"]
     if config["network"] == "contracting_ren":
-        model = ren.ContractingREN(nu, nx, config["nv"], ny, 
-                                   identity_output=True,
-                                   init_method=config["init_method"])
+        model = ren.ContractingREN(
+            nu, nx, config["nv"], ny, 
+            identity_output=True,
+            activation=utils.get_activation(config["activation"]),
+            init_method=config["init_method"],
+            do_polar_param=config["polar"]
+        )
     elif config["network"] == "scalable_ren":
-        model = sren.ScalableREN(nu, nx, config["nv"], ny, config["nh"], 
-                                 identity_output=True,
-                                 init_method=config["init_method"])
+        model = sren.ScalableREN(
+            nu, nx, config["nv"], ny, config["nh"], 
+            identity_output=True,
+            activation=utils.get_activation(config["activation"]),
+            init_method=config["init_method"],
+            do_polar_param=config["polar"]
+        )
     return model
 
 
@@ -188,29 +196,24 @@ def train_and_test(config, verbose=True):
     plt.ylabel("xnext")
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_phasespace.pdf")
     plt.close()
-    
 
-def choose_sizes(config, nv):
-    ren_config = deepcopy(config)
-    sren_config = deepcopy(config)
-
-    nx = config["nx"]
-    ren_config["nv"] = nv
-
-    # Choose so number of activations is similar
-    sren_config["network"] = "scalable_ren"
-    sren_config["nv"] = nv // 2
-    nh = utils.choose_lbdn_width(nx, nx, nx, nv, nv//2, 4)
-    sren_config["nh"] = (nh,) * 4
-        
-    return ren_config, sren_config
-
-# Try running this for a bunch of different sizes
-neurons = [2**n for n in range(2, 11)]
+# Run for a bunch of RENs
+ren_config = deepcopy(config)
+ren_config["activation"] = "tanh"
+neurons = [2**n for n in range(4, 10)]
 for nv in neurons:
-    ren_config, sren_config = choose_sizes(config, nv)
-    print(f"R2DN {nv=}")
-    train_and_test(sren_config)
+    ren_config["nv"] = nv
     print(f"REN {nv=}")
     train_and_test(ren_config)
-    print()
+
+# Run for a bunch of S-RENs
+sren_config = deepcopy(config)
+sren_config["network"] = "scalable_ren"
+sren_config["activation"] = "relu"
+nv, nh = 32, 64
+sren_config["nv"] = nv
+for layers in range(1,6):
+    sren_config["layers"] = layers
+    sren_config["nh"] = (nh,) * layers
+    print(f"R2DN {layers=}")
+    train_and_test(sren_config)

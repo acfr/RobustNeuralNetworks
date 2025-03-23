@@ -27,12 +27,18 @@ def get_activation(s: str):
 
 def generate_fname(config):
     """Generate a common file name for results loading/saving."""
+    is_sren = "nh" in config.keys()
+    nh = f"nh{config['nh'][0]}" if is_sren else ""
+    layers = f"_nl{len(config['nh'])}" if is_sren else ""
     polar_label = "polar" if config["polar"] else "nopolar"
-    filename = "{}_{}_nx{}_nv{}_{}_{}_{}_s{}".format(
+    
+    filename = "{}_{}_nx{}_nv{}_{}{}_{}_{}_{}_s{}".format(
         config["experiment"],
         config["network"],
         config["nx"],
         config["nv"],
+        nh,
+        layers,
         config["activation"],
         config["init_method"],
         polar_label,
