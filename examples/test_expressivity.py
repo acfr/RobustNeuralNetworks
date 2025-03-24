@@ -24,12 +24,12 @@ jax.config.update("jax_default_matmul_precision", "highest")
 config = {
     "experiment": "expressivity",
     "network": "contracting_ren",
-    "epochs": 500,
+    "epochs": 2*500,
     "batches": 128,
     "clip_grad": 10,
     "schedule": {
         "init_value": 1e-3,
-        "decay_steps": 150,
+        "decay_steps": 2*150,
         "decay_rate": 0.1,
         "end_value": 1e-6,
     },
@@ -197,25 +197,31 @@ def train_and_test(config, verbose=True):
     plt.savefig(dirpath / f"../results/{config['experiment']}/{fname}_phasespace.pdf")
     plt.close()
 
-# Run for a bunch of S-RENs
-sren_config = deepcopy(config)
-sren_config["network"] = "scalable_ren"
-sren_config["activation"] = "relu"
-nv, nh = 32, 64
-sren_config["nv"] = nv
-for layers in range(1,6):
-    sren_config["layers"] = layers
-    sren_config["nh"] = (nh,) * layers
-    print(f"R2DN {layers=}")
-    train_and_test(sren_config)
+# Train for many random seeds
+seeds = range(5)
+for s in seeds:
+    
+    config["seed"] = s
+    
+    # Run for a bunch of S-RENs
+    # TODO: Try with keeping layers fixed and varying width instead!
+    #       Ray reckons it won't increase computation time so much.
+    sren_config = deepcopy(config)
+    sren_config["network"] = "scalable_ren"
+    sren_config["activation"] = "relu"
+    nv, nh = 32, 64
+    sren_config["nv"] = nv
+    for layers in range(1,6):
+        sren_config["layers"] = layers
+        sren_config["nh"] = (nh,) * layers
+        print(f"R2DN {layers=}")
+        train_and_test(sren_config)
 
-# Run for a bunch of RENs
-ren_config = deepcopy(config)
-ren_config["activation"] = "tanh"
-# neurons = [2**n for n in range(4, 10)]
-# neurons = [40, 50, 60, 70, 80, 100]
-neurons = [34, 36, 38, 42, 46, 48, 52, 56, 58]
-for nv in neurons:
-    ren_config["nv"] = nv
-    print(f"REN {nv=}")
-    train_and_test(ren_config)
+    # Run for a bunch of RENs
+    ren_config = deepcopy(config)
+    ren_config["activation"] = "tanh"
+    neurons = [40, 50, 60, 80, 100]
+    for nv in neurons:
+        ren_config["nv"] = nv
+        print(f"REN {nv=}")
+        train_and_test(ren_config)
