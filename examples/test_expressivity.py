@@ -17,19 +17,21 @@ import optax
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
 
-# Need this to avoid matrix multiplication discrepancy
+# Go for maximum precision for these metrics
 jax.config.update("jax_default_matmul_precision", "highest")
+jax.config.update("jax_enable_x64", True)
 
 # Training hyperparameters
 config = {
     "experiment": "expressivity",
     "network": "contracting_ren",
-    "epochs": 2*500,
+    "epochs": 3*500,
     "batches": 128,
+    "batchsize": 512,
     "clip_grad": 10,
     "schedule": {
         "init_value": 1e-3,
-        "decay_steps": 2*150,
+        "decay_steps": 3*150,
         "decay_rate": 0.1,
         "end_value": 1e-6,
     },
@@ -86,8 +88,7 @@ def train_expressivity(config, verbose=True):
     rng = jax.random.key(config["seed"])
     rng, key1 = jax.random.split(rng)
     
-    # Generate test data and initialise model
-    val = generate_data(test_rng, config["nx"], batches=1)
+    # Initialise model
     model = build_model(config)
     
     # Loss function and training step
@@ -106,7 +107,7 @@ def train_expressivity(config, verbose=True):
     
     # Initialise REN and optimizer
     optimizer = sysid.setup_optimizer(config, config["batches"])
-    init_x = val[0][0]
+    init_x = jnp.zeros((config["batchsize"], model.state_size))
     init_u = jnp.zeros(init_x.shape)
     params = model.init(key1, init_x, init_u)
     opt_state = optimizer.init(params)
@@ -117,7 +118,9 @@ def train_expressivity(config, verbose=True):
         
         # Training data
         rng, _  = jax.random.split(rng)
-        train = generate_data(rng, config["nx"], batches=config["batches"])
+        train = generate_data(
+            rng, config["nx"], batches=config["batches"], batchsize=config["batchsize"]
+        )
         
         # Training update
         batch_loss = []
@@ -136,10 +139,11 @@ def train_expressivity(config, verbose=True):
                   f"lr: {lr:.3g}")
     
     # Get validation loss
+    val = generate_data(test_rng, config["nx"], batches=1, batchsize=2048)
     x0_val = val[0][0]
     x1_val = val[1][0]
     
-    u_val = jnp.zeros(x.shape)
+    u_val = jnp.zeros(x0_val.shape)
     xh_val, _ = model.apply(params, x0_val, u_val)
         
     val_mse = jnp.mean((x1_val - xh_val)**2)
@@ -204,24 +208,24 @@ for s in seeds:
     config["seed"] = s
     
     # Run for a bunch of S-RENs
-    # TODO: Try with keeping layers fixed and varying width instead!
-    #       Ray reckons it won't increase computation time so much.
     sren_config = deepcopy(config)
     sren_config["network"] = "scalable_ren"
     sren_config["activation"] = "relu"
-    nv, nh = 32, 64
-    sren_config["nv"] = nv
-    for layers in range(1,6):
+    layers = 4
+    nv_sren = 16
+    # for nh in [8, 16, 32, 64, 128]:
+    for nh in [80, 100]:
         sren_config["layers"] = layers
+        sren_config["nv"] = nv_sren
         sren_config["nh"] = (nh,) * layers
-        print(f"R2DN {layers=}")
+        print(f"R2DN {nh=}")
         train_and_test(sren_config)
 
     # Run for a bunch of RENs
     ren_config = deepcopy(config)
-    ren_config["activation"] = "tanh"
-    neurons = [40, 50, 60, 80, 100]
-    for nv in neurons:
+    ren_config["activation"] = "tanh" # TODO: Run the whole thing again with relu!!!
+    # for nv in [40, 50, 60, 80, 100]:
+    for nv in [20, 30, 35]:
         ren_config["nv"] = nv
         print(f"REN {nv=}")
         train_and_test(ren_config)
