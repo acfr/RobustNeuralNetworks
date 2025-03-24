@@ -72,7 +72,7 @@ def plot_results():
     y2 = model_results["scalable_ren"]["nrmse"]
 
     plt.figure(figsize=(4.5, 3.5))
-    plt.scatter(x1, y1, marker="X", color=color_r, label="REN")
+    plt.scatter(x1, y1, marker="x", color=color_r, label="REN")
     plt.scatter(x2, y2, marker="+", color=color_s, label="Scalable REN")
     
     plt.xlabel("Model size")

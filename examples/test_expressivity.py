@@ -212,7 +212,9 @@ for layers in range(1,6):
 # Run for a bunch of RENs
 ren_config = deepcopy(config)
 ren_config["activation"] = "tanh"
-neurons = [2**n for n in range(4, 10)]
+# neurons = [2**n for n in range(4, 10)]
+# neurons = [40, 50, 60, 70, 80, 100]
+neurons = [34, 36, 38, 42, 46, 48, 52, 56, 58]
 for nv in neurons:
     ren_config["nv"] = nv
     print(f"REN {nv=}")
