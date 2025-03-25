@@ -144,7 +144,7 @@ def plot_results(experiment, ylabel, yscale="log"):
     
     plt.figure(figsize=(4, 2.7))
     plt.plot(x1, y1, color=color_r, label="REN")
-    plt.plot(x2, y2, color=color_s, label="Scalable REN")
+    plt.plot(x2, y2, color=color_s, label="R2DN")
     plt.fill_between(x1, y1min, y1max, alpha=0.2, color=color_r)
     plt.fill_between(x2, y2min, y2max, alpha=0.2, color=color_s)
     

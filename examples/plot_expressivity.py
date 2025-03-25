@@ -169,7 +169,7 @@ def plot_results():
     
     # Plot formatting
     plt.xlabel("Model expressivity (1 / NRMSE)")
-    plt.ylabel("Evaluation time (s)")
+    plt.ylabel("Inference time (s)")
     plt.xscale("log")
     plt.yscale("log")
     plt.legend()
