@@ -63,7 +63,7 @@ def read_results():
     
     # Read in all the pickle files
     data = []
-    fpath = dirpath / f"../results/expressivity-batch2/"
+    fpath = dirpath / f"../results/expressivity-final/"
     files = [f for f in fpath.iterdir() if f.is_file() and not (f.suffix == ".pdf")]
     for f in files:
         d = utils.load_results(f)
@@ -141,7 +141,7 @@ def plot_results():
     Y2_fwd = np.exp(np.polyval(p2_fwd, np.log(x2_fit)))
 
     # Plotting
-    plt.figure(figsize=(4.5, 3.5))
+    plt.figure(figsize=(4.5, 3.2))
     plt.plot(x1_fit, Y1_fwd, linestyle="dotted", color=color_r)
     plt.plot(x2_fit, Y2_fwd, linestyle="dotted", color=color_s)
     plt.errorbar(
@@ -156,7 +156,7 @@ def plot_results():
     # Annotate slopes
     plt.annotate(
     f"slope = {p1_fwd[0]:.2f}",
-    xy=(3, 2.2e-2), 
+    xy=(2.4, 2e-2), 
     xycoords='data',
     fontsize=12,
     )
@@ -168,7 +168,7 @@ def plot_results():
     )
     
     # Plot formatting
-    plt.xlabel("Model expressivity (1 / NRMSE)")
+    plt.xlabel("Model expressivity (NRMSE$^{-1}$)")
     plt.ylabel("Inference time (s)")
     plt.xscale("log")
     plt.yscale("log")
