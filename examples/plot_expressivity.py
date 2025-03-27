@@ -157,12 +157,14 @@ def plot_results():
     plt.annotate(
     f"slope = {p1_fwd[0]:.2f}",
     xy=(2.4, 2e-2), 
+    # xy=(2.4, 5e-2), 
     xycoords='data',
     fontsize=12,
     )
     plt.annotate(
         f"slope = {p2_fwd[0]:.2f}",
         xy=(0.2, 7e-3), 
+        # xy=(0.2, 1.8e-2), 
         xycoords='data',
         fontsize=12,
     )
@@ -170,6 +172,7 @@ def plot_results():
     # Plot formatting
     plt.xlabel("Model expressivity (NRMSE$^{-1}$)")
     plt.ylabel("Inference time (s)")
+    # plt.ylabel("Backpropagagion time (s)")
     plt.xscale("log")
     plt.yscale("log")
     plt.legend()
