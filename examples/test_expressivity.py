@@ -213,8 +213,8 @@ for s in seeds:
     sren_config["activation"] = "relu"
     layers = 4
     nv_sren = 16
-    # for nh in [8, 16, 32, 64, 128]:
-    for nh in [80, 100]:
+    # for nh in [8, 16, 32, 64, 80, 100, 128, 150, 200, 250]:
+    for nh in [8, 16, 32, 80, 128]:
         sren_config["layers"] = layers
         sren_config["nv"] = nv_sren
         sren_config["nh"] = (nh,) * layers
@@ -223,9 +223,9 @@ for s in seeds:
 
     # Run for a bunch of RENs
     ren_config = deepcopy(config)
-    ren_config["activation"] = "tanh" # TODO: Run the whole thing again with relu!!!
-    # for nv in [40, 50, 60, 80, 100]:
-    for nv in [20, 30, 35]:
+    ren_config["activation"] = "tanh"
+    # for nv in [20, 30, 35, 40, 50, 60, 80, 100, 120, 150, 180, 200]:
+    for nv in [20, 30, 50, 80, 100]:
         ren_config["nv"] = nv
         print(f"REN {nv=}")
         train_and_test(ren_config)
