@@ -1,9 +1,9 @@
 import jax
 import jax.numpy as jnp
 
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 from robustnn.utils import count_num_params
-from utils import compute_p_sren
+from utils import compute_p_r2dn
 
 jax.config.update("jax_default_matmul_precision", "highest")
 
@@ -13,12 +13,12 @@ ny = 2
 batches = 4
 horizon = 2
 
-# Initialise a scalable REN
+# Initialise an R2DN
 nx = 3                  # Number of states
 nv = 4                  # Number of equilibirum layer states
 nh = (2,) * 2           # Number of hidden layers in the LBDN
 init_method = "long_memory_explicit"
-model = sren.ScalableREN(nu, nx, nv, ny, nh, init_method=init_method, seed=42)
+model = r2dn.ContractingR2DN(nu, nx, nv, ny, nh, init_method=init_method, seed=42)
 model.explicit_pre_init()
     
 # Random seeds
@@ -77,7 +77,7 @@ x0n, _ = model.apply(params, x0, inputs)
 x1n, _ = model.apply(params, x1, inputs)
 
 # Test for contraction
-P = compute_p_sren(model, params)
+P = compute_p_r2dn(model, params)
 lhs = mat_norm2(x0n - x1n, P) - mat_norm2(x0 - x1, P)
 rhs = 0
 

@@ -5,7 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from robustnn import ren
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 from robustnn.utils import count_num_params
 
 from utils.plot_utils import startup_plotting
@@ -40,15 +40,15 @@ ren_config = {
 }
 
 # Should have size: 94665 params (ish)
-sren_config = deepcopy(ren_config)
-sren_config["network"] = "scalable_ren"
+r2dn_config = deepcopy(ren_config)
+r2dn_config["network"] = "contracting_r2dn"
 
 # Reverse-engineer width of hidden layers
 # so number of params is similar
-sren_config["nv"] = ren_config["nv"] // 4
-sren_config["layers"] = 4
+r2dn_config["nv"] = ren_config["nv"] // 4
+r2dn_config["layers"] = 4
 nh = 96
-sren_config["nh"] = (nh,) * sren_config["layers"]
+r2dn_config["nh"] = (nh,) * r2dn_config["layers"]
 
 
 def build_ren(input_data, config):
@@ -64,8 +64,8 @@ def build_ren(input_data, config):
             do_polar_param=config["polar"],
             identity_output=True
         )
-    elif config["network"] == "scalable_ren":
-        model = sren.ScalableREN(
+    elif config["network"] == "contracting_r2dn":
+        model = r2dn.ContractingR2DN(
             input_data.shape[-1], 
             config["nx"],
             config["nv"],
@@ -204,6 +204,6 @@ def train_and_test(config):
 # Test it out on nominal config
 for seed in range(10):
     ren_config["seed"] = seed
-    sren_config["seed"] = seed
+    r2dn_config["seed"] = seed
     train_and_test(ren_config)
-    train_and_test(sren_config)
+    train_and_test(r2dn_config)

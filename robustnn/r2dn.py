@@ -21,10 +21,10 @@ def get_valid_init():
 
 
 @dataclass
-class DirectSRENParams:
-    """Data class to keep track of direct params for Scalable REN.
+class DirectR2DNParams:
+    """Data class to keep track of direct params for R2DN.
     
-    These are the free, trainable parameters for a Scalable REN,
+    These are the free, trainable parameters for an R2DN,
     excluding those in the LBDN layer.
     """
     p: Array
@@ -44,10 +44,10 @@ class DirectSRENParams:
 
 
 @dataclass
-class ExplicitSRENParams:
-    """Data class to keep track of explicit params for Scalable REN.
+class ExplicitR2DNParams:
+    """Data class to keep track of explicit params for R2DN.
     
-    These are the parameters used for evaluating a Scalable REN.
+    These are the parameters used for evaluating an R2DN.
     """
     A: Array
     B1: Array
@@ -63,10 +63,10 @@ class ExplicitSRENParams:
     network_params: lbdn.ExplicitLBDNParams
     
 
-class ScalableREN(nn.Module):
-    """Scalable version of Recurrent Equilirbium Network.
+class ContractingR2DN(nn.Module):
+    """Robust Recurrent Deep Network (R2DN).
     
-    This structure replaces the equilibrium layer in the REN with a
+    This structure replaces the equilibrium layer in a REN with a
     1-Lipschitz multi-layer perceptron.
 
     Attributes:
@@ -88,7 +88,7 @@ class ScalableREN(nn.Module):
         param_dtype: the dtype passed to parameter initializers (default: float32).
 
         init_method: parameter initialisation method to choose from. No other methods are 
-            currently supported for the scalable REN (TODO). Options are:
+            currently supported for the R2DN (TODO). Options are:
         
         - "random" (default): Random sampling with `recurrent_kernel_init`.
         - "random_explicit": Randomly sample explicit model, not direct params.
@@ -100,7 +100,7 @@ class ScalableREN(nn.Module):
         init_as_linear: Tuple of (A, B, C, D) matrices to initialise the contracting REN 
             as a linear system. The linear system must be stable. Default is `()`, which 
             defaults back to `init_method`.
-        explicit_init: initialise the REN from some ExplicitSRENParams (default: None).
+        explicit_init: initialise the REN from some ExplicitR2DNParams (default: None).
             If this is not `None`, it supercedes all other initialisation options.
             
         do_polar_param: Use the polar parameterization for the H matrix (default: True).
@@ -111,14 +111,14 @@ class ScalableREN(nn.Module):
     Example usage:
 
         >>> import jax, jax.numpy as jnp
-        >>> from robustnn import scalable_ren as sren
+        >>> from robustnn import r2dn
         
         >>> rng = jax.random.key(0)
         >>> key1, key2 = jax.random.split(rng)
 
         >>> nu, nx, nv, ny = 1, 2, 4, 1
         >>> nh = (2, 4)
-        >>> model = sren.ScalableREN(nu, nx, nv, ny, nh)
+        >>> model = r2dn.ContractingR2DN(nu, nx, nv, ny, nh)
         
         >>> batches = 5
         >>> states = model.initialize_carry(key1, (batches, nu))
@@ -155,8 +155,8 @@ class ScalableREN(nn.Module):
     identity_output: bool = False
     
     init_as_linear: Tuple = ()
-    explicit_init: ExplicitSRENParams = None
-    _direct_explicit_init: DirectSRENParams = None
+    explicit_init: ExplicitR2DNParams = None
+    _direct_explicit_init: DirectR2DNParams = None
     
     do_polar_param: bool = True
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
@@ -164,12 +164,12 @@ class ScalableREN(nn.Module):
     _gamma: jnp.float32 = 1.0 # type: ignore
     
     def setup(self):
-        """Initialise the scalable REN direct params."""
+        """Initialise the R2DN direct params."""
         
         self._init_params()
         
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
-        """Call a scalable REN model
+        """Call an R2DN model
 
         Args:
             state (Array): internal model state.
@@ -183,14 +183,14 @@ class ScalableREN(nn.Module):
         return self._explicit_call(state, inputs, explicit)
         
     def _explicit_call(
-        self, x: Array, u: Array, e: ExplicitSRENParams
+        self, x: Array, u: Array, e: ExplicitR2DNParams
     ) -> Tuple[Array, Array]:
-        """Evaluate explicit model for a scalable REN.
+        """Evaluate explicit model for an R2DN.
 
         Args:
             x (Array): internal model state.
             u (Array): model inputs.
-            e (ExplicitSRENParams): explicit params.
+            e (ExplicitR2DNParams): explicit params.
 
         Returns:
             Tuple[Array, Array]: (next_states, outputs).
@@ -206,7 +206,7 @@ class ScalableREN(nn.Module):
         return x1, y
     
     def _simulate_sequence(self, x0, u) -> Tuple[Array, Array]:
-        """Simulate a scalable REN over a sequence of inputs.
+        """Simulate an R2DN over a sequence of inputs.
 
         Args:
             x0: array of initial states, shape is (batches, ...).
@@ -227,7 +227,7 @@ class ScalableREN(nn.Module):
     def initialize_carry(
         self, rng: jax.Array, input_shape: Tuple[int, ...]
     ) -> Array:
-        """Initialise the scalable REN state (carry).
+        """Initialise the R2DN state (carry).
 
         Args:
             rng (jax.Array): random seed for carry initialisation.
@@ -241,14 +241,14 @@ class ScalableREN(nn.Module):
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
         
-    def _direct_to_explicit(self) -> ExplicitSRENParams:
-        """Convert from direct to explicit scalable REN params.
+    def _direct_to_explicit(self) -> ExplicitR2DNParams:
+        """Convert from direct to explicit R2DN params.
 
         Args:
             None
 
         Returns:
-            ExplicitSRENParams: explicit params for scalable REN.
+            ExplicitR2DNParams: explicit params for R2DN.
         """
         ps = self.direct
         nx = self.state_size
@@ -262,13 +262,13 @@ class ScalableREN(nn.Module):
         A = jnp.linalg.solve(E, H21)
         B1 = jnp.linalg.solve(E, ps.B1)
         
-        return ExplicitSRENParams(
+        return ExplicitR2DNParams(
             A, B1, ps.B2, ps.C1, ps.C2, ps.D12, ps.D21, ps.D22, ps.bx, ps.bv, ps.by,
             network_params = self.network._direct_to_explicit()
         )
             
     def _x_to_h_contracting(self, X: Array, p: Array, B1: Array, C1: Array) -> Array:
-        """Convert scalable REN X matrix to part of H matrix used in the contraction
+        """Convert R2DN X matrix to part of H matrix used in the contraction
         setup (using polar parameterization if required).
 
         Args:
@@ -334,7 +334,7 @@ class ScalableREN(nn.Module):
         )
         
     def _init_params_direct(self):
-        """Initialise all direct params for a scalable REN and store."""
+        """Initialise all direct params for an R2DN and store."""
         
         if self.init_method not in get_valid_init():
             raise ValueError("Undefined init method '{}'".format(self.init_method))
@@ -389,7 +389,7 @@ class ScalableREN(nn.Module):
             D21 = self.param("D21", out_kernel_init, (ny, nv), dtype)
             D22 = self.param("D22", init.zeros_init(), (ny, nu), dtype)
             
-        self.direct = DirectSRENParams(
+        self.direct = DirectR2DNParams(
             p, X, Y, B1, B2, C1, D12, C2, D21, D22, bx, bv, by, self.network.direct
         )
         
@@ -431,7 +431,7 @@ class ScalableREN(nn.Module):
         """A non-jittable method allowing initialisation from an explicit model.
         
         Call this before running `model.init()`, `model.apply()`, or anything else
-        if you want to initialise the scalable REN from an explicit model. This is
+        if you want to initialise the R2DN from an explicit model. This is
         to avoid having non-jittable code in the `setup()` or `__call__()` methods.
         """
         # Can initialise from linear model if needed
@@ -452,7 +452,7 @@ class ScalableREN(nn.Module):
         self._direct_explicit_init = direct
         
     def _init_linear_sys(self):
-        """Initialise the scalable contracting REN as a (stable) linear system."""
+        """Initialise the contracting R2DN as a (stable) linear system."""
         
         # Extract params and system sizes
         A, B, C, D = self.init_as_linear
@@ -480,7 +480,7 @@ class ScalableREN(nn.Module):
         D = jnp.array(D)
         
         # Set up an explicit model to initialise from in the pre-init
-        explicit = ExplicitSRENParams(
+        explicit = ExplicitR2DNParams(
             A = A,
             B1 = jnp.zeros((nx_a, nv), dtype),
             B2 = B,
@@ -497,7 +497,7 @@ class ScalableREN(nn.Module):
         self.explicit_init = explicit
     
     def _generate_explicit_params(self):
-        """Randomly generate explicit parameterisation for a scalable REN."""
+        """Randomly generate explicit parameterisation for an R2DN."""
         # Sizes and dtype
         nu = self.input_size
         nx = self.state_size
@@ -548,18 +548,18 @@ class ScalableREN(nn.Module):
         D22 = jnp.zeros((ny, nu), dtype)
         
         # Randomly generated explicit params
-        return ExplicitSRENParams(
+        return ExplicitR2DNParams(
             A, B1, B2, C1, C2, D12, D21, D22, bx, bv, by, network_params=None
         )
     
-    def _explicit_to_direct(self, e: ExplicitSRENParams) -> DirectSRENParams:
-        """Find direct scalable REN parameterisation that admits the given explicit params.
+    def _explicit_to_direct(self, e: ExplicitR2DNParams) -> DirectR2DNParams:
+        """Find direct R2DN parameterisation that admits the given explicit params.
 
         Args:
-            e (ExplicitSRENParams): Explicit scalable REN params (e.g. from init).
+            e (ExplicitR2DNParams): Explicit R2DN params (e.g. from init).
 
         Returns:
-            DirectSRENParams: Direct scalable REN params (these are learnable).
+            DirectR2DNParams: Direct R2DN params (these are learnable).
         """
         nx = self.state_size
         nv = self.features
@@ -615,7 +615,7 @@ class ScalableREN(nn.Module):
         ]) + self.eps * jnp.identity(2*nx)
         X = jnp.linalg.cholesky(Hdiff, upper=True)
         
-        return DirectSRENParams(
+        return DirectR2DNParams(
             p = l2_norm(X, eps=self.eps),
             X = X,
             Y = E,
@@ -633,7 +633,7 @@ class ScalableREN(nn.Module):
         )
         
     def _init_from_explicit(self):
-        """Initialise direct params from an existing explicit scalable REN model.
+        """Initialise direct params from an existing explicit R2DN model.
         
         This method requires the `explicit_pre_init` method to have been
         called first to correctly populate the `_direct_explicit_init` field.
@@ -649,9 +649,9 @@ class ScalableREN(nn.Module):
             
         # Initialise network and store
         self._network_init()
-        self.direct = DirectSRENParams(**ps, network_params=self.network.direct)
+        self.direct = DirectR2DNParams(**ps, network_params=self.network.direct)
 
-    def _check_valid_explicit(self, e: ExplicitSRENParams):
+    def _check_valid_explicit(self, e: ExplicitR2DNParams):
         """Error checking to help with explicit init."""
         
         nu = self.input_size
@@ -682,15 +682,15 @@ class ScalableREN(nn.Module):
     #################### Convenient Wrappers ####################
 
     def explicit_call(
-        self, params:dict, x: Array, u: Array, e: ExplicitSRENParams
+        self, params:dict, x: Array, u: Array, e: ExplicitR2DNParams
     ) -> Tuple[Array, Array]:
-        """Evaluate explicit model for a scalable REN.
+        """Evaluate explicit model for an R2DN.
 
         Args:
             params (dict): Flax model parameters dictionary.
             x (Array): internal model state.
             u (Array): model inputs.
-            e (ExplicitSRENParams): explicit params.
+            e (ExplicitR2DNParams): explicit params.
 
         Returns:
             Tuple[Array, Array]: (next_states, outputs).
@@ -698,7 +698,7 @@ class ScalableREN(nn.Module):
         return self.apply(params, x, u, e, method="_explicit_call")
     
     def simulate_sequence(self, params: dict, x0, u) -> Tuple[Array, Array]:
-        """Simulate a scalable REN over a sequence of inputs.
+        """Simulate an R2DN over a sequence of inputs.
 
         Args:
             params (dict): Flax model parameters dictionary.
@@ -710,13 +710,13 @@ class ScalableREN(nn.Module):
         """
         return self.apply(params, x0, u, method="_simulate_sequence")
     
-    def direct_to_explicit(self, params: dict) -> ExplicitSRENParams:
-        """Convert from direct to explicit scalable REN params.
+    def direct_to_explicit(self, params: dict) -> ExplicitR2DNParams:
+        """Convert from direct to explicit R2DN params.
 
         Args:
             params (dict): Flax model parameters dictionary.
 
         Returns:
-            ExplicitSRENParams: explicit params for scalable REN.
+            ExplicitR2DNParams: explicit params for R2DN.
         """
         return self.apply(params, method="_direct_to_explicit")

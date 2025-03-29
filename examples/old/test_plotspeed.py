@@ -38,30 +38,30 @@ ls_bck = "dashed"
 # Model sizes
 # ---------------------------------------------------------------
 
-def comput_activations_sren(exp_key, key1, key2):
-    na_sren = np.array([], dtype=np.int64)
+def comput_activations_r2dn(exp_key, key1, key2):
+    na_r2dn = np.array([], dtype=np.int64)
     for k in range(len(results[exp_key][key1])):
         na = results[exp_key][key1][k] * results[exp_key][key2][k]
-        na_sren = np.append(na_sren, na)
-    return na_sren
+        na_r2dn = np.append(na_r2dn, na)
+    return na_r2dn
     
 # Compute number of activations
 na_ren = results["nv_ren"]["nv"]
-na_sren_nh = comput_activations_sren("nh_sren", "nh", "nlayers")
-na_sren_nl = comput_activations_sren("layers_sren", "nlayers", "nh")
+na_r2dn_nh = comput_activations_r2dn("nh_r2dn", "nh", "nlayers")
+na_r2dn_nl = comput_activations_r2dn("layers_r2dn", "nlayers", "nh")
 
 # Number of model params
 size_ren = results["nv_ren"]["num_params"]
-size_sren_nh = results["nh_sren"]["num_params"]
-size_sren_nl = results["layers_sren"]["num_params"]
+size_r2dn_nh = results["nh_r2dn"]["num_params"]
+size_r2dn_nl = results["layers_r2dn"]["num_params"]
 
 # Plot number of activations vs. number of model params
 plt.figure(figsize=(4.2, 2.5))
 plt.plot(na_ren, size_ren, color=color_r, label="REN")
-plt.plot(na_sren_nh, size_sren_nh, color=color_s, linestyle=ls_fwd, label="Scalable REN (width)")
-plt.plot(na_sren_nl, size_sren_nl, color=color_s, linestyle=ls_bck, label="Scalable REN (depth)")
+plt.plot(na_r2dn_nh, size_r2dn_nh, color=color_s, linestyle=ls_fwd, label="R2DN (width)")
+plt.plot(na_r2dn_nl, size_r2dn_nl, color=color_s, linestyle=ls_bck, label="R2DN (depth)")
 
 format_plot("No. activations", "No. parameters", "activations_params", 
-            [min([min(na_ren), min(na_sren_nh), min(na_sren_nl)]), 
-             max([max(na_ren), max(na_sren_nh), max(na_sren_nl)])]
+            [min([min(na_ren), min(na_r2dn_nh), min(na_r2dn_nl)]), 
+             max([max(na_ren), max(na_r2dn_nh), max(na_r2dn_nl)])]
 )

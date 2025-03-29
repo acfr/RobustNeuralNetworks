@@ -55,11 +55,11 @@ def compute_num_ren_params(model):
     )
 
 
-def compute_num_sren_params(model):
+def compute_num_r2dn_params(model):
     """
-    Analytically compute number of scalable REN 
-    params to save on computation. Assumes all
-    hidden layers have the same fixed width.
+    Analytically compute number of R2DN params 
+    to save on computation. Assumes all hidden
+    layers have the same fixed width.
     """
     nu = model.input_size
     nx = model.state_size
@@ -67,7 +67,7 @@ def compute_num_sren_params(model):
     ny = model.output_size
     nh = model.hidden[0]
     n_layers = len(model.hidden)-1
-    sren_ps = (
+    r2dn_ps = (
         nx * nu +
         nv * nu +
         nx + nv + 
@@ -83,5 +83,5 @@ def compute_num_sren_params(model):
     a = (1 + 2*n_layers)
     b = 2*(nv + n_layers + 1)
     c = (nv**2 + 2*nv + n_layers + 2)
-    sren_ps += a * nh**2 + b * nh + c
-    return sren_ps
+    r2dn_ps += a * nh**2 + b * nh + c
+    return r2dn_ps

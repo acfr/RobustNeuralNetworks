@@ -4,7 +4,7 @@ import timeit
 from pathlib import Path
 
 from robustnn import ren
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 from robustnn.utils import count_num_params
 
 from utils import utils
@@ -117,8 +117,8 @@ def build_model(config):
             init_method=config["init_method"],
             do_polar_param=config["polar"]
         )
-    elif config["network"] == "scalable_ren":
-        model = sren.ScalableREN(
+    elif config["network"] == "contracting_r2dn":
+        model = r2dn.ContractingR2DN(
             nu, nx, config["nv"], ny, config["nh"], 
             identity_output=True,
             activation=utils.get_activation(config["activation"]),
@@ -128,7 +128,7 @@ def build_model(config):
     return model
 
 def run_timing(filename, batches, horizon, n_repeats=1000):
-    """Run the timing for a trained REN or scalable REN."""
+    """Run the timing for a trained REN or R2DN."""
 
     config, params, results = utils.load_results(filename)
     model = build_model(config)

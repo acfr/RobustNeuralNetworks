@@ -3,7 +3,7 @@ import optax
 
 from robustnn.utils import l2_norm
 from robustnn import ren_base as ren
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 
 
 def estimate_lipschitz_lower(    
@@ -98,7 +98,7 @@ def compute_p_contractingren(model: ren.RENBase, ps: dict):
     return E.T @ jnp.linalg.solve(P_imp, E)
 
 
-def compute_p_sren(model: sren.ScalableREN, ps: dict):
+def compute_p_r2dn(model: r2dn.ContractingR2DN, ps: dict):
     
     p = ps["params"]["p"]
     X = ps["params"]["X"]

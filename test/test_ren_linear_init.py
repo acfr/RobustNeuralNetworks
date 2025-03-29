@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import flax.linen as nn
 
 from robustnn import ren
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 
 # Need this to avoid matrix multiplication discrepancy?
 jax.config.update("jax_default_matmul_precision", "highest")
@@ -24,7 +24,7 @@ D = jax.random.normal(keyD, (ny, nu))
 model = ren.ContractingREN(
     nu, nx, nv, ny, activation=nn.tanh, init_as_linear=(A,B,C,D)
 )
-# model = sren.ScalableREN(
+# model = r2dn.ContractingR2DN(
 #     nu, nx, nv, ny, nh, activation=nn.tanh, init_as_linear=(A,B,C,D)
 # )
 model.explicit_pre_init()

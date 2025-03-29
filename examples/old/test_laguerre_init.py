@@ -8,7 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from robustnn import ren
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 from robustnn.utils import count_num_params
 
 from utils.plot_utils import startup_plotting
@@ -49,22 +49,22 @@ ren_config = {
 } 
 
 # Should have size: 96995 params (ish)
-sren_config = deepcopy(ren_config)
-sren_config["network"] = "scalable_ren"
+r2dn_config = deepcopy(ren_config)
+r2dn_config["network"] = "contracting_r2dn"
 
 # Reverse-engineer width of hidden layers
-sren_config["nv"] = ren_config["nv"] // 2
-sren_config["layers"] = 4
+r2dn_config["nv"] = ren_config["nv"] // 2
+r2dn_config["layers"] = 4
 nu, ny = 2, 3
 nh = utils.choose_lbdn_width(
     nu, 
     ren_config["nx"], 
     ny, 
     ren_config["nv"], 
-    sren_config["nv"], 
-    sren_config["layers"]
+    r2dn_config["nv"], 
+    r2dn_config["layers"]
 )
-sren_config["nh"] = (nh,) * sren_config["layers"]
+r2dn_config["nh"] = (nh,) * r2dn_config["layers"]
 
 
 ################################################
@@ -114,8 +114,8 @@ def build_ren(config):
             do_polar_param=config["polar"],
             init_as_linear=init_lsys,
         )
-    elif config["network"] == "scalable_ren":
-        model = sren.ScalableREN(
+    elif config["network"] == "contracting_r2dn":
+        model = r2dn.ContractingR2DN(
             2,
             config["nx"],
             config["nv"],
@@ -223,5 +223,5 @@ def train_and_test(config):
 
 
 # Test it out on nominal config
-train_and_test(sren_config)
+train_and_test(r2dn_config)
 train_and_test(ren_config)
