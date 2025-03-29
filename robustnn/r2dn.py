@@ -322,7 +322,7 @@ class ContractingR2DN(nn.Module):
             self._init_params_direct()
     
     def _network_init(self):
-        """Initialise the LBDN for the equilibrium layer"""
+        """Initialise the LBDN for the nonlinear layer"""
         self.network = lbdn.LBDN(
             input_size=self.features,
             hidden_sizes=self.hidden,
@@ -345,7 +345,7 @@ class ContractingR2DN(nn.Module):
         ny = self.output_size
         dtype = self.param_dtype
         
-        # Initialise an LBDN for the equilibrium layer
+        # Initialise an LBDN for the nonlinear layer
         self._network_init()
         
         # Initialise free parameters        
@@ -517,7 +517,7 @@ class ContractingR2DN(nn.Module):
         U = init.orthogonal()(keys[1], (nx,nx), dtype)
         V = init.orthogonal()(keys[2], (nx,nx), dtype)
         
-        # State and equilibrium layers
+        # State and nonlinear layers
         # At the moment, B1, C1 will be chosen so that 
         # the contraction LMI is feasible, so they are actually ignored. 
         A = V @ jnp.diag(D) @ U.T
