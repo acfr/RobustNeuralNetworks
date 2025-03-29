@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from utils.plot_utils import startup_plotting
-from utils import speed
 from utils import utils
 
 startup_plotting()
@@ -78,7 +77,7 @@ def read_results():
         for n in sizes:
             net_size_data = [d for d in network_data if get_sizes(d["config"]) == n]
             net_results.append(aggregate_results(net_size_data))
-        results[network] = speed.list_to_dicts(net_results)
+        results[network] = utils.list_to_dicts(net_results)
         
     # Also get all results for each model just to inspect the raw data
     raw_results = {}

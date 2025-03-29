@@ -18,6 +18,10 @@ def l1_norm(x, **kwargs):
     return jnp.sum(jnp.abs(x), **kwargs)
 
 
+def list_to_dicts(data):
+    return {key: np.array([d[key] for d in data]) for key in data[0]}
+
+
 def get_activation(s: str):
     """Get activation function from flax.linen via string."""
     if s == "identity":

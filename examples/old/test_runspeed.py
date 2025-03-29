@@ -6,7 +6,7 @@ from robustnn import ren
 from robustnn import r2dn
 from robustnn.utils import count_num_params
 
-from utils.utils import choose_lbdn_width
+from utils.utils import choose_lbdn_width, list_to_dicts
 from utils import speed
     
 filename = "timing_results_v3"
@@ -171,8 +171,8 @@ for h in horizons_:
     ren_results.append(r1)
     r2dn_results.append(r2)
     
-results["horizon_ren"] = speed.list_to_dicts(ren_results)
-results["horizon_r2dn"] = speed.list_to_dicts(r2dn_results)
+results["horizon_ren"] = list_to_dicts(ren_results)
+results["horizon_r2dn"] = list_to_dicts(r2dn_results)
 speed.save_results(filename, results)
 
 # Time batch size
@@ -185,8 +185,8 @@ for b in batches_:
     ren_results.append(r1)
     r2dn_results.append(r2)
     
-results["batches_ren"] = speed.list_to_dicts(ren_results)
-results["batches_r2dn"] = speed.list_to_dicts(r2dn_results)
+results["batches_ren"] = list_to_dicts(ren_results)
+results["batches_r2dn"] = list_to_dicts(r2dn_results)
 speed.save_results(filename, results)
 
 # Time model size
@@ -211,7 +211,7 @@ for depth in layers_:
     r2dn_l_results.append(r3)
     print()
 
-results["nv_ren"] = speed.list_to_dicts(ren_results)
-results["nh_r2dn"] = speed.list_to_dicts(r2dn_nh_results)
-results["layers_r2dn"] = speed.list_to_dicts(r2dn_l_results)
+results["nv_ren"] = list_to_dicts(ren_results)
+results["nh_r2dn"] = list_to_dicts(r2dn_nh_results)
+results["layers_r2dn"] = list_to_dicts(r2dn_l_results)
 speed.save_results(filename, results)

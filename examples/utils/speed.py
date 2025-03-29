@@ -6,10 +6,6 @@ from pathlib import Path
 dirpath = Path(__file__).resolve().parent
 
 
-def list_to_dicts(data):
-    return {key: np.array([d[key] for d in data]) for key in data[0]}
-
-
 def generate_filepath(filename):
     filepath = dirpath / f"../../results/timing/"
     if not filepath.exists():
