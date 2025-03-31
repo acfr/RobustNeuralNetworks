@@ -11,8 +11,10 @@ dirpath = Path(__file__).resolve().parent
 
 
 def get_raw_results(data):
+    nrmse = 100 * np.array([d["results"]["val_nrmse"] for d in data])
     return {
-        "nrmse": 100 * np.array([d["results"]["val_nrmse"] for d in data]),
+        "nrmse": nrmse,
+        "express": 1/nrmse,
         "mse": np.array([d["results"]["val_mse"] for d in data]),
         "size": np.array([d["results"]["num_params"] for d in data]),
         "time_fwd": np.array([d["results"]["forwards_eval"] for d in data]),
@@ -50,7 +52,7 @@ def aggregate_results(data):
 def get_sizes(config):
     if config["network"] == "contracting_ren":
         return config["nv"]
-    if config["network"] == "contracting_r2dn":
+    if config["network"] == "scalable_ren":
         return config["nh"][0]
 
 def read_results():
@@ -58,11 +60,12 @@ def read_results():
     Aggregate results for different model/hyperparam combinations.
     """
     
-    opts = ["contracting_ren", "contracting_r2dn"]
+    opts = ["contracting_ren", "scalable_ren"]
     
     # Read in all the pickle files
     data = []
-    fpath = dirpath / f"../results/expressivity-final/"
+    fpath = dirpath / f"../results/expressivity/"
+    # fpath = dirpath / f"../results/expressivity-paper/expressivity-final/"
     files = [f for f in fpath.iterdir() if f.is_file() and not (f.suffix == ".pdf")]
     for f in files:
         d = utils.load_results(f)
@@ -99,9 +102,9 @@ def plot_results():
 
     # Plot accuracy vs number of params
     x1 = raw_results["contracting_ren"]["size"]
-    x2 = raw_results["contracting_r2dn"]["size"]
+    x2 = raw_results["scalable_ren"]["size"]
     y1 = raw_results["contracting_ren"]["nrmse"]
-    y2 = raw_results["contracting_r2dn"]["nrmse"]
+    y2 = raw_results["scalable_ren"]["nrmse"]
 
     plt.figure(figsize=(4.5, 3.5))
     plt.scatter(x1, y1, marker="x", color=color_r, label="REN")
@@ -120,24 +123,44 @@ def plot_results():
     
     # ----------- Plot accuracy vs number of params -----------
     
-    # Get data
+    # Raw data
+    x1_raw = raw_results["contracting_ren"]["express"]
+    x2_raw = raw_results["scalable_ren"]["express"]
+    y1_raw = raw_results["contracting_ren"]["time_fwd"]
+    y2_raw = raw_results["scalable_ren"]["time_fwd"]
+    
+    # Aggregated data
     x1 = results["contracting_ren"]["express_mean"]
-    x2 = results["contracting_r2dn"]["express_mean"]
+    x2 = results["scalable_ren"]["express_mean"]
     y1_fwd = results["contracting_ren"]["time_fwd_mean"]
-    y2_fwd = results["contracting_r2dn"]["time_fwd_mean"]
+    y2_fwd = results["scalable_ren"]["time_fwd_mean"]
     
+    # Errors
     x1_std = results["contracting_ren"]["express_std"]
-    x2_std = results["contracting_r2dn"]["express_std"]
+    x2_std = results["scalable_ren"]["express_std"]
     y1_fwd_std = results["contracting_ren"]["time_fwd_std"]
-    y2_fwd_std = results["contracting_r2dn"]["time_fwd_std"]
+    y2_fwd_std = results["scalable_ren"]["time_fwd_std"]
     
-    # Lines of best fit
+    # Log transform
+    x1_log = np.log(x1_raw)
+    x2_log = np.log(x2_raw)
+    y1_log = np.log(y1_raw)
+    y2_log = np.log(y2_raw)
+    
+    # Lines of best fit (fit to raw data)
     x1_fit = np.linspace(0.8*min(x1), 1.2*max(x1), 100)
     x2_fit = np.linspace(0.8*min(x2), 1.2*max(x2), 100)
-    p1_fwd = np.polyfit(np.log(x1), np.log(y1_fwd), 1)
-    p2_fwd = np.polyfit(np.log(x2), np.log(y2_fwd), 1)
+    p1_fwd = np.polyfit(x1_log, y1_log, 1)
+    p2_fwd = np.polyfit(x2_log, y2_log, 1)
     Y1_fwd = np.exp(np.polyval(p1_fwd, np.log(x1_fit)))
     Y2_fwd = np.exp(np.polyval(p2_fwd, np.log(x2_fit)))
+    
+    # Slope errors
+    e1 = np.sum((y1_log - np.polyval(p1_fwd, x1_log))**2)
+    e2 = np.sum((y2_log - np.polyval(p2_fwd, x2_log))**2)
+    
+    s1 = np.sqrt(e1 / (np.sum((x1_log - x1_log.mean())**2) * (len(x1_log) - 2)))
+    s2 = np.sqrt(e2 / (np.sum((x2_log - x2_log.mean())**2) * (len(x2_log) - 2)))
 
     # Plotting
     plt.figure(figsize=(4.5, 3.2))
@@ -154,16 +177,16 @@ def plot_results():
     
     # Annotate slopes
     plt.annotate(
-    f"slope = {p1_fwd[0]:.2f}",
-    xy=(2.4, 2e-2), 
-    # xy=(2.4, 5e-2), 
+    f"slope = {p1_fwd[0]:.2f} $\pm$ {s1:.2f}",
+    xy=(0.015, 2e-2), 
+    # xy=(0.018, 5e-2), 
     xycoords='data',
     fontsize=12,
     )
     plt.annotate(
-        f"slope = {p2_fwd[0]:.2f}",
-        xy=(0.2, 7e-3), 
-        # xy=(0.2, 1.8e-2), 
+        f"slope = {p2_fwd[0]:.3f} $\pm$ {s2:.3f}",
+        xy=(0.4, 8.5e-3), 
+        # xy=(0.4, 2.2e-2), 
         xycoords='data',
         fontsize=12,
     )
@@ -174,6 +197,7 @@ def plot_results():
     # plt.ylabel("Backpropagagion time (s)")
     plt.xscale("log")
     plt.yscale("log")
+    plt.ylim(4.5e-3, 5e-2)
     plt.legend()
     plt.grid(True, which='both', linestyle=':', linewidth=0.75)
     plt.tight_layout()
