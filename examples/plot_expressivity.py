@@ -52,7 +52,7 @@ def aggregate_results(data):
 def get_sizes(config):
     if config["network"] == "contracting_ren":
         return config["nv"]
-    if config["network"] == "scalable_ren":
+    if config["network"] == "contracting_r2dn":
         return config["nh"][0]
 
 def read_results():
@@ -60,7 +60,7 @@ def read_results():
     Aggregate results for different model/hyperparam combinations.
     """
     
-    opts = ["contracting_ren", "scalable_ren"]
+    opts = ["contracting_ren", "contracting_r2dn"]
     
     # Read in all the pickle files
     data = []
@@ -102,9 +102,9 @@ def plot_results():
 
     # Plot accuracy vs number of params
     x1 = raw_results["contracting_ren"]["size"]
-    x2 = raw_results["scalable_ren"]["size"]
+    x2 = raw_results["contracting_r2dn"]["size"]
     y1 = raw_results["contracting_ren"]["nrmse"]
-    y2 = raw_results["scalable_ren"]["nrmse"]
+    y2 = raw_results["contracting_r2dn"]["nrmse"]
 
     plt.figure(figsize=(4.5, 3.5))
     plt.scatter(x1, y1, marker="x", color=color_r, label="REN")
@@ -125,21 +125,21 @@ def plot_results():
     
     # Raw data
     x1_raw = raw_results["contracting_ren"]["express"]
-    x2_raw = raw_results["scalable_ren"]["express"]
+    x2_raw = raw_results["contracting_r2dn"]["express"]
     y1_raw = raw_results["contracting_ren"]["time_fwd"]
-    y2_raw = raw_results["scalable_ren"]["time_fwd"]
+    y2_raw = raw_results["contracting_r2dn"]["time_fwd"]
     
     # Aggregated data
     x1 = results["contracting_ren"]["express_mean"]
-    x2 = results["scalable_ren"]["express_mean"]
+    x2 = results["contracting_r2dn"]["express_mean"]
     y1_fwd = results["contracting_ren"]["time_fwd_mean"]
-    y2_fwd = results["scalable_ren"]["time_fwd_mean"]
+    y2_fwd = results["contracting_r2dn"]["time_fwd_mean"]
     
     # Errors
     x1_std = results["contracting_ren"]["express_std"]
-    x2_std = results["scalable_ren"]["express_std"]
+    x2_std = results["contracting_r2dn"]["express_std"]
     y1_fwd_std = results["contracting_ren"]["time_fwd_std"]
-    y2_fwd_std = results["scalable_ren"]["time_fwd_std"]
+    y2_fwd_std = results["contracting_r2dn"]["time_fwd_std"]
     
     # Log transform
     x1_log = np.log(x1_raw)
@@ -177,14 +177,14 @@ def plot_results():
     
     # Annotate slopes
     plt.annotate(
-    f"slope = {p1_fwd[0]:.2f} $\pm$ {s1:.2f}",
+    f"slope = {p1_fwd[0]:.2f} ({s1:.2f})",
     xy=(0.015, 2e-2), 
     # xy=(0.018, 5e-2), 
     xycoords='data',
     fontsize=12,
     )
     plt.annotate(
-        f"slope = {p2_fwd[0]:.3f} $\pm$ {s2:.3f}",
+        f"slope = {p2_fwd[0]:.3f} ({s2:.3f})",
         xy=(0.4, 8.5e-3), 
         # xy=(0.4, 2.2e-2), 
         xycoords='data',
