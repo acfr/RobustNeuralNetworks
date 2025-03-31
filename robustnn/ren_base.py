@@ -200,7 +200,7 @@ class RENBase(nn.Module):
         Args:
             x (Array): internal model state.
             u (Array): model inputs.
-            e (ExplicitSRENParams): explicit params.
+            e (ExplicitRENParams): explicit params.
 
         Returns:
             Tuple[Array, Array]: (next_states, outputs).
@@ -711,7 +711,7 @@ class RENBase(nn.Module):
             params (dict): Flax model parameters dictionary.
             x (Array): internal model state.
             u (Array): model inputs.
-            e (ExplicitSRENParams): explicit params.
+            e (ExplicitRENParams): explicit params.
 
         Returns:
             Tuple[Array, Array]: (next_states, outputs).

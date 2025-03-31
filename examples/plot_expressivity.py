@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from utils.plot_utils import startup_plotting
-from utils import speed
 from utils import utils
 
 startup_plotting()
@@ -51,7 +50,7 @@ def aggregate_results(data):
 def get_sizes(config):
     if config["network"] == "contracting_ren":
         return config["nv"]
-    if config["network"] == "scalable_ren":
+    if config["network"] == "contracting_r2dn":
         return config["nh"][0]
 
 def read_results():
@@ -59,7 +58,7 @@ def read_results():
     Aggregate results for different model/hyperparam combinations.
     """
     
-    opts = ["contracting_ren", "scalable_ren"]
+    opts = ["contracting_ren", "contracting_r2dn"]
     
     # Read in all the pickle files
     data = []
@@ -78,7 +77,7 @@ def read_results():
         for n in sizes:
             net_size_data = [d for d in network_data if get_sizes(d["config"]) == n]
             net_results.append(aggregate_results(net_size_data))
-        results[network] = speed.list_to_dicts(net_results)
+        results[network] = utils.list_to_dicts(net_results)
         
     # Also get all results for each model just to inspect the raw data
     raw_results = {}
@@ -100,13 +99,13 @@ def plot_results():
 
     # Plot accuracy vs number of params
     x1 = raw_results["contracting_ren"]["size"]
-    x2 = raw_results["scalable_ren"]["size"]
+    x2 = raw_results["contracting_r2dn"]["size"]
     y1 = raw_results["contracting_ren"]["nrmse"]
-    y2 = raw_results["scalable_ren"]["nrmse"]
+    y2 = raw_results["contracting_r2dn"]["nrmse"]
 
     plt.figure(figsize=(4.5, 3.5))
     plt.scatter(x1, y1, marker="x", color=color_r, label="REN")
-    plt.scatter(x2, y2, marker="+", color=color_s, label="Scalable REN")
+    plt.scatter(x2, y2, marker="+", color=color_s, label="R2DN")
     
     plt.xlabel("Model size")
     plt.ylabel("NRMSE (\%)")
@@ -123,14 +122,14 @@ def plot_results():
     
     # Get data
     x1 = results["contracting_ren"]["express_mean"]
-    x2 = results["scalable_ren"]["express_mean"]
+    x2 = results["contracting_r2dn"]["express_mean"]
     y1_fwd = results["contracting_ren"]["time_fwd_mean"]
-    y2_fwd = results["scalable_ren"]["time_fwd_mean"]
+    y2_fwd = results["contracting_r2dn"]["time_fwd_mean"]
     
     x1_std = results["contracting_ren"]["express_std"]
-    x2_std = results["scalable_ren"]["express_std"]
+    x2_std = results["contracting_r2dn"]["express_std"]
     y1_fwd_std = results["contracting_ren"]["time_fwd_std"]
-    y2_fwd_std = results["scalable_ren"]["time_fwd_std"]
+    y2_fwd_std = results["contracting_r2dn"]["time_fwd_std"]
     
     # Lines of best fit
     x1_fit = np.linspace(0.8*min(x1), 1.2*max(x1), 100)

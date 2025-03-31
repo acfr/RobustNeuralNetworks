@@ -5,7 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from robustnn import ren
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 from robustnn.utils import count_num_params
 
 from utils.plot_utils import startup_plotting
@@ -50,7 +50,7 @@ def generate_data(rng, nx=1, batches=128, batchsize=512, uval=None):
             0.2 * jnp.sin(bw) + 
             0.05 * jnp.cos(2*bw) + 
             0.05 * jnp.sin(3*bw) + 
-            0.075 * jnp.sin(4*bw) * jnp.atan(0.1*bw**2)
+            0.075 * jnp.sin(4*x) * jnp.atan(0.1*bw**2)
         ) + 0.05*x + u
     
     x0_list = []
@@ -80,8 +80,8 @@ def build_model(config):
             init_method=config["init_method"],
             do_polar_param=config["polar"]
         )
-    elif config["network"] == "scalable_ren":
-        model = sren.ScalableREN(
+    elif config["network"] == "contracting_r2dn":
+        model = r2dn.ContractingR2DN(
             nu, nx, config["nv"], ny, config["nh"], 
             identity_output=True,
             activation=utils.get_activation(config["activation"]),
@@ -211,30 +211,30 @@ def train_and_test(config, verbose=True):
     plt.close()
 
 # Train for many random seeds
-seeds = range(5)
+seeds = [0] #range(5)
 for s in seeds:
     
     config["seed"] = s
     
     # Run for a bunch of S-RENs
-    sren_config = deepcopy(config)
-    sren_config["network"] = "scalable_ren"
-    sren_config["activation"] = "relu"
+    r2dn_config = deepcopy(config)
+    r2dn_config["network"] = "contracting_r2dn"
+    r2dn_config["activation"] = "tanh"
     layers = 4
-    nv_sren = 16
-    # for nh in [8, 16, 32, 64, 80, 100, 128, 150, 200, 250]:
-    for nh in [8, 16, 32, 80, 128]:
-        sren_config["layers"] = layers
-        sren_config["nv"] = nv_sren
-        sren_config["nh"] = (nh,) * layers
+    nv_r2dn = 16
+    for nh in [8, 16, 32, 48, 64, 80, 100, 128, 150, 200, 250]:
+    # for nh in [8, 16, 32, 80, 128]:
+        r2dn_config["layers"] = layers
+        r2dn_config["nv"] = nv_r2dn
+        r2dn_config["nh"] = (nh,) * layers
         print(f"R2DN {nh=}")
-        train_and_test(sren_config)
+        train_and_test(r2dn_config)
 
     # Run for a bunch of RENs
     ren_config = deepcopy(config)
     ren_config["activation"] = "tanh"
-    # for nv in [20, 30, 35, 40, 50, 60, 80, 100, 120, 150, 180, 200]:
-    for nv in [20, 30, 50, 80, 100]:
+    for nv in [20, 30, 40, 50, 60, 80, 100, 120, 150, 180, 200]:
+    # for nv in [20, 30, 50, 80, 100]:
         ren_config["nv"] = nv
         print(f"REN {nv=}")
         train_and_test(ren_config)

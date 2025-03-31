@@ -38,14 +38,14 @@ x = results["horizon_ren"]["horizon"]
 
 y_ren_fwd = results["horizon_ren"]["forwards_eval"]
 y_ren_bck = results["horizon_ren"]["backwards_eval"]
-y_sren_fwd = results["horizon_sren"]["forwards_eval"]
-y_sren_bck = results["horizon_sren"]["backwards_eval"]
+y_r2dn_fwd = results["horizon_r2dn"]["forwards_eval"]
+y_r2dn_bck = results["horizon_r2dn"]["backwards_eval"]
 
 plt.figure(figsize=(4.2, 2.5))
 plt.plot(x, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
 plt.plot(x, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
-plt.plot(x, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
-plt.plot(x, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
+plt.plot(x, y_r2dn_fwd, color=color_s, linestyle=ls_fwd, label="R2DN (Forward)")
+plt.plot(x, y_r2dn_bck, color=color_s, linestyle=ls_bck, label="R2DN (Backward)")
 
 format_plot("Sequence length", "Evaluation time (s)", "sequence", x)
 
@@ -54,31 +54,31 @@ x = results["batches_ren"]["batches"]
 
 y_ren_fwd = results["batches_ren"]["forwards_eval"]
 y_ren_bck = results["batches_ren"]["backwards_eval"]
-y_sren_fwd = results["batches_sren"]["forwards_eval"]
-y_sren_bck = results["batches_sren"]["backwards_eval"]
+y_r2dn_fwd = results["batches_r2dn"]["forwards_eval"]
+y_r2dn_bck = results["batches_r2dn"]["backwards_eval"]
 
 plt.figure(figsize=(4.2, 2.5))
 plt.plot(x, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
 plt.plot(x, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
-plt.plot(x, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
-plt.plot(x, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
+plt.plot(x, y_r2dn_fwd, color=color_s, linestyle=ls_fwd, label="R2DN (Forward)")
+plt.plot(x, y_r2dn_bck, color=color_s, linestyle=ls_bck, label="R2DN (Backward)")
 
 format_plot("Batch size", "Evaluation time (s)", "batches", x)
 
 # Plot eval time vs. number of model params
 x1 = results["nv_ren"]["num_params"]
-x2 = results["nv_sren"]["num_params"]
+x2 = results["nv_r2dn"]["num_params"]
 
 y_ren_fwd = results["nv_ren"]["forwards_eval"]
 y_ren_bck = results["nv_ren"]["backwards_eval"]
-y_sren_fwd = results["nv_sren"]["forwards_eval"]
-y_sren_bck = results["nv_sren"]["backwards_eval"]
+y_r2dn_fwd = results["nv_r2dn"]["forwards_eval"]
+y_r2dn_bck = results["nv_r2dn"]["backwards_eval"]
 
 plt.figure(figsize=(4.2, 2.5))
 plt.plot(x1, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
 plt.plot(x1, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
-plt.plot(x2, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
-plt.plot(x2, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
+plt.plot(x2, y_r2dn_fwd, color=color_s, linestyle=ls_fwd, label="R2DN (Forward)")
+plt.plot(x2, y_r2dn_bck, color=color_s, linestyle=ls_bck, label="R2DN (Backward)")
 
 # Only plot the parts of the array that are filled in
 indx = y_ren_fwd == None
@@ -95,27 +95,27 @@ format_plot("No. model parameters", "Evaluation time (s)",
 
 # Print hidden layer sizes vs. nv just for my interest
 nv_ren = results["nv_ren"]["nv"]
-nv_sren = results["nv_sren"]["nv"]
-nh_sren = results["nv_sren"]["nh"]
+nv_r2dn = results["nv_r2dn"]["nv"]
+nh_r2dn = results["nv_r2dn"]["nh"]
 for k in range(len(nv_ren)):
-    print("REN nv: ", nv_ren[k], "\tS-REN nv: ", nv_sren[k], "\tS-REN nh: ", nh_sren[k])
+    print("REN nv: ", nv_ren[k], "\tS-REN nv: ", nv_r2dn[k], "\tS-REN nh: ", nh_r2dn[k])
 
 # Compute total number of activations
 nact_ren = np.zeros(len(nv_ren))
-nact_sren = np.zeros(len(nv_ren))
+nact_r2dn = np.zeros(len(nv_ren))
 for k in range(len(nv_ren)):
-    nh = nh_sren[k]
-    nact_sren[k] = np.prod(nh)
+    nh = nh_r2dn[k]
+    nact_r2dn[k] = np.prod(nh)
     nact_ren[k] = nv_ren[k]
     
 # Compute slope of curves
 slope1 = np.log(x1[-1] / x1[-2]) / np.log(nact_ren[-1] / nact_ren[-2])
-slope2 = np.log(x2[-1] / x2[-2]) / np.log(nact_sren[-1] / nact_sren[-2])
+slope2 = np.log(x2[-1] / x2[-2]) / np.log(nact_r2dn[-1] / nact_r2dn[-2])
     
 # Plot number of activations vs. number of model params
 plt.figure(figsize=(4.2, 2.5))
 plt.plot(nact_ren, x1, color=color_r, label="REN")
-plt.plot(nact_sren, x2, color=color_s, label="Scalable REN")
+plt.plot(nact_r2dn, x2, color=color_s, label="R2DN")
 
 plt.annotate(
     f"slope = {slope1:.2f}",
@@ -131,17 +131,17 @@ plt.annotate(
 )
 
 format_plot("No. activations", "No. parameters", "activations_params", 
-            [min(nact_ren), max(nact_sren)])
+            [min(nact_ren), max(nact_r2dn)])
 
 # Plot number of activations vs. computation time
 x1 = nact_ren
-x2 = nact_sren
+x2 = nact_r2dn
 
 plt.figure(figsize=(4.2, 2.5))
 plt.plot(x1, y_ren_fwd, color=color_r, linestyle=ls_fwd, label="REN (Forward)")
 plt.plot(x1, y_ren_bck, color=color_r, linestyle=ls_bck, label="REN (Backward)")
-plt.plot(x2, y_sren_fwd, color=color_s, linestyle=ls_fwd, label="Scalable REN (Forward)")
-plt.plot(x2, y_sren_bck, color=color_s, linestyle=ls_bck, label="Scalable REN (Backward)")
+plt.plot(x2, y_r2dn_fwd, color=color_s, linestyle=ls_fwd, label="R2DN (Forward)")
+plt.plot(x2, y_r2dn_bck, color=color_s, linestyle=ls_bck, label="R2DN (Backward)")
 
 format_plot("No. activations", "Evaluation time (s)", "activations_time",
-            [min(nact_ren[indx]), max(nact_sren[indx])])
+            [min(nact_ren[indx]), max(nact_r2dn[indx])])

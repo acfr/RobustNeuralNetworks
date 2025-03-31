@@ -3,10 +3,10 @@ import jax.numpy as jnp
 import timeit
 
 from robustnn import ren
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 from robustnn.utils import count_num_params
 
-from utils.utils import choose_lbdn_width
+from utils.utils import choose_lbdn_width, list_to_dicts
 from utils import speed
     
 filename = "timing_results_v3"
@@ -18,9 +18,9 @@ nx = 64     # Number of states
 
 # Nominal model and data sizes
 nv_ren = 128
-nv_sren = 64
+nv_r2dn = 64
 n_layers = 4
-nh_sren = choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers)
+nh_r2dn = choose_lbdn_width(nu, nx, ny, nv_ren, nv_r2dn, n_layers)
 
 batches = 64
 horizon = 128
@@ -134,7 +134,7 @@ def time_model(model, batches, horizon, n_repeats, run_timing):
     }
 
 def run_timing(batches, horizon, nv, nh=None, nlayers = None, n_repeats=1000):
-    """Run the timing for either REN or scalable REN."""
+    """Run the timing for either REN or R2DN."""
 
     if nh is None:
         print("### REN: ###")
@@ -143,10 +143,10 @@ def run_timing(batches, horizon, nv, nh=None, nlayers = None, n_repeats=1000):
         run_timing = False #True if (nv <= 2**10) else False
         
     else:
-        print("### Scalable REN: ###")
+        print("### R2DN: ###")
         hidden = (nh,) * nlayers
-        model = sren.ScalableREN(nu, nx, nv, ny, hidden)
-        num_ps = speed.compute_num_sren_params(model)
+        model = r2dn.ContractingR2DN(nu, nx, nv, ny, hidden)
+        num_ps = speed.compute_num_r2dn_params(model)
         run_timing = False #True # Hopefully always feasible for S-REN
         
     results = time_model(model, batches, horizon, n_repeats, run_timing)
@@ -162,31 +162,31 @@ def run_timing(batches, horizon, nv, nh=None, nlayers = None, n_repeats=1000):
 results = {}
 
 # Time sequence length
-ren_results, sren_results = [], []
+ren_results, r2dn_results = [], []
 for h in horizons_:
     print(f"horizon = {h}")
     r1 = run_timing(batches, h, nv_ren)
-    r2 = run_timing(batches, h, nv_sren, nh_sren, n_layers)
+    r2 = run_timing(batches, h, nv_r2dn, nh_r2dn, n_layers)
     print()
     ren_results.append(r1)
-    sren_results.append(r2)
+    r2dn_results.append(r2)
     
-results["horizon_ren"] = speed.list_to_dicts(ren_results)
-results["horizon_sren"] = speed.list_to_dicts(sren_results)
+results["horizon_ren"] = list_to_dicts(ren_results)
+results["horizon_r2dn"] = list_to_dicts(r2dn_results)
 speed.save_results(filename, results)
 
 # Time batch size
-ren_results, sren_results = [], []
+ren_results, r2dn_results = [], []
 for b in batches_:
     print(f"batches = {b}")
     r1 = run_timing(b, horizon, nv_ren)
-    r2 = run_timing(b, horizon, nv_sren, nh_sren, n_layers)
+    r2 = run_timing(b, horizon, nv_r2dn, nh_r2dn, n_layers)
     print()
     ren_results.append(r1)
-    sren_results.append(r2)
+    r2dn_results.append(r2)
     
-results["batches_ren"] = speed.list_to_dicts(ren_results)
-results["batches_sren"] = speed.list_to_dicts(sren_results)
+results["batches_ren"] = list_to_dicts(ren_results)
+results["batches_r2dn"] = list_to_dicts(r2dn_results)
 speed.save_results(filename, results)
 
 # Time model size
@@ -197,21 +197,21 @@ for nv in neurons_:
     ren_results.append(r1)
     print()
     
-sren_nh_results = []
+r2dn_nh_results = []
 for nh in widths_:
     print(f"nh = {nh}")
-    r2 = run_timing(batches, horizon, nv_sren, nh, n_layers)
-    sren_nh_results.append(r2)
+    r2 = run_timing(batches, horizon, nv_r2dn, nh, n_layers)
+    r2dn_nh_results.append(r2)
     print()
     
-sren_l_results = []
+r2dn_l_results = []
 for depth in layers_:
     print(f"No. layers = {depth}")
-    r3 = run_timing(batches, horizon, nv_sren, nh_sren, depth)
-    sren_l_results.append(r3)
+    r3 = run_timing(batches, horizon, nv_r2dn, nh_r2dn, depth)
+    r2dn_l_results.append(r3)
     print()
 
-results["nv_ren"] = speed.list_to_dicts(ren_results)
-results["nh_sren"] = speed.list_to_dicts(sren_nh_results)
-results["layers_sren"] = speed.list_to_dicts(sren_l_results)
+results["nv_ren"] = list_to_dicts(ren_results)
+results["nh_r2dn"] = list_to_dicts(r2dn_nh_results)
+results["layers_r2dn"] = list_to_dicts(r2dn_l_results)
 speed.save_results(filename, results)

@@ -107,7 +107,7 @@ def plot_results(experiment, ylabel, yscale="log"):
     model_results, _ = aggregate_results(
         experiment, 
         key="network", 
-        opts=["contracting_ren", "scalable_ren"],
+        opts=["contracting_ren", "contracting_r2dn"],
         fixed={"init_method": "long_memory"}
     )
 
@@ -117,16 +117,16 @@ def plot_results(experiment, ylabel, yscale="log"):
 
     # Make loss plots for different models
     y1 = model_results["contracting_ren"]["losses"]
-    y2 = model_results["scalable_ren"]["losses"]
+    y2 = model_results["contracting_r2dn"]["losses"]
     y1min = model_results["contracting_ren"]["max"]
     y1max = model_results["contracting_ren"]["min"]
-    y2min = model_results["scalable_ren"]["max"]
-    y2max = model_results["scalable_ren"]["min"]
+    y2min = model_results["contracting_r2dn"]["max"]
+    y2max = model_results["contracting_r2dn"]["min"]
     x = np.arange(len(y1))
 
     plt.figure(figsize=(4, 2.7))
     plt.plot(x, y1, color=color_r, label="REN")
-    plt.plot(x, y2, color=color_s, label="Scalable REN")
+    plt.plot(x, y2, color=color_s, label="R2DN")
     plt.fill_between(x, y1min, y1max, alpha=0.2, color=color_r)
     plt.fill_between(x, y2min, y2max, alpha=0.2, color=color_s)
     
@@ -134,13 +134,13 @@ def plot_results(experiment, ylabel, yscale="log"):
     
     # Now do loss vs. time plots
     y1 = model_results["contracting_ren"]["time_losses"]
-    y2 = model_results["scalable_ren"]["time_losses"]
+    y2 = model_results["contracting_r2dn"]["time_losses"]
     y1min = model_results["contracting_ren"]["time_max"]
     y1max = model_results["contracting_ren"]["time_min"]
-    y2min = model_results["scalable_ren"]["time_max"]
-    y2max = model_results["scalable_ren"]["time_min"]
+    y2min = model_results["contracting_r2dn"]["time_max"]
+    y2max = model_results["contracting_r2dn"]["time_min"]
     x1 = model_results["contracting_ren"]["time"]
-    x2 = model_results["scalable_ren"]["time"]
+    x2 = model_results["contracting_r2dn"]["time"]
     
     plt.figure(figsize=(4, 2.7))
     plt.plot(x1, y1, color=color_r, label="REN")
@@ -170,7 +170,7 @@ plot_results("youla", "Test loss", "linear")
 def print_test_results(experiment):
     
     # Get data
-    models = ["contracting_ren", "scalable_ren"]
+    models = ["contracting_ren", "contracting_r2dn"]
     _, data = aggregate_results(
         experiment, 
         key="network", 

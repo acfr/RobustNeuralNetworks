@@ -18,6 +18,10 @@ def l1_norm(x, **kwargs):
     return jnp.sum(jnp.abs(x), **kwargs)
 
 
+def list_to_dicts(data):
+    return {key: np.array([d[key] for d in data]) for key in data[0]}
+
+
 def get_activation(s: str):
     """Get activation function from flax.linen via string."""
     if s == "identity":
@@ -27,9 +31,9 @@ def get_activation(s: str):
 
 def generate_fname(config):
     """Generate a common file name for results loading/saving."""
-    is_sren = "nh" in config.keys()
-    nh = f"nh{config['nh'][0]}_" if is_sren else ""
-    layers = f"nl{len(config['nh'])}_" if is_sren else ""
+    is_r2dn = "nh" in config.keys()
+    nh = f"nh{config['nh'][0]}_" if is_r2dn else ""
+    layers = f"nl{len(config['nh'])}_" if is_r2dn else ""
     polar_label = "polar" if config["polar"] else "nopolar"
     
     filename = "{}_{}_nx{}_nv{}_{}{}{}_{}_{}_s{}".format(
@@ -73,8 +77,8 @@ def load_results_from_config(config):
     return load_results(filepath)
 
 
-def choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers):
-    """Choose width of LBDN layers in scalable REN so that
+def choose_lbdn_width(nu, nx, ny, nv_ren, nv_r2dn, n_layers):
+    """Choose width of LBDN layers in R2DN so that
     number of params matches up with a REN of the same size.
     
     Assumes fixed hidden width in the LBDN of n_layers layers.
@@ -85,14 +89,14 @@ def choose_lbdn_width(nu, nx, ny, nv_ren, nv_sren, n_layers):
     diff = (
         (4*nx*nv_ren + nv_ren**2) + 
         nv_ren*(nu + ny + 1) - 
-        nv_sren*(nu + ny + 2*nx + 1)
+        nv_r2dn*(nu + ny + 2*nx + 1)
     )
     
     # Coefficients for width of LBDN layers
     n_layers -= 1
     a = (1 + 2*n_layers)
-    b = 2*(nv_sren + n_layers + 1)
-    c = (nv_sren**2 + 2*nv_sren + n_layers + 2) - diff
+    b = 2*(nv_r2dn + n_layers + 1)
+    c = (nv_r2dn**2 + 2*nv_r2dn + n_layers + 2) - diff
     
     # Solve quadratic equation
     nh = (-b + np.sqrt(b**2 - 4*a*c)) / (2*a)
