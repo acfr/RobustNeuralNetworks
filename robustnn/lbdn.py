@@ -136,11 +136,12 @@ class SandwichLayer(nn.Module):
         if self.is_output:
             x = dot_lax(u, e.B)
             return x + e.b if self.use_bias else x
-                
-        x = jnp.sqrt(2.0) * dot_lax(u, ((jnp.diag(1 / e.psi_d)) @ e.B))
+        
+        sqrt2 = self.param_dtype(jnp.sqrt(2.0))
+        x = sqrt2 * dot_lax(u, ((jnp.diag(1 / e.psi_d)) @ e.B))
         if self.use_bias: 
             x += e.b
-        return jnp.sqrt(2.0) * dot_lax(self.activation(x), (e.A_T * e.psi_d.T))
+        return sqrt2 * dot_lax(self.activation(x), (e.A_T * e.psi_d.T))
     
     def _direct_to_explicit(self) -> ExplicitSandwichParams:
         """Convert from direct Sandwich params to explicit form for eval.
@@ -223,7 +224,7 @@ class LBDN(nn.Module):
         
         # Set up trainable/constant Lipschitz bound (positive quantity)
         # The learnable parameter is log(gamma), then we take gamma = exp(log_gamma)
-        log_gamma = jnp.log(self.gamma)
+        log_gamma = dtype(jnp.log(self.gamma))
         if self.trainable_lipschitz:
             log_gamma = self.param("ln_gamma", init.constant(log_gamma),(1,), dtype)
         
@@ -248,7 +249,8 @@ class LBDN(nn.Module):
                     activation=self.activation,
                     use_bias=self.use_bias,
                     kernel_init=kernel_init,
-                    is_output=is_output
+                    is_output=is_output,
+                    param_dtype=dtype
                 )
             )
         
