@@ -31,9 +31,9 @@ config = {
     "clip_grad": 10,
     "schedule": {
         "init_value": 1e-3,
-        "decay_steps": 3*150,
+        "decay_steps": 500,
         "decay_rate": 0.1,
-        "end_value": 1e-6,
+        "end_value": 1e-5,
     },
     "nx": 1,
     "polar": True,
@@ -47,10 +47,10 @@ def generate_data(rng, nx=1, batches=128, batchsize=512, uval=None):
     def dynamics(x, u):
         bw = x + u
         return (
-            0.2 * jnp.sin(bw) + 
+            0.2 * jnp.sin(x) + 
             0.05 * jnp.cos(2*bw) + 
             0.05 * jnp.sin(3*bw) + 
-            0.075 * jnp.sin(4*x) * jnp.atan(0.1*bw**2)
+            0.075 * jnp.sin(4*bw) * jnp.atan(0.1*bw**2)
         ) + 0.05*x + u
     
     x0_list = []
@@ -59,7 +59,7 @@ def generate_data(rng, nx=1, batches=128, batchsize=512, uval=None):
         rng1, rng2 = jax.random.split(rng)
         x0 = jax.random.uniform(rng1, (batchsize, nx), minval=-30, maxval=30)
         if uval is None:
-            u0 = jax.random.uniform(rng2, (batchsize, nx), minval=-10, maxval=10)
+            u0 = jax.random.uniform(rng2, (batchsize, nx), minval=-1, maxval=1)
         else:
             u0 = uval * jnp.ones(x0.shape)
         x1 = dynamics(x0, u0)
@@ -211,30 +211,30 @@ def train_and_test(config, verbose=True):
     plt.close()
 
 # Train for many random seeds
-seeds = [0] #range(5)
+seeds = range(3)
 for s in seeds:
     
     config["seed"] = s
-    
+
     # Run for a bunch of S-RENs
     r2dn_config = deepcopy(config)
     r2dn_config["network"] = "contracting_r2dn"
-    r2dn_config["activation"] = "tanh"
+    r2dn_config["activation"] = "relu"
     layers = 4
     nv_r2dn = 16
-    for nh in [8, 16, 32, 48, 64, 80, 100, 128, 150, 200, 250]:
-    # for nh in [8, 16, 32, 80, 128]:
+    for nh in [8, 16, 32, 48, 64, 80, 100, 128, 256]:
+        if s == 0: continue
         r2dn_config["layers"] = layers
         r2dn_config["nv"] = nv_r2dn
         r2dn_config["nh"] = (nh,) * layers
-        print(f"R2DN {nh=}")
+        print(f"R2DN {nh=} {s=}")
         train_and_test(r2dn_config)
 
     # Run for a bunch of RENs
     ren_config = deepcopy(config)
     ren_config["activation"] = "tanh"
-    for nv in [20, 30, 40, 50, 60, 80, 100, 120, 150, 180, 200]:
-    # for nv in [20, 30, 50, 80, 100]:
+    for nv in [20, 30, 40, 50, 60, 80, 100, 128, 200, 256]:
+        if (s == 0 and nv < 110): continue
         ren_config["nv"] = nv
-        print(f"REN {nv=}")
+        print(f"REN {nv=} {s=}")
         train_and_test(ren_config)
