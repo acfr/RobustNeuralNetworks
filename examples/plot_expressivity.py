@@ -164,21 +164,21 @@ def plot_results():
     plt.plot(x1_fit, Y1, linestyle="dotted", color=color_r)
     plt.plot(x2_fit, Y2, linestyle="dotted", color=color_s)
     plt.errorbar(
-        x1, y1, xerr=x1_std, yerr=y1_std,  marker="D", 
+        x1, y1, xerr=x1_std, yerr=y1_std, ms=4, marker="o", 
         color=color_r, label="REN", linestyle="none", elinewidth=0.8
     )
     plt.errorbar(
-        x2, y2, xerr=x2_std, yerr=y2_std,  marker="^", 
+        x2, y2, xerr=x2_std, yerr=y2_std, ms=4, marker="D", 
         color=color_s, label="R2DN", linestyle="none", elinewidth=0.8
     )
     
     # Specific formatting for each plot
     if way == "forwards":
-        xy1_label = (0.12, 4e-2)
-        xy2_label = (0.9, 1.1e-2)
+        xy1_label = (0.12, 3.5e-2)
+        xy2_label = (0.9, 1.15e-2)
         ylabel = "Inference time (s)"
     elif way == "backwards":
-        xy1_label = (0.12, 1e-1)
+        xy1_label = (0.12, 9e-2)
         xy2_label = (0.9, 3e-2)
         ylabel = "Backpropagagion time (s)"
         
@@ -206,6 +206,5 @@ def plot_results():
     plt.tight_layout()
     plt.savefig(dirpath / f"../paperfigs/timing/expressivity_time_{way}.pdf")
     plt.close()
-    
     
 plot_results()
