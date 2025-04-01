@@ -31,9 +31,9 @@ config = {
     "clip_grad": 10,
     "schedule": {
         "init_value": 1e-3,
-        "decay_steps": 3*150,
+        "decay_steps": 500,
         "decay_rate": 0.1,
-        "end_value": 1e-6,
+        "end_value": 1e-5,
     },
     "nx": 1,
     "polar": True,
@@ -42,18 +42,28 @@ config = {
 } 
 
 
-def generate_data(rng, nx=1, batches=128, batchsize=512):
+def generate_data(rng, nx=1, batches=128, batchsize=512, uval=None):
     
-    def dynamics(x):
-        return 0.25 * jnp.cos(jnp.sin(1.2*x) + jnp.cos(0.8*x))
+    def dynamics(x, u):
+        bw = x + u
+        return (
+            0.2 * jnp.sin(x) + 
+            0.05 * jnp.cos(2*bw) + 
+            0.05 * jnp.sin(3*bw) + 
+            0.075 * jnp.sin(4*bw) * jnp.atan(0.1*bw**2)
+        ) + 0.05*x + u
     
     x0_list = []
     x1_list = []
     for _ in range(batches):
-        rng, _ = jax.random.split(rng)
-        x0 = jax.random.uniform(rng, (batchsize, nx), minval=-30, maxval=30)
-        x1 = dynamics(x0)
-        x0_list.append(x0)
+        rng1, rng2 = jax.random.split(rng)
+        x0 = jax.random.uniform(rng1, (batchsize, nx), minval=-30, maxval=30)
+        if uval is None:
+            u0 = jax.random.uniform(rng2, (batchsize, nx), minval=-1, maxval=1)
+        else:
+            u0 = uval * jnp.ones(x0.shape)
+        x1 = dynamics(x0, u0)
+        x0_list.append((x0, u0))
         x1_list.append(x1)
         
     return x0_list, x1_list
@@ -92,15 +102,14 @@ def train_expressivity(config, verbose=True):
     model = build_model(config)
     
     # Loss function and training step
-    def loss_fn(params, x, xn):
-        u = jnp.zeros(x.shape)
+    def loss_fn(params, x, u, xn):
         x_pred, _ = model.apply(params, x, u)
         return jnp.mean((xn - x_pred)**2)
     
     @jax.jit
-    def train_step(params, opt_state, x, xn):
+    def train_step(params, opt_state, x, u, xn):
         grad_loss = jax.jit(jax.value_and_grad(loss_fn))
-        loss_value, grads = grad_loss(params, x, xn)
+        loss_value, grads = grad_loss(params, x, u, xn)
         updates, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss_value
@@ -124,9 +133,10 @@ def train_expressivity(config, verbose=True):
         
         # Training update
         batch_loss = []
-        for x, xn in zip(*train):
+        for xu, xn in zip(*train):
+            x, u = xu
             params, opt_state, loss_value = train_step(
-                params, opt_state, x, xn
+                params, opt_state, x, u, xn
             )
             batch_loss.append(loss_value)
             
@@ -139,11 +149,9 @@ def train_expressivity(config, verbose=True):
                   f"lr: {lr:.3g}")
     
     # Get validation loss
-    val = generate_data(test_rng, config["nx"], batches=1, batchsize=2048)
-    x0_val = val[0][0]
+    val = generate_data(test_rng, config["nx"], uval=1, batches=1, batchsize=2048)
+    x0_val, u_val = val[0][0]
     x1_val = val[1][0]
-    
-    u_val = jnp.zeros(x0_val.shape)
     xh_val, _ = model.apply(params, x0_val, u_val)
         
     val_mse = jnp.mean((x1_val - xh_val)**2)
@@ -155,6 +163,7 @@ def train_expressivity(config, verbose=True):
         "val_mse": val_mse,
         "val_nrmse": val_nrmse,
         "x0_val": x0_val,
+        "u_val": u_val,
         "x1_val": x1_val,
         "xh_val": xh_val
     }
@@ -202,30 +211,27 @@ def train_and_test(config, verbose=True):
     plt.close()
 
 # Train for many random seeds
-seeds = range(5)
-for s in seeds:
+for s in range(5):
     
     config["seed"] = s
-    
+
     # Run for a bunch of S-RENs
     r2dn_config = deepcopy(config)
     r2dn_config["network"] = "contracting_r2dn"
     r2dn_config["activation"] = "relu"
-    layers = 4
+    layers = 6      
     nv_r2dn = 16
-    # for nh in [8, 16, 32, 64, 80, 100, 128, 150, 200, 250]:
-    for nh in [8, 16, 32, 80, 128]:
+    for nh in [8, 16, 24, 32, 48, 64, 80, 96]:
         r2dn_config["layers"] = layers
         r2dn_config["nv"] = nv_r2dn
         r2dn_config["nh"] = (nh,) * layers
-        print(f"R2DN {nh=}")
+        print(f"R2DN {nh=} {s=}")
         train_and_test(r2dn_config)
 
     # Run for a bunch of RENs
     ren_config = deepcopy(config)
     ren_config["activation"] = "tanh"
-    # for nv in [20, 30, 35, 40, 50, 60, 80, 100, 120, 150, 180, 200]:
-    for nv in [20, 30, 50, 80, 100]:
+    for nv in [20, 30, 40, 60, 80, 100, 128, 200]:
         ren_config["nv"] = nv
-        print(f"REN {nv=}")
+        print(f"REN {nv=} {s=}")
         train_and_test(ren_config)

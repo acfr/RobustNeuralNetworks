@@ -62,7 +62,7 @@ def read_results():
     
     # Read in all the pickle files
     data = []
-    fpath = dirpath / f"../results/expressivity-f2-paper/"
+    fpath = dirpath / f"../results/expressivity-paper/"
     files = [f for f in fpath.iterdir() if f.is_file() and not (f.suffix == ".pdf")]
     for f in files:
         d = utils.load_results(f)
@@ -230,7 +230,6 @@ ys = [dynamics(x, u) for u in us]
 plt.figure(figsize=(5, 3))
 for u, y in zip(us, ys):
     plt.plot(x, y, label=f"$u = {int(u)}$")
-# plt.plot(x, y, color = "#009E73")
 plt.xlabel("$x$")
 plt.ylabel("$f(x, u)$")
 plt.legend()
