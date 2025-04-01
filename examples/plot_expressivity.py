@@ -9,8 +9,8 @@ from utils import utils
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
 
-# way = "forwards"
-way = "backwards"
+way = "forwards"
+# way = "backwards"
 
 def get_raw_results(data):
     nrmse = 100 * np.array([d["results"]["val_nrmse"] for d in data])
@@ -62,8 +62,7 @@ def read_results():
     
     # Read in all the pickle files
     data = []
-    fpath = dirpath / f"../results/expressivity-f2/"
-    # fpath = dirpath / f"../results/expressivity-paper/expressivity-final/"
+    fpath = dirpath / f"../results/expressivity-f2-paper/"
     files = [f for f in fpath.iterdir() if f.is_file() and not (f.suffix == ".pdf")]
     for f in files:
         d = utils.load_results(f)
@@ -191,7 +190,7 @@ def plot_results():
         fontsize=12,
     )
     plt.annotate(
-        f"slope = {p2[0]:.2f} ({s2:.2f})",
+        f"slope = {p2[0]:.3f} ({s2:.3f})",
         xy=xy2_label,
         xycoords='data',
         fontsize=12,
