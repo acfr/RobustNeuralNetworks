@@ -85,7 +85,7 @@ def read_results():
         network_data = [d for d in data if d["config"]["network"] == network]
         raw_results[network] = get_raw_results(network_data)
         
-    return results , raw_results
+    return results, raw_results
 
 def plot_results():
     
@@ -208,3 +208,32 @@ def plot_results():
     plt.close()
     
 plot_results()
+
+
+# ----------------- Plot the original function too --------------- #
+
+# Function definition
+def dynamics(x, u):
+    bw = x + u
+    return (
+        0.2 * np.sin(x) + 
+        0.05 * np.cos(2*bw) + 
+        0.05 * np.sin(3*bw) + 
+        0.075 * np.sin(4*bw) * np.atan(0.1*bw**2)
+    ) + 0.05*x + u
+        
+# Plot in phase space for a batch
+x = np.linspace(-30, 30, 1000)
+us = np.linspace(-1, 1, 3)
+ys = [dynamics(x, u) for u in us]
+
+plt.figure(figsize=(5, 3))
+for u, y in zip(us, ys):
+    plt.plot(x, y, label=f"$u = {int(u)}$")
+# plt.plot(x, y, color = "#009E73")
+plt.xlabel("$x$")
+plt.ylabel("$f(x, u)$")
+plt.legend()
+plt.tight_layout()
+plt.savefig(dirpath / "../paperfigs/timing/expressivity_phasespace.pdf")
+plt.close()
