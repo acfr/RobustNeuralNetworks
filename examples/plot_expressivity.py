@@ -9,6 +9,8 @@ from utils import utils
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
 
+# way = "forwards"
+way = "backwards"
 
 def get_raw_results(data):
     nrmse = 100 * np.array([d["results"]["val_nrmse"] for d in data])
@@ -17,8 +19,7 @@ def get_raw_results(data):
         "express": 1/nrmse,
         "mse": np.array([d["results"]["val_mse"] for d in data]),
         "size": np.array([d["results"]["num_params"] for d in data]),
-        "time_fwd": np.array([d["results"]["forwards_eval"] for d in data]),
-        "time_bck": np.array([d["results"]["backwards_eval"] for d in data]),
+        "time": np.array([d["results"][f"{way}_eval"] for d in data]),
     }
     
 def aggregate_results(data):
@@ -27,8 +28,7 @@ def aggregate_results(data):
     nrmse = 100 * np.array([d["results"]["val_nrmse"] for d in data])
     mse = np.array([d["results"]["val_mse"] for d in data])
     size = np.array([d["results"]["num_params"] for d in data])
-    time_fwd = np.array([d["results"]["forwards_eval"] for d in data])
-    time_bck = np.array([d["results"]["backwards_eval"] for d in data])
+    time = np.array([d["results"][f"{way}_eval"] for d in data])
     
     # Calculate expressivity
     expressivity = 1 / nrmse
@@ -43,10 +43,8 @@ def aggregate_results(data):
         "mse_std": np.std(mse),
         "size_mean": np.mean(size),
         "size_std": np.std(size),
-        "time_fwd_mean": np.mean(time_fwd),
-        "time_fwd_std": np.std(time_fwd),
-        "time_bck_mean": np.mean(time_bck),
-        "time_bck_std": np.std(time_bck),
+        "time_mean": np.mean(time),
+        "time_std": np.std(time),
     }
     
 def get_sizes(config):
@@ -64,7 +62,7 @@ def read_results():
     
     # Read in all the pickle files
     data = []
-    fpath = dirpath / f"../results/expressivity/"
+    fpath = dirpath / f"../results/expressivity-f2/"
     # fpath = dirpath / f"../results/expressivity-paper/expressivity-final/"
     files = [f for f in fpath.iterdir() if f.is_file() and not (f.suffix == ".pdf")]
     for f in files:
@@ -118,7 +116,7 @@ def plot_results():
     plt.legend(ncol=2, loc='upper center', bbox_to_anchor=(0.5, -0.25))
     plt.grid(True, which='both', linestyle=':', linewidth=0.75)
     plt.tight_layout()
-    plt.savefig(dirpath / f"../paperfigs/timing/expressivity.pdf")
+    plt.savefig(dirpath / f"../paperfigs/timing/expressivity_{way}.pdf")
     plt.close()
     
     # ----------- Plot accuracy vs number of params -----------
@@ -126,20 +124,20 @@ def plot_results():
     # Raw data
     x1_raw = raw_results["contracting_ren"]["express"]
     x2_raw = raw_results["contracting_r2dn"]["express"]
-    y1_raw = raw_results["contracting_ren"]["time_fwd"]
-    y2_raw = raw_results["contracting_r2dn"]["time_fwd"]
+    y1_raw = raw_results["contracting_ren"]["time"]
+    y2_raw = raw_results["contracting_r2dn"]["time"]
     
     # Aggregated data
     x1 = results["contracting_ren"]["express_mean"]
     x2 = results["contracting_r2dn"]["express_mean"]
-    y1_fwd = results["contracting_ren"]["time_fwd_mean"]
-    y2_fwd = results["contracting_r2dn"]["time_fwd_mean"]
+    y1 = results["contracting_ren"]["time_mean"]
+    y2 = results["contracting_r2dn"]["time_mean"]
     
     # Errors
     x1_std = results["contracting_ren"]["express_std"]
     x2_std = results["contracting_r2dn"]["express_std"]
-    y1_fwd_std = results["contracting_ren"]["time_fwd_std"]
-    y2_fwd_std = results["contracting_r2dn"]["time_fwd_std"]
+    y1_std = results["contracting_ren"]["time_std"]
+    y2_std = results["contracting_r2dn"]["time_std"]
     
     # Log transform
     x1_log = np.log(x1_raw)
@@ -150,58 +148,64 @@ def plot_results():
     # Lines of best fit (fit to raw data)
     x1_fit = np.linspace(0.8*min(x1), 1.2*max(x1), 100)
     x2_fit = np.linspace(0.8*min(x2), 1.2*max(x2), 100)
-    p1_fwd = np.polyfit(x1_log, y1_log, 1)
-    p2_fwd = np.polyfit(x2_log, y2_log, 1)
-    Y1_fwd = np.exp(np.polyval(p1_fwd, np.log(x1_fit)))
-    Y2_fwd = np.exp(np.polyval(p2_fwd, np.log(x2_fit)))
+    p1 = np.polyfit(x1_log, y1_log, 1)
+    p2 = np.polyfit(x2_log, y2_log, 1)
+    Y1 = np.exp(np.polyval(p1, np.log(x1_fit)))
+    Y2 = np.exp(np.polyval(p2, np.log(x2_fit)))
     
     # Slope errors
-    e1 = np.sum((y1_log - np.polyval(p1_fwd, x1_log))**2)
-    e2 = np.sum((y2_log - np.polyval(p2_fwd, x2_log))**2)
+    e1 = np.sum((y1_log - np.polyval(p1, x1_log))**2)
+    e2 = np.sum((y2_log - np.polyval(p2, x2_log))**2)
     
     s1 = np.sqrt(e1 / (np.sum((x1_log - x1_log.mean())**2) * (len(x1_log) - 2)))
     s2 = np.sqrt(e2 / (np.sum((x2_log - x2_log.mean())**2) * (len(x2_log) - 2)))
 
     # Plotting
     plt.figure(figsize=(4.5, 3.2))
-    plt.plot(x1_fit, Y1_fwd, linestyle="dotted", color=color_r)
-    plt.plot(x2_fit, Y2_fwd, linestyle="dotted", color=color_s)
+    plt.plot(x1_fit, Y1, linestyle="dotted", color=color_r)
+    plt.plot(x2_fit, Y2, linestyle="dotted", color=color_s)
     plt.errorbar(
-        x1, y1_fwd, xerr=x1_std, yerr=y1_fwd_std,  marker="D", 
+        x1, y1, xerr=x1_std, yerr=y1_std,  marker="D", 
         color=color_r, label="REN", linestyle="none", elinewidth=0.8
     )
     plt.errorbar(
-        x2, y2_fwd, xerr=x2_std, yerr=y2_fwd_std,  marker="^", 
+        x2, y2, xerr=x2_std, yerr=y2_std,  marker="^", 
         color=color_s, label="R2DN", linestyle="none", elinewidth=0.8
     )
     
+    # Specific formatting for each plot
+    if way == "forwards":
+        xy1_label = (0.12, 4e-2)
+        xy2_label = (0.9, 1.1e-2)
+        ylabel = "Inference time (s)"
+    elif way == "backwards":
+        xy1_label = (0.12, 1e-1)
+        xy2_label = (0.9, 3e-2)
+        ylabel = "Backpropagagion time (s)"
+        
     # Annotate slopes
     plt.annotate(
-    f"slope = {p1_fwd[0]:.2f} ({s1:.2f})",
-    xy=(0.015, 2e-2), 
-    # xy=(0.018, 5e-2), 
-    xycoords='data',
-    fontsize=12,
+        f"slope = {p1[0]:.2f} ({s1:.2f})",
+        xy=xy1_label,
+        xycoords='data',
+        fontsize=12,
     )
     plt.annotate(
-        f"slope = {p2_fwd[0]:.3f} ({s2:.3f})",
-        xy=(0.4, 8.5e-3), 
-        # xy=(0.4, 2.2e-2), 
+        f"slope = {p2[0]:.2f} ({s2:.2f})",
+        xy=xy2_label,
         xycoords='data',
         fontsize=12,
     )
     
     # Plot formatting
     plt.xlabel("Model expressivity (NRMSE$^{-1}$)")
-    plt.ylabel("Inference time (s)")
-    # plt.ylabel("Backpropagagion time (s)")
+    plt.ylabel(ylabel)
     plt.xscale("log")
     plt.yscale("log")
-    plt.ylim(4.5e-3, 5e-2)
     plt.legend()
     plt.grid(True, which='both', linestyle=':', linewidth=0.75)
     plt.tight_layout()
-    plt.savefig(dirpath / f"../paperfigs/timing/expressivity_time.pdf")
+    plt.savefig(dirpath / f"../paperfigs/timing/expressivity_time_{way}.pdf")
     plt.close()
     
     
