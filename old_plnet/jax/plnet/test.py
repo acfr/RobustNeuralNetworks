@@ -36,7 +36,7 @@ depth = 2
 layer_size = [256]*8
 tau=2
 
-root_dir = f'/home/rover/Desktop/rl_with_plnet/RL-with-PLnet/docker_rl/rl/plnet/results_exp/{name}-rosenbrock-dim{data_dim}-batch{n_batch}'
+root_dir = f'results_exp/{name}-rosenbrock-dim{data_dim}-batch{n_batch}'
 rng = random.PRNGKey(42)
 rng, rng_data = random.split(rng, 2)
 
@@ -100,7 +100,7 @@ from plnet.layer import MonLipNet
 import jax.numpy as jnp
 
 (uni_params, mon_params, b_params, bh_params) = get_bilipnet_params(params, 
-																	depth = depth,
+                                                                    depth = depth,
                                                                     orth=Unitary(),
                                                                     mln=MonLipNet(layer_size, jnp.sqrt(tau)))
 
