@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import flax.linen as nn
 
 from robustnn import ren
+from robustnn import r2dn
 
 # Need this to avoid matrix multiplication discrepancy?
 jax.config.update("jax_default_matmul_precision", "highest")
@@ -13,15 +14,20 @@ rng, keyA, keyB, keyC, keyD, key1, key2 = jax.random.split(rng, 7)
 
 # Initialise a random linear system
 nu, nx, nv, ny = 5, 3, 4, 2
+nh = (2,) * 2
 A = jax.random.normal(keyA, (nx, nx)) / (5*nx)
 B = jax.random.normal(keyB, (nx, nu))
 C = jax.random.normal(keyC, (ny, nx))
 D = jax.random.normal(keyD, (ny, nu))
 
 # Define a REN from this
-model = ren.ContractingREN(nu, nx, nv, ny,
-                           activation=nn.tanh, 
-                           init_as_linear=(A,B,C,D))
+model = ren.ContractingREN(
+    nu, nx, nv, ny, activation=nn.tanh, init_as_linear=(A,B,C,D)
+)
+# model = r2dn.ContractingR2DN(
+#     nu, nx, nv, ny, nh, activation=nn.tanh, init_as_linear=(A,B,C,D)
+# )
+model.explicit_pre_init()
 
 # Dummy inputs and states
 batches = 1
@@ -30,8 +36,8 @@ inputs = jnp.ones((batches, nu))
 params = model.init(key2, states, inputs)
 
 # Check the result via explicit model
-explicit = model.params_to_explicit(params)
-x1, y1 = model.explicit_call(states, inputs, explicit)
+explicit = model.direct_to_explicit(params)
+x1, y1 = model.explicit_call(params, states, inputs, explicit)
 
 # Check the result via forward mode
 jit_call = jax.jit(model.apply)
