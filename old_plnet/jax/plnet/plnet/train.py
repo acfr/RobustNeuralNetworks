@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
+
 '''
 This file stores all training required function for rosenbrock
 
 Created by Dechuan
 Modified from Ruigang's code
 '''
+import sys
+sys.path.append("..")
 
 import jax.random as random
 from plnet.rosenbrock_utils import Sampler, Rosenbrock, PRosenbrock
@@ -316,6 +320,11 @@ def get_fitness_loss(model,
         @jax.jit
         def fitloss(state, params, x, y):
             yh = state.apply_fn(params, x)
+            # print(f"state: {state}")
+            # print(f"params: {params}")
+            # print(f"x shape: {x.shape}")
+            # print(f"yh shape: {yh.shape}")
+            # print(f"y shape: {y.shape}")
             loss = optax.l2_loss(yh, y).mean()
             return loss
     elif is_loss_mu == False and is_loss_tau == True:
@@ -417,8 +426,10 @@ def train(
         idx = jnp.reshape(idx, idx_shp)
         tloss = 0. 
         for b in range(train_batches):
-            x = data['xtrain'][idx[b, :], :] 
+            x = data['xtrain'][idx[b, :], :]
+            # print(f"TRAINING_x: {x}")
             y = data['ytrain'][idx[b, :]]
+            # print(f"TRAINING_y: {y}")
             model_state, loss = train_step(model_state, x, y)
             tloss += loss
         tloss /= train_batches

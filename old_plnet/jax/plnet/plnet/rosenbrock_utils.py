@@ -70,6 +70,4 @@ def MeshField(
     y = jnp.linspace(y_range[0], y_range[1], n_grid)
     xx, yy = jnp.meshgrid(x, y)
     z = jnp.concatenate([jnp.reshape(xx,(-1,1)), jnp.reshape(yy, (-1,1))], axis=1)
-    return z, xx, yy 
-
- 
+    return z, xx, yy
