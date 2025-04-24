@@ -117,8 +117,8 @@ def mln_RA(gam, mu, S, V, alpha_, bz, zh, uh, units):
 '''
 def get_bilipnet_params(params, depth, orth, mln,
                name: str = 'BiLipBlock') -> Tuple[Any, Any, Any, Any]:
-    
-    block_param = params['params'][name]
+
+    block_param = params['params']
 
     mon_params = {'mu':[], 'gam':[], 'units':[], 'V':[], 'S':[], 'bh':[], 'by':[]}
     uni_params = {'R':[], 'b':[]}

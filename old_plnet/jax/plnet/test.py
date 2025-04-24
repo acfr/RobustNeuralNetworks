@@ -11,7 +11,7 @@
 
 # %%
 from plnet.solver import mln_back_solve_dys_demo, get_bilipnet_params, mln_back_solve_dys
-from plnet.layer import BiLipNet, PLNet
+from plnet.layer import BiLipNet
 import jax.random as random
 import orbax.checkpoint
 from plnet.rosenbrock_utils import Sampler
@@ -32,23 +32,23 @@ import jax
 # %%
 data_dim = 2
 lr_max = 1e-2
-epochs = 100
+epochs =  10
 n_batch = 50
 name = 'BiLipNet'
-depth = 2 
+depth = 2
 layer_size = [256]*8
 tau=2
 
-root_dir = f'results_exp/{name}-c-space-dim{data_dim}-batch{n_batch}'
+root_dir = f'/home/RNN/rnn_ws/old_plnet/jax/plnet/results_exp/{name}-c-space-dim{data_dim}-batch{n_batch}'
 rng = random.PRNGKey(42)
 rng, rng_data = random.split(rng, 2)
 
 
 # %%
 print("Generating dataset")
-data = two_dof_gen.data_gen(rng_data, train_batches=n_batch, data_dim=data_dim, eval_batch_size=500,eval_batches=5)
-print(f"Data_x: {data['xtrain'].shape}")
-print(f"Data_y: {data['ytrain'].shape}")
+sampled_data = two_dof_gen.data_gen(rng_data, train_batches=n_batch, data_dim=data_dim, eval_batch_size=500,eval_batches=5)
+print(f"Data_x: {sampled_data['xtrain'].shape}")
+print(f"Data_y: {sampled_data['ytrain'].shape}")
 # print(data)
 # print(data['xtrain'].shape)
 
@@ -59,12 +59,11 @@ print(f"Data_y: {data['ytrain'].shape}")
 # data= data_gen(rng_data, train_batches=n_batch, data_dim=data_dim)
 
 
+# Skip training
 for tau in [tau]:
     train_dir = f'{root_dir}/{name}-{depth}-tau{tau}'
-    block = BiLipNet(layer_size, depth=depth, tau=tau)
-    # Create model with 2D output for configuration space
-    model = PLNet(block, output_dim=2)  # Match the dimension of ytrain (2D)
-    train(rng, model, data, name=name, train_dir=train_dir, lr_max=lr_max, epochs=epochs)
+    model = BiLipNet(layer_size, depth=depth, tau=tau)
+    train(rng, model, sampled_data, name=name, train_dir=train_dir, lr_max=lr_max, epochs=epochs)
 
 
 # %% [markdown]
@@ -75,7 +74,8 @@ for tau in [tau]:
 # Restore the model
 
 # %%
-model = PLNet(BiLipNet([256]*8, depth=depth, tau=tau), output_dim=2)
+# model = PLNet(BiLipNet([256]*8, depth=depth, tau=tau), output_dim=2)
+model = BiLipNet([256]*8, depth=depth, tau=tau)
 orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
 
 train_dir = f'{root_dir}/{name}-{depth}-tau{tau}'
@@ -94,7 +94,7 @@ max_iter = 50
 alpha = 1.0
 Lambda = 1.0
 rng = random.PRNGKey(43)
-z = Sampler(rng, 10000, 20)
+z = Sampler(rng, 10000, 2)
 
 # %%
 # print(params)
@@ -106,12 +106,14 @@ from plnet.layer import Unitary
 from plnet.layer import MonLipNet
 import jax.numpy as jnp
 
-(uni_params, mon_params, b_params, bh_params) = get_bilipnet_params(params, 
+(uni_params, mon_params, b_params, bh_params) = get_bilipnet_params(params,
+                                                                    name='BiLipNet',
                                                                     depth = depth,
                                                                     orth=Unitary(),
                                                                     mln=MonLipNet(layer_size, jnp.sqrt(tau)))
 
 
+# /home/RNN/rnn_ws/old_plnet/jax/plnetprint(params['params']['BiLipBlock'])
 
 # %%
 import jax.numpy as jnp
@@ -123,9 +125,15 @@ import jax.numpy as jnp
 data = mln_back_solve_dys(uni_params, mon_params, b_params, bh_params, jnp.zeros(jnp.shape(z)), depth,  
                                layer_size, max_iter=max_iter, alpha=alpha, Lambda=Lambda,fn=fn)
 
-jax.debug.print('{}',data)
 # %% [markdown]
 # save
+
+print(f"Test_x: {sampled_data['xtest']}")
+print(f"Test_y: {sampled_data['ytest']}")
+
+print(f"Model output y: {data}")
+jax.debug.print('{}',data)
+
 
 # # %%
 # plt.semilogy(data['step'], data['vgap'])

@@ -203,7 +203,7 @@ class BiLipNet(nn.Module):
     
 class PLNet(nn.Module):
     BiLipBlock: nn.Module
-    add_constant: float = False
+    add_constant: float = False #!!!!!
     output_dim: int = 1  # Default is 1D output (scalar), but can be set higher
 
     def gmap(self, x: jnp.array) -> jnp.array:
@@ -221,16 +221,9 @@ class PLNet(nn.Module):
     def __call__(self, x: jnp.array) -> jnp.array:
         x = self.BiLipBlock(x)
         
-        if self.output_dim == 1:
-            # Original behavior - scalar output
-            y = QuadPotential(add_constant=self.add_constant)(x)
-            return y
-        else:
-            # Multi-dimensional output (e.g., 2D for configuration space)
-            # Project the output to the desired dimension using a linear layer
-            output_proj = nn.Dense(self.output_dim)(x)
-            return output_proj
-    
+        y = QuadPotential(add_constant=self.add_constant)(x)
+        return y
+
 # ------------------------------------------------------
 # ------------------ all to pplnet ---------------------
 # ------------------------------------------------------

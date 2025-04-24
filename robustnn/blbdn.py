@@ -17,7 +17,7 @@ from flax.linen import initializers as init
 from flax.struct import dataclass
 from flax.typing import Dtype, Array, PrecisionLike
 
-import lbdn, unitary
+from robustnn import lbdn, unitary
 from robustnn.utils import l2_norm, cayley, dot_lax
 from robustnn.utils import ActivationFn, Initializer
 

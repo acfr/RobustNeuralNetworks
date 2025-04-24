@@ -254,13 +254,14 @@ def train_partial(
     model_state = train_state.TrainState.create(apply_fn=model.apply,
                                                 params=params,
                                                 tx=opt)
-    
+
     @jax.jit
     def fitloss(state, params, x, p, y):
         yh = state.apply_fn(params, x, p)
-        loss = optax.l2_loss(yh, y).mean()
-        return loss
-    
+        pair_losses = optax.l2_loss(yh, y)
+        pair_losses = jnp.mean(pair_losses, axis=1)
+        return pair_losses
+
     @jax.jit
     def train_step(state, x, p, y):
         grad_fn = jax.value_and_grad(fitloss, argnums=1)
