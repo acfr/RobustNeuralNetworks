@@ -113,7 +113,7 @@ class Unitary(nn.Module):
     
     #################### Convenient Wrappers ####################
     def explicit_call(self, params: dict, x: Array, explicit: ExplicitOrthogonalParams):
-        """Evaluate the explicit model for an LBDN model.
+        """Evaluate the explicit model for an orthogonal layer.
 
         Args:
             params (dict): Flax model parameters dictionary.
@@ -125,14 +125,14 @@ class Unitary(nn.Module):
         """
         return self.apply(params, x, explicit, method="_explicit_call")
     
-    def direct_to_explicit(self, params: dict):
-        """Convert from direct LBDN params to explicit form for eval.
+    def direct_to_explicit(self, params: dict)-> ExplicitOrthogonalParams:
+        """Convert from direct orthogonal layer params to explicit form for eval.
 
         Args:
             params (dict): Flax model parameters dictionary.
             
         Returns:
-            ExplicitLBDNParams: explicit LBDN params.
+            ExplicitOrthogonalParams: explicit orthogonal layer params.
         """
         return self.apply(params, method="_direct_to_explicit")
     
