@@ -1,11 +1,11 @@
 import jax.numpy as jnp
 from flax import linen as nn 
 from flax.struct import dataclass
-from plnet.utils import cayley
+from robustnn.utils import cayley
 from flax.typing import Array, PrecisionLike
 
 @dataclass
-class ImplicitOrthogonalParams:
+class DirectOrthogonalParams:
     """Data class to keep track of implicit params for Orthogonal layer."""
     W: Array
     a: Array
@@ -62,7 +62,7 @@ class Unitary(nn.Module):
         else:
             b = 0.
 
-        self.direct = ImplicitOrthogonalParams(W=W, a=a, b=b)
+        self.direct = DirectOrthogonalParams(W=W, a=a, b=b)
 
     @nn.compact
     def __call__(self, x: jnp.array) -> jnp.array:
@@ -110,15 +110,40 @@ class Unitary(nn.Module):
         if self.use_bias: 
             z += b
         return z
+    
+    #################### Convenient Wrappers ####################
+    def explicit_call(self, params: dict, x: Array, explicit: ExplicitOrthogonalParams):
+        """Evaluate the explicit model for an LBDN model.
 
-    def get_params(self)-> ExplicitOrthogonalParams:
-        """Get explicit parameters for the Unitary layer."""
-        self.explict = self._direct_to_explicit()
-        R = self.explict.R
-        b = self.explict.b
+        Args:
+            params (dict): Flax model parameters dictionary.
+            x (Array): model inputs.
+            explicit (ExplicitLBDNParams): explicit params.
 
-        params = {
-            'R': R,
-            'b': b
-        }
-        return params
+        Returns:
+            Array: model outputs.
+        """
+        return self.apply(params, x, explicit, method="_explicit_call")
+    
+    def direct_to_explicit(self, params: dict):
+        """Convert from direct LBDN params to explicit form for eval.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            
+        Returns:
+            ExplicitLBDNParams: explicit LBDN params.
+        """
+        return self.apply(params, method="_direct_to_explicit")
+    
+    # def get_params(self)-> ExplicitOrthogonalParams:
+    #     """Get explicit parameters for the Unitary layer."""
+    #     self.explict = self._direct_to_explicit()
+    #     R = self.explict.R
+    #     b = self.explict.b
+
+    #     params = {
+    #         'R': R,
+    #         'b': b
+    #     }
+    #     return params
