@@ -9,8 +9,8 @@ def Sampler(
         rng: random.PRNGKey,
         batches: int,
         data_dim: int,
-        x_min: Union[float, jnp.ndarray] = -2.,
-        x_max: Union[float, jnp.ndarray] = 2.,
+        x_min: Union[float, jnp.ndarray] = -0.78,
+        x_max: Union[float, jnp.ndarray] = 0.78,
 ):
     return random.uniform(rng, (batches, data_dim), minval=x_min, maxval=x_max)
 
@@ -18,8 +18,10 @@ def Sampler(
 def data_gen(
     rng: random.PRNGKey,
     data_dim: int = 20,
-    val_min: float = -2.*jnp.pi,
-    val_max: float = 2.*jnp.pi,
+    # val_min: float = -2.*jnp.pi,
+    # val_max: float = 2.*jnp.pi,
+    val_min: float = -0.2, # Was 0.78
+    val_max: float = 0.2,
     train_batch_size: int = 200,
     test_batch_size: int = 5000,
     train_batches: int = 200,
