@@ -7,7 +7,12 @@ from flax.struct import dataclass
 
 @dataclass
 class DirectMonLipParams:
-    """Data class to keep track of implicit params for Monontone Lipschitz layer."""
+    """
+    Data class to keep track of implicit params for Monontone Lipschitz layer.
+    Note: mu, nu, and tau are not stored here as they can either be fixed or learned.
+    They are calculated in the setup method. 
+    One way to access mu, nu, and tau is to call the get_bounds method.
+    """
     Fq: Array
     fq: Array
     Fabs: Array
@@ -31,7 +36,6 @@ class ExplicitMonLipParams:
     Ak_1s: Array
     BTks: Array
     bs: Array
-
 
 class MonLipNet(nn.Module):
     '''
