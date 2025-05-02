@@ -25,6 +25,11 @@ class ExplicitBiLipParams:
     monlip_layers: Sequence[ExplicitMonLipParams]
     unitary_layers: Sequence[ExplicitOrthogonalParams]
 
+    # some constant for model properties
+    lipmin: float
+    lipmax: float
+    distortion: float
+
 class BiLipNet(nn.Module):
     """
     BiLipNet is a neural network architecture that combines Unitary and Monotone Lipschitz layers.
@@ -130,8 +135,14 @@ class BiLipNet(nn.Module):
         unitary_explict_layers = [
             layer._direct_to_explicit() for layer in self.direct.unitary_layers
         ]
+
+        # get the bilipnet properties
+        lipmin, lipmax, tau = self.get_bounds()
         return ExplicitBiLipParams(monlip_layers=monlip_explict_layers,
-                                   unitary_layers=unitary_explict_layers)
+                                   unitary_layers=unitary_explict_layers,
+                                   lipmin=lipmin,
+                                   lipmax=lipmax,
+                                   distortion=tau)
     
     def _explicit_call(self, x: jnp.array, explicit: ExplicitBiLipParams) -> Array:
         """Call method for the BiLipNet layer using explicit parameters."""
