@@ -26,27 +26,23 @@ class Unitary(nn.Module):
 
     Example usage::
 
-        >>> layer = Unitary(units=4)
+        >>> layer = Unitary(input_size=4)
         >>> x = jnp.ones((1, 4))
         >>> params = layer.init(jax.random.key(0), x)
         >>> y = layer.apply(params, x)
 
     Attributes:
         input_size: Size of the input features.
-        units: Number of output features. If 0, uses the input dimension.
         use_bias: Whether to include a learnable bias term (default: True).
     """
 
     input_size: int
-    units: int = 0
     use_bias: bool = True 
 
     def setup(self):
         """Setup method for the Unitary layer."""
-        if self.units < 0:
-            raise ValueError("Number of units must be non-negative.")
         
-        m = self.input_size if self.units == 0 else self.units
+        m = self.input_size 
 
         W = self.param('W', 
                        nn.initializers.glorot_normal(), 
@@ -77,7 +73,6 @@ class Unitary(nn.Module):
         The Cayley matrix is computed using the learned weight matrix `W` and a scaling factor `a`.
         The weight matrix `W` is initialized using the Glorot normal initializer,
         and the scaling factor `a` is initialized to the norm of `W`.
-        If `units` is set to 0, the input dimension is used as the output dimension.
         If `use_bias` is set to True, a learnable bias term is added to the output.
         The parameters `W`, `a`, and `b` are learned during training.
         Args:

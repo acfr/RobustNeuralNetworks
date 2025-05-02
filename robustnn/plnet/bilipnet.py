@@ -49,9 +49,9 @@ class BiLipNet(nn.Module):
     """
     input_size: int
     units: Sequence[int]
-    tau: jnp.float32 = 10.
-    mu: jnp.float32 = 0.1 # Monotone lower bound
-    nu: jnp.float32 = 10.0 # Lipschitz upper bound (nu > mu)
+    tau: float = 10.
+    mu: float = 0.1 # Monotone lower bound
+    nu: float = 10.0 # Lipschitz upper bound (nu > mu)
     is_mu_fixed: bool = False
     is_nu_fixed: bool = False
     is_tau_fixed: bool = False
@@ -106,7 +106,6 @@ class BiLipNet(nn.Module):
         uni, mon = [], []
         for _ in range(self.depth):
             uni.append(Unitary(input_size=self.input_size,
-                               units=self.units,
                                use_bias=self.use_bias))
             mon.append(MonLipNet(input_size=self.input_size,
                                  units=self.units, 
@@ -119,7 +118,6 @@ class BiLipNet(nn.Module):
                                  act_fn=self.act_fn))
         # append last layer
         uni.append(Unitary(input_size=self.input_size,
-                               units=self.units,
                                use_bias=self.use_bias))
         
         self.uni = uni
@@ -188,3 +186,22 @@ class BiLipNet(nn.Module):
             ExplicitBiLipParams: explicit BiLipNet layer params.
         """
         return self.apply(params, method="_direct_to_explicit")
+    
+    # todo: add inverse function for this 
+    def inverse(self, params: dict, x: Array, explicit: ExplicitBiLipParams):
+        """Evaluate the inverse model for a BiLipNet layer.
+        Args:
+            params (dict): Flax model parameters dictionary.
+            x (Array): model inputs.
+            explicit (ExplicitBiLipParams): explicit params.
+        Returns:
+            Array: model outputs.
+        """
+        return self.apply(params, x, explicit, method="_inverse_call")
+    
+    def _inverse_call(self, x: jnp.array, explicit: ExplicitBiLipParams) -> Array:
+        """Call method for the BiLipNet layer using explicit parameters."""
+        # todo: implement inverse call
+        # for k in range(self.depth):
+        #     x = self.uni[k]._inverse_call( x, explicit.unitary_layers[k])
+        #     x = self.mon[k]._inverse_call( x, explicit.monlip_layers[k])

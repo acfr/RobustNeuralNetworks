@@ -197,3 +197,4 @@ class PLNet(nn.Module):
         """
         lipmin, lipmax, tau = self.BiLipBlock.get_bounds()
         return lipmin, lipmax, tau
+    
