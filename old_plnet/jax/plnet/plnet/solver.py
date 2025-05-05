@@ -370,7 +370,7 @@ def mln_back_solve_dys( uni_params, mon_params, b_params, bh_params, y_opt,
 
         z0 = orth_bwd(uni_params['R'][0], x, b_params[0])
 
-        if is_display:
+        if True:
             v = jnp.mean(fn(z0, y_opt))
             jax.debug.print('Iter. {} | v: {}', k, v)
             
