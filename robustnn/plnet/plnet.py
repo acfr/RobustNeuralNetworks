@@ -1,3 +1,13 @@
+'''
+PLNet is a neural network architecture that based on bilipnet.
+It takes the quadratic potential of the output of the bilipnet.
+This is useful for applications where we want to learn a potential function
+that is Lipschitz continuous and has a known/unkown minimum.
+
+Adapted from code in 
+    "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
+Author: Dechuan Liu (May 2024)
+'''
 import jax.numpy as jnp
 from flax import linen as nn 
 from flax.struct import dataclass
@@ -16,7 +26,6 @@ class DirectPLParams:
     # c is the constant term in the quadratic potential
     c: Array = None
 
-    optimal_point: Array = None
     
 @dataclass
 class ExplicitPLParams:
@@ -33,9 +42,9 @@ class ExplicitPLParams:
 
     # some constant for model properties
     optimal_point: Array = None
-    lipmin: float
-    lipmax: float
-    distortion: float
+    lipmin: float = 0.1
+    lipmax: float = 10.0
+    distortion: float = 100.0
 
 
 class PLNet(nn.Module):
@@ -64,7 +73,7 @@ class PLNet(nn.Module):
     """
     BiLipBlock: nn.Module
     add_constant: float = False
-    minimum: Array = None
+    optimal_point: Array = None
 
     def setup(self):
         if self.add_constant:
@@ -73,10 +82,10 @@ class PLNet(nn.Module):
             c = 0.
 
         self.direct = DirectPLParams(
-            bilip_layers=self.BiLipBlock.direct,
+            bilip_layer=self.BiLipBlock.direct,
             c=c,
-            optimal_point=self.minimum
         )
+
 
     def _direct_to_explicit(self, x_optimal = None) -> ExplicitPLParams:
         """
@@ -85,17 +94,20 @@ class PLNet(nn.Module):
         Args:
             x_optimal: The optimal point for the quadratic potential. 
                        (None if no update on optimal point)
+                       The dimension of x_optimal should be the same as the input size of the model 
+                       or the size of 1
         """
-        # update optimal
+        # check if we have an optimal point - use the new one from input, if no flow back to the original one
+        optimal_point = self.optimal_point
         if x_optimal is not None:
-            self.direct.optimal_point = x_optimal
+            optimal_point = x_optimal
         
-        if self.direct.optimal_point is not None:
+        if optimal_point is not None:
             def f_function(x: jnp.array, explicit: ExplicitBiLipParams) -> jnp.array:
                 # call the bilipnet with the optimal point
                 # f = g(x) - g(x_optimal)
                 g_x = self.BiLipBlock._explicit_call(x, explicit)
-                g_x_optimal = self.BiLipBlock._explicit_call(self.direct.optimal_point, explicit)
+                g_x_optimal = self.BiLipBlock._explicit_call(optimal_point, explicit)
                 
                 # Calculate the quadratic potential
                 return g_x - g_x_optimal
@@ -106,16 +118,14 @@ class PLNet(nn.Module):
                 return self.BiLipBlock._explicit_call(x, explicit)
         
         # get the bilipnet properties
-        lipmin = self.BiLipBlock.get_bounds()[0]
-        lipmax = self.BiLipBlock.get_bounds()[1]
-        distortion = self.BiLipBlock.get_bounds()[2]
+        lipmin, lipmax, distortion = self.BiLipBlock._get_bounds()
 
         # convert the bilipnet to explicit
         explicit_params = ExplicitPLParams(
             bilip_layer=self.BiLipBlock._direct_to_explicit(),
             f_function=f_function,
             c=self.direct.c,
-            optimal_point=self.direct.optimal_point,
+            optimal_point=self.optimal_point,
             lipmin=lipmin,
             lipmax=lipmax,
             distortion=distortion
@@ -151,6 +161,8 @@ class PLNet(nn.Module):
             x: Input tensor.
             x_optimal: The optimal point for the quadratic potential. 
                        (None if no update on optimal point)
+                       The dimension of x_optimal should be the same as the x 
+                       or the size of 1
 
         Returns:
             y: Output tensor.
@@ -186,15 +198,5 @@ class PLNet(nn.Module):
         """
         return self.apply(params, x_optimal=x_optimal, method="_direct_to_explicit")
     
-    def get_bounds(self):
-        """
-        Get the bounds for the PLNet layer.
 
-        Returns:
-            lipmin: The minimum Lipschitz constant.
-            lipmax: The maximum Lipschitz constant.
-            tau: The distortion constant.
-        """
-        lipmin, lipmax, tau = self.BiLipBlock.get_bounds()
-        return lipmin, lipmax, tau
     

@@ -1,3 +1,10 @@
+'''
+Monotone Lipschitz neural network layer 
+
+Adapted from code in 
+    "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
+Author: Dechuan Liu (May 2024)
+'''
 import jax.numpy as jnp
 from flax import linen as nn 
 from typing import Any, Sequence, Callable

@@ -1,3 +1,12 @@
+'''
+Unitary layer using Cayley transform.
+This layer applies a learned orthogonal (unitary) transformation to the input
+using the Cayley map, preserving 2-norms in the transformation process.
+
+Adapted from code in 
+    "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
+Author: Dechuan Liu (May 2024)
+'''
 import jax.numpy as jnp
 from flax import linen as nn 
 from flax.struct import dataclass

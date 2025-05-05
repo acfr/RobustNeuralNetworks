@@ -36,7 +36,6 @@ params = bilipnet_layer.init(key, inputs)
 explicit_params = bilipnet_layer.direct_to_explicit(params)
 
 # output
-# todo: errors here - result does not match the original!!!!!!!!!
 # parameters inside the model
 # Parameters: {'params': {'mon_0': {'by': Array([0., 0.], dtype=float32), 'Fq': Array([[-0.35264897,  0.4984822 , -0.47076553, -0.5240039 ],
 #        [ 0.8253973 ,  0.18583922, -0.5114892 , -1.1876136 ]],      dtype=float32), 'fq': Array([1.8046912], dtype=float32), 'Fab0': Array([[-0.5248157 , -0.40291667],

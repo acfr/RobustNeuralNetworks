@@ -1,4 +1,10 @@
-
+'''
+BilipNet is a neural network architecture that combines Unitary and Monotone Lipschitz layers.
+It is a subclass of the Flax Module and is designed to be used with the Flax library for JAX.
+Adapted from code in 
+    "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
+Author: Dechuan Liu (May 2024)
+'''
 import jax.numpy as jnp
 from flax import linen as nn 
 from typing import Any, Sequence, Callable
