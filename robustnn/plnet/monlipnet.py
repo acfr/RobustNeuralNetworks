@@ -62,15 +62,15 @@ class MonLipNet(nn.Module):
     '''
     input_size: int
     units: Sequence[int]
-    tau: jnp.float32 = 10.
-    mu: jnp.float32 = 0.1 # Monotone lower bound
-    nu: jnp.float32 = 10.0 # Lipschitz upper bound (nu > mu)
+    tau: float = 10.
+    mu: float = 0.1 # Monotone lower bound
+    nu: float = 10.0 # Lipschitz upper bound (nu > mu)
     is_mu_fixed: bool = False
     is_nu_fixed: bool = False
     is_tau_fixed: bool = False
     act_fn: Callable = nn.relu
 
-    def get_bounds(self):
+    def _get_bounds(self):
         """Get the bounds for the MonLipNet layer."""
         if self.is_mu_fixed and self.is_nu_fixed and self.is_tau_fixed:
             raise ValueError("Cannot fix mu, nu, and tau at the same time.")
@@ -167,7 +167,7 @@ class MonLipNet(nn.Module):
 
     def _direct_to_explicit(self) -> ExplicitMonLipParams:
         """Convert the direct parameters to explicit parameters."""
-        mu, nu, tau = self.get_bounds()
+        mu, nu, tau = self._get_bounds()
         by = self.direct.by
         bs = self.direct.bs
         bh = jnp.concatenate(bs, axis=0)
@@ -226,9 +226,12 @@ class MonLipNet(nn.Module):
 
     def _explicit_call(self, x: jnp.array, explicit: ExplicitMonLipParams) -> jnp.array:
         """Apply the explicit parameters to the input tensor."""
+        # building equation 8 in paper [https://arxiv.org/html/2402.01344v2]
+        # y = mu * x + by + sum(sqrt(g/2) * zk @ STk.T)
         y = explicit.mu * x + explicit.by
         zk = x[..., :0]
         for k, nz in enumerate(self.units):
+            # zk = act(Vk @ zk + sqrt(2g) * x @ STk + bs)
             zk = self.act_fn(2 * (zk @ explicit.Ak_1s[k]) @ explicit.BTks[k] + explicit.sqrt_2g * x @ explicit.STks[k] + explicit.bs[k])
             y += explicit.sqrt_g2 * zk @ explicit.STks[k].T
         return y
@@ -264,4 +267,8 @@ class MonLipNet(nn.Module):
             ExplicitMonLipParams: explicit MonLipNet params.
         """
         return self.apply(params, method="_direct_to_explicit")
+    
+    def get_bounds(self, params: dict = None) -> tuple:
+        """Get the bounds for the MonLipNet layer."""
+        return self.apply(params, method="_get_bounds")
     

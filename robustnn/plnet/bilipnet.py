@@ -128,14 +128,14 @@ class BiLipNet(nn.Module):
     def _direct_to_explicit(self) -> ExplicitBiLipParams:
         """Convert direct params to explicit params."""
         monlip_explict_layers = [
-            layer._direct_to_explicit() for layer in self.direct.monlip_layers
+            layer._direct_to_explicit() for layer in self.mon
         ]
         unitary_explict_layers = [
-            layer._direct_to_explicit() for layer in self.direct.unitary_layers
+            layer._direct_to_explicit() for layer in self.uni
         ]
 
         # get the bilipnet properties
-        lipmin, lipmax, tau = self.get_bounds()
+        lipmin, lipmax, tau = self._get_bounds()
         return ExplicitBiLipParams(monlip_layers=monlip_explict_layers,
                                    unitary_layers=unitary_explict_layers,
                                    lipmin=lipmin,
@@ -156,17 +156,26 @@ class BiLipNet(nn.Module):
         explict = self._direct_to_explicit()
         return self._explicit_call( x, explict)
     
-    def get_bounds(self):
+    def _get_bounds(self):
         """Get the bounds for the BiLipNet layer."""
 
         lipmin, lipmax, tau = 1., 1., 1.
         for k in range(self.depth):
-            mu, nu, ta = self.mon[k].get_bounds()
+            mu, nu, ta = self.mon[k]._get_bounds()
             lipmin *= mu 
             lipmax *= nu 
             tau *= ta 
         return lipmin, lipmax, tau
     
+    def get_bounds(self, params: dict = None) -> tuple:
+        """Get the bounds for the BiLipNet layer.
+        Args:
+            params (dict): Flax model parameters dictionary.
+        Returns:
+            tuple: (lipmin, lipmax, tau)
+        """
+        return self.apply(params, method="_get_bounds")
+
     def explicit_call(self, params: dict, x: Array, explicit: ExplicitBiLipParams):
         """Evaluate the explicit model for a BiLipNet layer.
         Args:
