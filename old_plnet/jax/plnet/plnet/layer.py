@@ -204,7 +204,6 @@ class BiLipNet(nn.Module):
 class PLNet(nn.Module):
     BiLipBlock: nn.Module
     add_constant: float = False #!!!!!
-    output_dim: int = 1  # Default is 1D output (scalar), but can be set higher
 
     def gmap(self, x: jnp.array) -> jnp.array:
         return self.BiLipBlock(x)

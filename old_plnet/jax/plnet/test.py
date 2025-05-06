@@ -43,7 +43,7 @@ name = 'BiLipNet'
 depth = 3
 # layer_size = [128, 128, 128, 128]  # Reduced complexity
 layer_size = [256]*8
-tau = 70
+tau = 5
 
 # Use local path for results
 root_dir = f'/home/RNN/rnn_ws/old_plnet/jax/plnet/results_exp/{name}-c-space-dim{data_dim}-batch{n_batch}'
@@ -186,9 +186,9 @@ test_output = test_output[sorted_indices]
 
 nn_plot.plot_3d_arm_results_delta({'ytest': sampled_data['ytest'][::8]}, test_output[::8], train_dir)
 
-max_iter = 200
-alpha = 1.0
-Lambda = 1.0
+max_iter = 10
+alpha = 0.1
+Lambda = 0.1
 rng = random.PRNGKey(43)
 # z = Sampler(rng, 100, 3)  # Reduced from 10000 to 100 for testing
 # z = Sampler(rng, 1000, 3)  # Reduced from 10000 to 100 for testing
@@ -199,6 +199,8 @@ data = mln_back_solve_dys(uni_params, mon_params, b_params, bh_params, sampled_d
 
 
 nn_plot.plot_3d_arm_results_delta({'ytest': sampled_data['xtest'][::8]}, data, train_dir, '3d_inverse_results.pdf')
+
+exit()
 
 # And now we repeat fr the inverse
 
