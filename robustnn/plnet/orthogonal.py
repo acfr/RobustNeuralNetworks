@@ -115,7 +115,38 @@ class Unitary(nn.Module):
             z += b
         return z
     
+    def _explicit_inverse_call(self, y: jnp.array, e: ExplicitOrthogonalParams) -> Array:
+        """
+        Inverse call method for the Unitary layer using explicit parameters.
+        Args:
+            y: Output tensor of shape (batch_size, output_dim).
+            e: ExplicitOrthogonalParams object containing explicit parameters.
+        Returns:
+            x: Input tensor of shape (batch_size, input_dim).
+        """
+        R = e.R
+        b = e.b 
+        if self.use_bias: 
+            y -= b
+        
+        x = y @ R
+        return x
+    
+    
     #################### Convenient Wrappers ####################
+    def inverse_call(self, params: dict, y: Array, explicit: ExplicitOrthogonalParams):
+        """Evaluate the inverse of the explicit model for an orthogonal layer.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            y (Array): model outputs.
+            explicit (ExplicitOrthogonalParams): explicit params.
+
+        Returns:
+            Array: model inputs.
+        """
+        return self.apply(params, y, explicit, method="_explicit_inverse_call")
+
     def explicit_call(self, params: dict, x: Array, explicit: ExplicitOrthogonalParams):
         """Evaluate the explicit model for an orthogonal layer.
 
