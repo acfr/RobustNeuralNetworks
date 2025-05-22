@@ -11,7 +11,7 @@ from typing import Any, Sequence, Callable
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
 from flax.struct import dataclass
-from robustnn.plnet.monlipnet import MonLipNet, ExplicitMonLipParams, DirectMonLipParams
+from robustnn.plnet.monlipnet import MonLipNet, ExplicitMonLipParams, DirectMonLipParams, ExplicitInverseMonLipParams
 from robustnn.plnet.orthogonal import Unitary, ExplicitOrthogonalParams, DirectOrthogonalParams
 
 @dataclass
@@ -35,6 +35,18 @@ class ExplicitBiLipParams:
     lipmin: float
     lipmax: float
     distortion: float
+
+class ExplicitInverseBiLipParams:
+    """Data class to keep track of explicit params for Monontone Lipschitz layer."""
+    monlip_layers: Sequence[ExplicitInverseMonLipParams]
+    unitary_layers: Sequence[ExplicitOrthogonalParams]
+
+    # some constant for model properties
+    lipmin: float
+    lipmax: float
+    distortion: float
+
+
 
 class BiLipNet(nn.Module):
     """
@@ -148,12 +160,43 @@ class BiLipNet(nn.Module):
                                    lipmax=lipmax,
                                    distortion=tau)
     
-    def _explicit_call(self, x: jnp.array, explicit: ExplicitBiLipParams) -> Array:
+    def _direct_to_explicit_inverse(self, alphas: Sequence[float],
+                                    inverse_activation_fns: Sequence[Callable],
+                                    iterations: Sequence[int],
+                                    Lambdas: Sequence[float]) -> ExplicitInverseBiLipParams:
+        """Convert direct params to explicit params."""
+        monlip_explict_layers = [
+            layer._direct_to_explicit_inverse(alphas[i], inverse_activation_fns[i], iterations[i], Lambdas[i])
+            for i, layer in enumerate(self.mon)
+        ]
+
+        unitary_explict_layers = [
+            layer._direct_to_explicit() for layer in self.uni
+        ]
+
+        # get the bilipnet properties
+        lipmin, lipmax, tau = self._get_bounds()
+
+        return ExplicitInverseBiLipParams(monlip_layers=monlip_explict_layers,
+                                          unitary_layers=unitary_explict_layers,
+                                          lipmin=lipmin,
+                                          lipmax=lipmax,
+                                          distortion=tau)
+    
+    def _explicit_call(self, x: jnp.array, explicit: ExplicitInverseBiLipParams) -> Array:
         """Call method for the BiLipNet layer using explicit parameters."""
         for k in range(self.depth):
             x = self.uni[k]._explicit_call( x, explicit.unitary_layers[k])
             x = self.mon[k]._explicit_call( x, explicit.monlip_layers[k])
         x = self.uni[self.depth]._explicit_call( x, explicit.unitary_layers[self.depth])
+        return x
+    
+    def _explicit_inverse_call(self, x: jnp.array, explicit: ExplicitInverseBiLipParams) -> Array:
+        """Call method for the BiLipNet layer using explicit parameters."""
+        for k in range(self.depth, 0, -1):
+            x = self.uni[k]._explicit_inverse_call( x, explicit.unitary_layers[k])
+            x = self.mon[k-1]._explicit_inverse_call( x, explicit.monlip_layers[k])
+        x = self.uni[0]._explicit_call( x, explicit.unitary_layers[self.depth])
         return x
     
     @nn.compact
@@ -202,21 +245,31 @@ class BiLipNet(nn.Module):
         """
         return self.apply(params, method="_direct_to_explicit")
     
-    # todo: add inverse function for this 
-    def inverse(self, params: dict, x: Array, explicit: ExplicitBiLipParams):
+    def inverse_call(self, params: dict, x: Array, explicit: ExplicitInverseMonLipParams) -> Array:
         """Evaluate the inverse model for a BiLipNet layer.
         Args:
             params (dict): Flax model parameters dictionary.
             x (Array): model inputs.
-            explicit (ExplicitBiLipParams): explicit params.
+            explicit (ExplicitInverseMonLipParams): explicit params for inverse.
         Returns:
             Array: model outputs.
         """
-        return self.apply(params, x, explicit, method="_inverse_call")
+        return self.apply(params, x, explicit, method="_explicit_inverse_call")
     
-    def _inverse_call(self, x: jnp.array, explicit: ExplicitBiLipParams) -> Array:
-        """Call method for the BiLipNet layer using explicit parameters."""
-        # todo: implement inverse call
-        # for k in range(self.depth):
-        #     x = self.uni[k]._inverse_call( x, explicit.unitary_layers[k])
-        #     x = self.mon[k]._inverse_call( x, explicit.monlip_layers[k])
+    def direct_to_explicit_inverse(self, params: dict,
+                                    alphas: Sequence[float],
+                                    inverse_activation_fns: Sequence[Callable],
+                                    iterations: Sequence[int],
+                                    Lambdas: Sequence[float]) -> ExplicitInverseBiLipParams:
+        """Convert from direct BiLipNet params to explicit form for eval.
+        Args:
+            params (dict): Flax model parameters dictionary.
+            alphas (Sequence[float]): scaling factors for each layer.
+            inverse_activation_fns (Sequence[Callable]): inverse activation functions for each layer.
+            iterations (Sequence[int]): number of iterations for each layer.
+            Lambdas (Sequence[float]): scaling factors for each layer.
+        Returns:
+            ExplicitInverseBiLipParams: explicit BiLipNet layer params.
+        """
+        return self.apply(params, alphas, inverse_activation_fns, iterations, Lambdas, method="_direct_to_explicit_inverse")
+    

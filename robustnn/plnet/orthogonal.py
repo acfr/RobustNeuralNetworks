@@ -140,7 +140,7 @@ class Unitary(nn.Module):
         Args:
             params (dict): Flax model parameters dictionary.
             y (Array): model outputs.
-            explicit (ExplicitOrthogonalParams): explicit params.
+            explicit (ExplicitOrthogonalParams): explicit params (inverse it the same as forward).
 
         Returns:
             Array: model inputs.
