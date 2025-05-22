@@ -11,7 +11,7 @@ from typing import Any, Sequence, Callable
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
 from flax.struct import dataclass
-from robustnn.utils import DavisYinSplit
+from robustnn.solver.DYS import DavisYinSplit
 
 @dataclass
 class DirectMonLipParams:
