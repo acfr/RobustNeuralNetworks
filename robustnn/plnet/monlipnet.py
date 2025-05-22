@@ -11,6 +11,7 @@ from typing import Any, Sequence, Callable
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
 from flax.struct import dataclass
+from robustnn.utils import DavisYinSplit
 
 @dataclass
 class DirectMonLipParams:
@@ -30,8 +31,9 @@ class DirectMonLipParams:
 @dataclass
 class ExplicitMonLipParams:
     """Data class to keep track of explicit params for Monontone Lipschitz layer."""
-    mu: Array
-    nu: Array
+    mu: float
+    nu: float
+    gam: float
     units: Sequence[int]
     V: Array
     S: Array
@@ -43,6 +45,7 @@ class ExplicitMonLipParams:
     Ak_1s: Array
     BTks: Array
     bs: Array
+    alpha: float # defined for inverse of Monlip layer
 
 class MonLipNet(nn.Module):
     '''
@@ -172,15 +175,21 @@ class MonLipNet(nn.Module):
 
         self.direct = DirectMonLipParams(Fq=Fq, fq=fq, Fabs=Fabs, fabs=fabs, bs=bs, by=by)
 
-    def _direct_to_explicit(self) -> ExplicitMonLipParams:
-        """Convert the direct parameters to explicit parameters."""
+    def _direct_to_explicit(self, alpha = 1.0 ) -> ExplicitMonLipParams:
+        """Convert the direct parameters to explicit parameters.
+        Args:
+            alpha: Scaling factor for the explicit parameters in inverse
+                MonLipNet layer.
+                
+        """
         mu, nu, tau = self._get_bounds()
+        gam = nu-mu
         by = self.direct.by
         bs = self.direct.bs
         bh = jnp.concatenate(bs, axis=0)
         QT = cayley((self.direct.fq / jnp.linalg.norm(self.direct.Fq)) * self.direct.Fq)
         Q = QT.T
-        sqrt_2g, sqrt_g2 = jnp.sqrt(2. * (nu - mu)), jnp.sqrt((nu - mu) / 2.)
+        sqrt_2g, sqrt_g2 = jnp.sqrt(2. * gam), jnp.sqrt(gam / 2.)
 
         V, S, bh = [], [], []
         STks, BTks = [], []
@@ -217,6 +226,7 @@ class MonLipNet(nn.Module):
         return ExplicitMonLipParams(
             mu=mu,
             nu=nu,
+            gam=gam,
             units=self.units,
             V=V,
             S=S,
@@ -227,7 +237,8 @@ class MonLipNet(nn.Module):
             STks=STks,
             Ak_1s=Ak_1s,
             BTks=BTks,
-            bs=bs
+            bs=bs,
+            alpha=alpha*mu / gam
         )
 
 
@@ -253,6 +264,42 @@ class MonLipNet(nn.Module):
         explict = self._direct_to_explicit()
         return self._explicit_call(x, explict)
     
+    def _explicit_inverse_call(self, y: jnp.array, e: ExplicitMonLipParams, 
+                                inverse_activation_fn: Callable = nn.relu,
+                                iterations: int = 200,
+                                Lambda: float = 1.0,
+        ) -> Array:
+        """
+        Inverse call method for the MonLipNet layer using explicit parameters.
+        Args:
+            y: Output tensor of shape (batch_size, output_dim).
+            e: ExplicitMonLipParams object containing explicit parameters.
+            inverse_activation_fn: Inverse activation function to be used (default: nn.relu).
+            iterations: Number of iterations for the inverse call (DYS solver) (default: 200).
+            Lambda: Step size for the update in DYS solver (default: 1.0).
+        Note: The inverse activation function should be the inverse of the activation function used in the forward pass.
+        Returns:
+            x: Input tensor of shape (batch_size, input_dim).
+        """
+        # y to b
+        # inverse of equation 12
+        bz = e.sqrt_2g/e.mu * (y-e.by) @ e.S.T + e.bh
+        uk = jnp.zeros(jnp.shape(bz))
+
+        # iterate until converge for zk using DYS solver
+        # todo: might change this for loop to jitable loop
+        for i in range(iterations):
+            # iterate until converge for zk using DYS solver
+            zk, uk = DavisYinSplit(uk, bz, e, 
+                inverse_activation_fn=inverse_activation_fn, Lambda=Lambda)
+
+        # z to x
+        x = (y - e.by - e.sqrt_g2 * zk @ e.S) / e.mu
+
+        return x
+
+
+    #################### Convenient Wrappers ####################
     def explicit_call(self, params: dict, x: jnp.array, explicit: ExplicitMonLipParams):
         """
         Evaluate the explicit model for the MonLipNet layer.
@@ -265,6 +312,19 @@ class MonLipNet(nn.Module):
         """
         return self.apply(params, x, explicit, method="_explicit_call")
     
+    def inverse_call(self, params: dict, y: Array, explicit: ExplicitMonLipParams):
+        """Evaluate the inverse of the explicit model for an MonLipNet layer.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            y (Array): model outputs.
+            explicit (ExplicitMonLipParams): explicit params.
+
+        Returns:
+            Array: model inputs.
+        """
+        return self.apply(params, y, explicit, method="_explicit_inverse_call")
+
     def direct_to_explicit(self, params: dict) -> ExplicitMonLipParams:
         """
         Convert from direct MonLipNet params to explicit form for eval.
