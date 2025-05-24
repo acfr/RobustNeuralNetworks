@@ -6,6 +6,8 @@ The intention is for this to be the one and only set of implementations for (eg)
 
 This repository and README are a work-in-progress.
 
+[NOTE]: This branch includes experimental code to initialise RENs and R2DNs from explicit models. It's a WIP.
+
 ## Installation
 
 First, [create a virtual environment](https://docs.python.org/3/library/venv.html). Activate the virtual environment and install all dependencies in `requirements.txt` with
