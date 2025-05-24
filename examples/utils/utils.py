@@ -1,5 +1,6 @@
-import flax.linen as linen
+import flax.linen as linen # This is used in eval()
 import jax.numpy as jnp
+import numpy as np
 import pickle
 
 from pathlib import Path
@@ -14,6 +15,10 @@ def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
 
 def l1_norm(x, **kwargs):
     return jnp.sum(jnp.abs(x), **kwargs)
+
+
+def list_to_dicts(data):
+    return {key: np.array([d[key] for d in data]) for key in data[0]}
 
 
 def get_activation(s: str):

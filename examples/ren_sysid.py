@@ -13,17 +13,17 @@ from utils import data_handling as handler
 
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
-
-# Need this to avoid matrix multiplication discrepancy
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
+# NOTE: This one is quite slow to train. Use a smaller model 
+#       (or bigger GPU) to speed things up.
 ren_config = {
     "experiment": "f16",
     "network": "contracting_ren",
-    "seq_len": 1024,            # TODO: Worth tuning this. Smaller better?
+    "seq_len": 256,
     "epochs": 70,
-    "clip_grad": 1e-1,
+    "clip_grad": 10,
     "seed": 0,
     "schedule": {
         "init_value": 1e-3,
@@ -33,15 +33,14 @@ ren_config = {
     },
     "nx": 75,
     "nv": 150,
-    "nh": (64,)*8,
     "activation": "relu",
     "init_method": "long_memory",
-    "polar": False,
+    "polar": True,
 } 
 
 
 def build_ren(config):
-    """Build a REN for the PDE observer."""
+    """Build a REN."""
     return ren.ContractingREN(
         2, 
         config["nx"],

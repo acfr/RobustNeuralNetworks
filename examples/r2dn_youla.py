@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-from robustnn import ren
+from robustnn import r2dn
 from robustnn.utils import count_num_params
 
 from utils.plot_utils import startup_plotting
@@ -12,42 +12,39 @@ from utils import utils
 
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
-
-# Need this to avoid matrix multiplication discrepancy
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Training hyperparameters
-# Slightly better results with (nx, nv) = (50, 500), 
-# but not worth computation time
-ren_config = {
+config = {
     "experiment": "youla",
-    "network": "contracting_ren",
-    "epochs": 100,
-    "lr": 1e-3,
-    "min_lr": 1e-6,
-    "lr_patience": 10,
+    "network": "contracting_r2dn",
+    "epochs": 80,
+    "lr": 5e-3,
+    "decay_steps": 60,
     "batches": 64,
     "test_batches": 64,
     "max_steps": 800,   
     "rollout_length": 200,
     
     "nx": 10,
-    "nv": 100,
-    "activation": "relu",
+    "nv": 32,
+    "nh": (42,) * 4,
+    
+    "activation": "tanh",
     "init_method": "long_memory",
     "polar": True,
     
     "seed": 0,
 }
 
-
-def build_ren(config):
-    """Build a REN for the Youla-REN policy."""
-    return ren.ContractingREN(
-        1, 
+def build_model(config):
+    """Build an R2DN for the Youla policy."""
+    return r2dn.ContractingR2DN(
+        1,
         config["nx"],
         config["nv"],
         1,
+        config["nh"],
         activation=utils.get_activation(config["activation"]),
         init_method=config["init_method"],
         do_polar_param=config["polar"],
@@ -55,15 +52,14 @@ def build_ren(config):
 
 
 def run_youla_ren_training(config):
-    """Run RL with the Youla-REN on simple linear system.
+    """Run RL with the Youla-R2DN on simple linear system.
 
     Args:
         config (dict): Training/model config options.
     """
     
-    # Create the REN model and linear system environment
-    model = build_ren(config)
-    model.explicit_pre_init()
+    # Create the model and linear system environment
+    model = build_model(config)
     env = youla.ExampleSystem()
     
     # Train the model
@@ -76,8 +72,7 @@ def run_youla_ren_training(config):
         rollout_length  = config["rollout_length"],
         max_steps       = config["max_steps"],
         lr              = config["lr"],
-        min_lr          = config["min_lr"],
-        lr_patience     = config["lr_patience"],
+        decay_steps     = config["decay_steps"],
         seed            = config["seed"]
     )
     results["num_params"] = count_num_params(params)
@@ -96,8 +91,8 @@ def train_and_test(config):
     config, params, results = utils.load_results_from_config(config)
     _, fname = utils.generate_fname(config)
     
-    # Re-build REN and environment
-    model = build_ren(config)
+    # Re-build R2DN and environment
+    model = build_model(config)
     env = youla.ExampleSystem()
     
     # Generate test data
@@ -115,7 +110,7 @@ def train_and_test(config):
         ]) for a in amplitudes]
     )
 
-    # Roll out the test REN
+    # Roll out the test
     _, (z, u) = youla.rollout(env, model, params, test_x0, test_q0, test_d)
     z = jnp.squeeze(z)
     u = jnp.squeeze(u)
@@ -140,7 +135,7 @@ def train_and_test(config):
     plt.close()
     
     # Plot control inputs u vs time
-    plt.plot(u, label="Youla-REN")
+    plt.plot(u, label="Youla-R2DN")
     plt.hlines(-max_u, xmin=0, xmax=len(u)-1, 
                colors="k", linestyle="dashed", label="Constraints")
     plt.xlabel("Time steps")
@@ -173,4 +168,4 @@ def train_and_test(config):
     
 
 # Test it out
-train_and_test(ren_config)
+train_and_test(config)
