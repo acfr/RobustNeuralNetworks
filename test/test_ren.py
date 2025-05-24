@@ -4,7 +4,7 @@ import flax.linen as nn
 
 from robustnn import ren
 
-# Need this to avoid matrix multiplication discrepancy
+# Need this to avoid matrix multiplication discrepancy (see issue #15)
 jax.config.update("jax_default_matmul_precision", "highest")
 
 # Random seeds
@@ -31,7 +31,8 @@ inputs = jnp.ones((batches, nu))
 params = model.init(key2, states, inputs)
 
 # Forward mode
-# jit_call = jax.jit(model.apply)
+# Test separate parameter conversion and model call. This is the
+# same as defining jit_call = jax.jit(model.apply)
 @jax.jit
 def jit_call(params, states, inputs):
     explicit = model.direct_to_explicit(params)
@@ -51,4 +52,4 @@ gs = grad_func(states, inputs)
 
 print(loss(states, inputs))
 print("States grad: ", gs[0])
-print("Output grad: ", gs[1])
+print("Input grad: ", gs[1])

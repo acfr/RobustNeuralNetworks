@@ -3,7 +3,7 @@ import optax
 
 from robustnn.utils import l2_norm
 from robustnn import ren_base as ren
-from robustnn import scalable_ren as sren
+from robustnn import r2dn
 
 
 def estimate_lipschitz_lower(    
@@ -98,23 +98,20 @@ def compute_p_contractingren(model: ren.RENBase, ps: dict):
     return E.T @ jnp.linalg.solve(P_imp, E)
 
 
-def compute_p_sren(model: sren.ScalableREN, ps: dict):
+def compute_p_contractingr2dn(model: r2dn.ContractingR2DN, ps: dict):
     
-    p1 = ps["params"]["p1"]
-    Xbar = ps["params"]["Xbar"]
+    p = ps["params"]["p"]
+    X = ps["params"]["X"]
+    Y = ps["params"]["Y"]
+    B1 = ps["params"]["B1"]
+    C1 = ps["params"]["C1"]
     
-    Y1 = ps["params"]["Y1"]
-    Y2 = ps["params"]["Y2"]
+    nx = model.state_size
+    H = model._x_to_h_contracting(X, p, B1, C1)
+    H11 = H[:nx, :nx]
+    H22 = H[nx:, nx:]
     
-    nv = Y2.shape[1]
-    n1, n3 = nv, nv
-    n2 = int(0.5 * Xbar.shape[1] - n1 - n3)
-    
-    X_e = p1 * Xbar / l2_norm(Xbar)
-    X32 = X_e[:, (n1+n2):(n1+2*n2)]
-    X33 = X_e[:, (n1+2*n2):]
-    
-    P_imp = X32 @ X32.T + X33 @ X33.T
-    E = (X_e @ X_e.T + Y1 - Y1.T) / 2
+    E = (H11 + H22 + Y - Y.T) / 2
+    P_imp = H22
     
     return E.T @ jnp.linalg.solve(P_imp, E)

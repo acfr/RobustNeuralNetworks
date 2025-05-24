@@ -9,29 +9,27 @@ from flax.struct import dataclass
 from flax.typing import Dtype, Array
 
 from robustnn import lbdn
-from robustnn.utils import l2_norm, cayley
+from robustnn.utils import l2_norm
 from robustnn.utils import ActivationFn, Initializer
 
 
 def get_valid_init():
-    return ["random"]
+    return ["random", "long_memory"]
 
 
 @dataclass
-class DirectSRENParams:
-    """Data class to keep track of direct params for Scalable REN.
+class DirectR2DNParams:
+    """Data class to keep track of direct params for R2DN.
     
-    These are the free, trainable parameters for a Scalable REN,
+    These are the free, trainable parameters for an R2DN,
     excluding those in the LBDN layer.
     """
-    p1: Array
-    p2: Array
-    p3: Array
-    Xbar: Array
-    Y1: Array
-    Y2: Array
-    Y3: Array
+    p: Array
+    X: Array
+    Y: Array
+    B1: Array
     B2: Array
+    C1: Array
     D12: Array
     C2: Array
     D21: Array
@@ -43,10 +41,10 @@ class DirectSRENParams:
 
 
 @dataclass
-class ExplicitSRENParams:
-    """Data class to keep track of explicit params for Scalable REN.
+class ExplicitR2DNParams:
+    """Data class to keep track of explicit params for R2DN.
     
-    These are the parameters used for evaluating a Scalable REN.
+    These are the parameters used for evaluating an R2DN.
     """
     A: Array
     B1: Array
@@ -62,10 +60,10 @@ class ExplicitSRENParams:
     network_params: lbdn.ExplicitLBDNParams
     
 
-class ScalableREN(nn.Module):
-    """Scalable version of Recurrent Equilirbium Network.
+class ContractingR2DN(nn.Module):
+    """Robust Recurrent Deep Network (R2DN).
     
-    This structure replaces the equilibrium layer in the REN with a
+    This structure replaces the equilibrium layer in a REN with a
     1-Lipschitz multi-layer perceptron.
 
     Attributes:
@@ -77,32 +75,40 @@ class ScalableREN(nn.Module):
         activation: Activation function to use (default: relu).
         
         kernel_init: initializer for weights (default: lecun_normal()).
-        recurrent_kernel_init: currently unused (default: lecun_normal()).
-        bias_init: initializer for the bias parameters (default: zeros_init()).
+        recurrent_kernel_init: initialiser for X matrix (default: lecun_normal()).
         carry_init: initializer for the internal state vector (default: zeros_init()).
+        x_bias_init: initializer for the state bias parameters (default: zeros_init()).
+        v_bias_init: initializer for the feedback bias parameters (default: zeros_init()).
+        y_bias_init: initializer for the output bias parameters (default: zeros_init()).
+        network_bias_init: initializer for the 1-Lipschitz network bias parameters 
+            (default: zeros_init()).
         param_dtype: the dtype passed to parameter initializers (default: float32).
 
         init_method: parameter initialisation method to choose from. No other methods are 
-            currently supported for the scalable REN (TODO). Options are:
+            currently supported for the R2DN (TODO). Options are:
         
         - "random" (default): Random sampling with `recurrent_kernel_init`.
+        - "long_memory": Initialise such that `A = I` (approx.) in explicit model.
+            Good for long-memory dynamics on initialisation.
         
         init_output_zero: initialize the network so its output is zero (default: False).
         identity_output: enforce that output layer is ``y_t = x_t``. (default: False).
+            
+        do_polar_param: Use the polar parameterization for the H matrix (default: True).
         eps: regularising parameter for positive-definite matrices (default: machine 
             precision for `jnp.float32`).
-            
+        
     Example usage:
 
         >>> import jax, jax.numpy as jnp
-        >>> from robustnn import scalable_ren as sren
+        >>> from robustnn import r2dn
         
         >>> rng = jax.random.key(0)
         >>> key1, key2 = jax.random.split(rng)
 
         >>> nu, nx, nv, ny = 1, 2, 4, 1
         >>> nh = (2, 4)
-        >>> model = sren.ScalableREN(nu, nx, nv, ny, nh)
+        >>> model = r2dn.ContractingR2DN(nu, nx, nv, ny, nh)
         
         >>> batches = 5
         >>> states = model.initialize_carry(key1, (batches, nu))
@@ -127,19 +133,23 @@ class ScalableREN(nn.Module):
     
     kernel_init: Initializer = init.lecun_normal()
     recurrent_kernel_init: Initializer = init.lecun_normal()
-    bias_init: Initializer = init.zeros_init()
     carry_init: Initializer = init.zeros_init()
+    x_bias_init: Initializer = init.zeros_init()
+    v_bias_init: Initializer = init.zeros_init()
+    y_bias_init: Initializer = init.zeros_init()
+    network_bias_init: Initializer = init.zeros_init()
     param_dtype: Dtype = jnp.float32
     
     init_method: str = "random"
     init_output_zero: bool = False
     identity_output: bool = False
     
+    do_polar_param: bool = True
     eps: jnp.float32 = jnp.finfo(jnp.float32).eps # type: ignore
     _gamma: jnp.float32 = 1.0 # type: ignore
     
     def setup(self):
-        """Initialise the scalable REN direct params."""
+        """Initialise all direct params for an R2DN and store."""
         
         if self.init_method not in get_valid_init():
             raise ValueError("Undefined init method '{}'".format(self.init_method))
@@ -148,42 +158,32 @@ class ScalableREN(nn.Module):
         nx = self.state_size
         nv = self.features
         ny = self.output_size
-        nh = self.hidden
         dtype = self.param_dtype
         
-        # Initialise an LBDN for the equilibrium layer
-        self.network = lbdn.LBDN(
-            input_size=nv,
-            hidden_sizes=nh,
-            output_size=nv,
-            gamma=self._gamma,
-            activation=self.activation,
-            kernel_init=self.kernel_init,
-        )
+        # Initialise an LBDN for the nonlinear layer
+        self._network_init()
         
-        # Most of these matrices have underspecified number of cols. Fix
-        # it as smallest of (nx, nv) for now.
-        d = min(nx, nv)
-        n1 = nv         # To make X11 square (Cayley)
-        n2 = d
-        n3 = nv         # To make X43 square (Cayley)
-        n4 = d
-        
-        # Initialise remaining free parameters
-        Xbar = self.param("Xbar", self.kernel_init, (nx, n1 + 2*n2 + n3), dtype)
-        p1 = self.param("p1", init.constant(l2_norm(Xbar, eps=self.eps)), (1,), dtype)
-        Y1 = self.param("Y1", self.kernel_init, (nx, nx), dtype)
-        
-        Y2 = self.param("Y2", self.kernel_init, (n1, nv), dtype)
-        p2 = self.param("p2", init.constant(l2_norm(Y2, eps=self.eps)), (1,), dtype)
-        
-        Y3 = self.param("Y3", self.kernel_init, (n3 + n4, nv), dtype)
-        p3 = self.param("p3", init.constant(l2_norm(Y3, eps=self.eps)), (1,), dtype)
-        
+        # Initialise free parameters        
         B2 = self.param("B2", self.kernel_init, (nx, nu), dtype)
         D12 = self.param("D12", self.kernel_init, (nv, nu), dtype)
-        bx = self.param("bx", self.bias_init, (nx,), dtype)
-        bv = self.param("bv", self.bias_init, (nv,), dtype)
+        bx = self.param("bx", self.x_bias_init, (nx,), dtype)
+        bv = self.param("bv", self.v_bias_init, (nv,), dtype)
+        
+        # Long-horizon initialisation or not
+        if self.init_method == "random":
+            x_init = self.recurrent_kernel_init
+            Y = self.param("Y", self.kernel_init, (nx, nx), dtype)
+            B1 = self.param("B1", self.kernel_init, (nx, nv), dtype)
+            C1 = self.param("C1", self.kernel_init, (nv, nx), dtype)
+            
+        elif self.init_method == "long_memory":
+            x_init = self._x_long_memory_init()
+            Y = self.param("Y", init.constant(jnp.identity(nx)), (nx, nx), dtype)
+            B1 = self.param("B1", init.zeros_init(), (nx, nv), dtype)
+            C1 = self.param("C1", init.zeros_init(), (nv, nx), dtype)
+            
+        X = self.param("X", x_init, (2*nx, 2*nx), dtype)
+        p = self.param("p", init.constant(l2_norm(X, eps=self.eps)), (1,), dtype)
         
         # Output layer params
         if self.init_output_zero:
@@ -191,7 +191,7 @@ class ScalableREN(nn.Module):
             out_bias_init = init.zeros_init()
         else:
             out_kernel_init = self.kernel_init
-            out_bias_init = self.bias_init
+            out_bias_init = self.y_bias_init
         
         if self.identity_output:
             C2 = jnp.identity(nx)
@@ -204,14 +204,51 @@ class ScalableREN(nn.Module):
             D21 = self.param("D21", out_kernel_init, (ny, nv), dtype)
             D22 = self.param("D22", init.zeros_init(), (ny, nu), dtype)
             
-        self.direct = DirectSRENParams(
-            p1, p2, p3, Xbar, Y1, Y2, Y3, B2, 
-            D12, C2, D21, D22, bx, bv, by,
-            self.network.direct
+        self.direct = DirectR2DNParams(
+            p, X, Y, B1, B2, C1, D12, C2, D21, D22, bx, bv, by, self.network.direct
+        )        
+    
+    def _x_long_memory_init(self):
+        """Initialise the X matrix so A is close to the identity.
+        
+        Assumes B1, C1 = 0 and Y = E = I.
+        """
+        def init_func(key, shape, dtype) -> Array:
+            nx = self.state_size
+            dtype = self.param_dtype
+            
+            key, rng = jax.random.split(key)
+            eigs = 0.05 * jax.random.uniform(rng, (nx,))
+            
+            E = jnp.identity(nx, dtype)
+            A = jnp.identity(nx, dtype) - jnp.diag(eigs)
+            P = jnp.identity(nx, dtype)
+            
+            H = jnp.block([
+                [(E + E.T - P), A.T],
+                [A, P]
+            ])
+            
+            X = jnp.linalg.cholesky(H, upper=True)
+            return X
+        
+        return init_func
+    
+    def _network_init(self):
+        """Initialise the LBDN for the nonlinear layer"""
+        self.network = lbdn.LBDN(
+            input_size=self.features,
+            hidden_sizes=self.hidden,
+            output_size=self.features,
+            gamma=self._gamma,
+            activation=self.activation,
+            kernel_init=self.kernel_init,
+            bias_init=self.network_bias_init,
+            param_dtype=self.param_dtype
         )
         
     def __call__(self, state: Array, inputs: Array) -> Tuple[Array, Array]:
-        """Call a scalable REN model
+        """Call an R2DN model
 
         Args:
             state (Array): internal model state.
@@ -225,14 +262,14 @@ class ScalableREN(nn.Module):
         return self._explicit_call(state, inputs, explicit)
         
     def _explicit_call(
-        self, x: Array, u: Array, e: ExplicitSRENParams
+        self, x: Array, u: Array, e: ExplicitR2DNParams
     ) -> Tuple[Array, Array]:
-        """Evaluate explicit model for a scalable REN.
+        """Evaluate explicit model for an R2DN.
 
         Args:
             x (Array): internal model state.
             u (Array): model inputs.
-            e (ExplicitSRENParams): explicit params.
+            e (ExplicitR2DNParams): explicit params.
 
         Returns:
             Tuple[Array, Array]: (next_states, outputs).
@@ -248,7 +285,7 @@ class ScalableREN(nn.Module):
         return x1, y
     
     def _simulate_sequence(self, x0, u) -> Tuple[Array, Array]:
-        """Simulate a scalable REN over a sequence of inputs.
+        """Simulate an R2DN over a sequence of inputs.
 
         Args:
             x0: array of initial states, shape is (batches, ...).
@@ -269,7 +306,7 @@ class ScalableREN(nn.Module):
     def initialize_carry(
         self, rng: jax.Array, input_shape: Tuple[int, ...]
     ) -> Array:
-        """Initialise the scalable REN state (carry).
+        """Initialise the R2DN state (carry).
 
         Args:
             rng (jax.Array): random seed for carry initialisation.
@@ -283,77 +320,72 @@ class ScalableREN(nn.Module):
         mem_shape = batch_dims + (self.state_size,)
         return self.carry_init(rng, mem_shape, self.param_dtype)
         
-    def _direct_to_explicit(self) -> ExplicitSRENParams:
-        """Convert from direct to explicit scalable REN params.
+    def _direct_to_explicit(self) -> ExplicitR2DNParams:
+        """Convert from direct to explicit R2DN params.
 
         Args:
             None
 
         Returns:
-            ExplicitSRENParams: explicit params for scalable REN.
+            ExplicitR2DNParams: explicit params for R2DN.
         """
         ps = self.direct
+        nx = self.state_size
         
-        # Get all elements of the banded X-matrix first
-        X_e = ps.p1 * ps.Xbar / l2_norm(ps.Xbar)
-        X11_T = cayley(ps.p2 * ps.Y2 / l2_norm(ps.Y2))
-        X43_T, X44_T = cayley(ps.p3 * ps.Y3 / l2_norm(ps.Y3), return_split=True)
-        X11, X43, X44 = X11_T.T, X43_T.T, X44_T.T
+        H = self._x_to_h_contracting(ps.X, ps.p, ps.B1, ps.C1)
+        H11 = H[:nx, :nx]
+        H21 = H[nx:, :nx]
+        H22 = H[nx:, nx:]
         
-        # Some shapes
-        n1 = X11.shape[1]
-        n3 = X43.shape[1]
-        n4 = X44.shape[1]
-        n2 = X_e.shape[1] - (n1 + n4 + n3)
+        E = (H11 + H22 + ps.Y - ps.Y.T) / 2
+        A = jnp.linalg.solve(E, H21)
+        B1 = jnp.linalg.solve(E, ps.B1)
         
-        # Split them up into the components we need
-        X21 = X_e[:, :n1]
-        X22 = X_e[:, n1:(n1+n2)]
-        X32 = X_e[:, (n1+n2):(n1+2*n2)]
-        X33 = X_e[:, (n1+2*n2):]
-        
-        # Compute the implicit params
-        E = (X_e @ X_e.T + ps.Y1 - ps.Y1.T) / 2
-        A_imp = X32 @ X22.T
-        B1_imp = X33 @ X43.T
-        C1_imp = X11 @ X21.T
-        
-        return ExplicitSRENParams(
-            A = jnp.linalg.solve(E, A_imp),
-            B1 = jnp.linalg.solve(E, B1_imp),
-            B2 = ps.B2,
-            C1 = C1_imp,
-            D12 = ps.D12,
-            C2 = ps.C2,
-            D21 = ps.D21,
-            D22 = ps.D22,
-            bx = ps.bx,
-            bv = ps.bv,
-            by = ps.by,
+        return ExplicitR2DNParams(
+            A, B1, ps.B2, ps.C1, ps.C2, ps.D12, ps.D21, ps.D22, ps.bx, ps.bv, ps.by,
             network_params = self.network._direct_to_explicit()
         )
             
-    
-    #################### Compatibility with RENs ####################
-    
-    def explicit_pre_init(self):
-        """The RENs have this method. This way we can use the same
-        high-level code."""
-        pass
+    def _x_to_h_contracting(self, X: Array, p: Array, B1: Array, C1: Array) -> Array:
+        """Convert R2DN X matrix to part of H matrix used in the contraction
+        setup (using polar parameterization if required).
 
+        Args:
+            X (Array): REN X matrix.
+            p (Array): polar parameter.
+            B1 (Array): REN B1 matrix from implicit model.
+            C1 (Array): REN C1 matrix from explicit model.
 
+        Returns:
+            Array: REN H matrix.
+        """
+        nx = jnp.shape(B1)[0]
+        nX = jnp.shape(X)[0]
+        
+        H = X.T @ X
+        if self.do_polar_param:
+            H = p**2 * H / (l2_norm(X)**2)
+            
+        H = H + jnp.block([
+            [C1.T @ C1, jnp.zeros((nx, nx))],
+            [jnp.zeros((nx, nx)), B1 @ B1.T],
+        ]) + self.eps * jnp.identity(nX)
+        
+        return H 
+    
+        
     #################### Convenient Wrappers ####################
 
     def explicit_call(
-        self, params:dict, x: Array, u: Array, e: ExplicitSRENParams
+        self, params:dict, x: Array, u: Array, e: ExplicitR2DNParams
     ) -> Tuple[Array, Array]:
-        """Evaluate explicit model for a scalable REN.
+        """Evaluate explicit model for an R2DN.
 
         Args:
             params (dict): Flax model parameters dictionary.
             x (Array): internal model state.
             u (Array): model inputs.
-            e (ExplicitSRENParams): explicit params.
+            e (ExplicitR2DNParams): explicit params.
 
         Returns:
             Tuple[Array, Array]: (next_states, outputs).
@@ -361,7 +393,7 @@ class ScalableREN(nn.Module):
         return self.apply(params, x, u, e, method="_explicit_call")
     
     def simulate_sequence(self, params: dict, x0, u) -> Tuple[Array, Array]:
-        """Simulate a scalable REN over a sequence of inputs.
+        """Simulate an R2DN over a sequence of inputs.
 
         Args:
             params (dict): Flax model parameters dictionary.
@@ -373,13 +405,13 @@ class ScalableREN(nn.Module):
         """
         return self.apply(params, x0, u, method="_simulate_sequence")
     
-    def direct_to_explicit(self, params: dict) -> ExplicitSRENParams:
-        """Convert from direct to explicit scalable REN params.
+    def direct_to_explicit(self, params: dict) -> ExplicitR2DNParams:
+        """Convert from direct to explicit R2DN params.
 
         Args:
             params (dict): Flax model parameters dictionary.
 
         Returns:
-            ExplicitSRENParams: explicit params for scalable REN.
+            ExplicitR2DNParams: explicit params for R2DN.
         """
         return self.apply(params, method="_direct_to_explicit")
