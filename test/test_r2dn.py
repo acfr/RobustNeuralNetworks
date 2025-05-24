@@ -18,8 +18,9 @@ horizon = 2
 nx = 3                  # Number of states
 nv = 4                  # Number of equilibirum layer states
 nh = (2,) * 2           # Number of hidden layers in the LBDN
-init_method = "long_memory"
-model = r2dn.ContractingR2DN(nu, nx, nv, ny, nh, init_method=init_method)
+init_method = "long_memory_explicit"
+model = r2dn.ContractingR2DN(nu, nx, nv, ny, nh, init_method=init_method, seed=42)
+model.explicit_pre_init()
     
 # Random seeds
 rng = jax.random.key(0)

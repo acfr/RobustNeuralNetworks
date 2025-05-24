@@ -60,6 +60,7 @@ def run_youla_ren_training(config):
     
     # Create the model and linear system environment
     model = build_model(config)
+    model.explicit_pre_init()
     env = youla.ExampleSystem()
     
     # Train the model
@@ -93,6 +94,7 @@ def train_and_test(config):
     
     # Re-build R2DN and environment
     model = build_model(config)
+    model.explicit_pre_init()
     env = youla.ExampleSystem()
     
     # Generate test data

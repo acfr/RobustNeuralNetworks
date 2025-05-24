@@ -65,7 +65,8 @@ def run_sys_id_test(config):
 
     # Initialise a REN
     model = build_ren(config)
-
+    model.explicit_pre_init()
+    
     # Make training/validation data sets
     n_segments = train[0].shape[0] / config["seq_len"]
     u_train = jnp.array_split(train[0], n_segments)

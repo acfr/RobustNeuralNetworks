@@ -80,7 +80,8 @@ def run_observer_training(config):
 
     # Create a REN model for the observer
     model = build_ren(input_data, config)
-
+    model.explicit_pre_init()
+    
     # Train a model
     params, results = obsv.train_observer(
         model, 
