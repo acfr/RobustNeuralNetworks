@@ -1,19 +1,33 @@
 # Robust Neural Networks
 
-This repository will contain a collection of our robust neural networks, all implemented in Python/JAX. 
+This repository contains a collection or robust neural network architectures developed at the Australian Centre For Robotics (ACFR). All networks are implemented in Python/JAX.
 
-The intention is for this to be the one and only set of implementations for (eg) REN, LBDN, BiLipNet, PLNet, etc. to make sure we all use up-to-date versions of the code. We will also publish this repository and use it to distribute to the community alongside various research papers.
+Implemented networks architectures include:
 
-This repository and README are a work-in-progress.
+- Lipschitz-bounded Sandwich MLPs from [Wang & Manchester (ICML 2023)](https://proceedings.mlr.press/v202/wang23v.html).
+
+- Recurrent Equilibrium Network (RENs) from [Revay, Wang, & Manchester (TAC 2023)](https://ieeexplore.ieee.org/document/10179161).
+
+- **[WIP]** Monotone, Bi-Lipschitz (BiLipNet), and Polyak-Lojasiewicz networks (PLNet) from [Wang, Dvijotham, & Manchester (ICML 2024)](https://proceedings.mlr.press/v235/wang24p.html).
+
+- Robust Recurrent Deep Network (R2DN) from [Barbara, Wang, & Manchester (arXiv 2025)](https://arxiv.org/abs/2504.01250).
+
+This repository (and README) are a work-in-progress. More network architectures will be added as we go along. 
 
 ## Installation
 
-First, [create a virtual environment](https://docs.python.org/3/library/venv.html). Activate the virtual environment and install all dependencies in `requirements.txt` with
+To install the required dependencies, open a terminal in the root directory of this repository and enter the following commands.
 
-    python -m pip install -r requirements.txt
-    pip install -e .
+    ./install.sh
 
-The second line installs the local package `lbnn` itself. The `requirements.txt` file was generated with [`pipreqs`](https://github.com/bndr/pipreqs). If you want to run JAX on an NVIDIA GPU, you'll also need to do the following:
+This will create a Python virtual environment and install all dependencies.
+
+### A Note on Dependencies
+
+All code was tested and developed in Ubuntu 22.04 with CUDA 12.4 and Python 3.10.12.
+
+Requirements were generated with [`pipreqs`](https://github.com/bndr/pipreqs). The `install.sh` script assumes the user is running JAX on an NVIDIA GPU with CUDA 12 already installed. If no GPU is available, simply remove the line
 
     pip install -U "jax[cuda12_pip]"
 
+from the `install.sh` script. If you have a GPU that is not running CUDA (or a different CUDA version), edit the above installation command accordingly.
