@@ -187,3 +187,35 @@ def train_observer(
         "times": timelog,
     }
     return params, results
+
+
+def validate(model: ren.RENBase, params, horizon=2000, seed=0):
+    
+    # Generate some test data
+    def init_u_func(*args, **kwargs):
+        return 0.5*jnp.ones(*args, **kwargs)
+        
+    xtrue, u = get_data(
+        time_steps=horizon+1,
+        init_u_func=init_u_func,
+        init_x_func=jnp.ones,
+        nx=model.state_size,
+        seed=seed,
+    )
+    y = measure(xtrue, u)
+    
+    # Observer estimates through time
+    key = jax.random.key(seed)
+    x0 = model.initialize_carry(key, y[0].shape)
+    _, xhat = model.simulate_sequence(params, x0, y)
+    
+    # Compute normalised root mean square error too as a fit metric
+    mse = jnp.mean((xtrue - xhat)**2)
+    nrmse = jnp.sqrt(mse / jnp.mean((xtrue)**2))
+    
+    return {
+        "true_states": xtrue,
+        "pred_states": xhat,
+        "mse": mse,
+        "nrmse": nrmse,
+    }

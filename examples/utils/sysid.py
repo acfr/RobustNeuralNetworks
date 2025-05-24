@@ -10,11 +10,6 @@ from .utils import l2_norm
 dirpath = Path(__file__).resolve().parent
 
 
-def get_mse(y_true, y_pred):
-    """Compute mean square error."""
-    return jnp.mean(jnp.square(y_true - y_pred))
-
-
 def setup_optimizer(config, n_segments):
     """Set up optimizer for training
 
@@ -56,7 +51,10 @@ def train(train_data, model: ren.RENBase, optimizer, epochs=200, seed=123, verbo
     def loss_fn(params, x, u, y):
         """
         Computes loss (l2 norm of simulation error) and returns
-        updated model state.
+        updated model state. 
+        
+        Loss takes mean over time index only for consistency with
+        original REN paper.
         """
         new_x, y_pred = model.simulate_sequence(params, x, u)
         loss = jnp.mean(l2_norm(y - y_pred, axis=(-2, -1))**2)
@@ -143,9 +141,9 @@ def validate(model: ren.RENBase, params, val_data, washout=100, seed=123):
     _, y_pred = model.simulate_sequence(params, x0, u_val)
     
     # Compute metrics
-    mse = get_mse(y_val[washout:], y_pred[washout:])
-    mean_y = jnp.mean(y_val)
-    nrmse = jnp.sqrt(mse / get_mse(y_val[washout:], mean_y))
+    y1, y2 = y_val[washout:], y_pred[washout:]
+    mse = jnp.mean((y1 - y2)**2)
+    nrmse = jnp.sqrt(mse / jnp.mean((y1)**2))
     
     # Return results
     return {
