@@ -79,6 +79,16 @@ def estimate_lipschitz_lower(
 
 
 def compute_p_contractingren(model: ren.RENBase, ps: dict):
+    """Compute the P matrix for the Lyapunov function describing
+    stability of a contracting REN.
+
+    Args:
+        model (ren.RENBase): a REN model.
+        ps (dict): the usual flax parameter dictionary.
+
+    Returns:
+        P matrix.
+    """
     
     p = ps["params"]["p"]
     X = ps["params"]["X"]
@@ -99,6 +109,16 @@ def compute_p_contractingren(model: ren.RENBase, ps: dict):
 
 
 def compute_p_contractingr2dn(model: r2dn.ContractingR2DN, ps: dict):
+    """Compute the P matrix for the Lyapunov function describing
+    stability of a contracting R2DN.
+
+    Args:
+        model (r2dn.ContractingR2DN): an R2DN model.
+        ps (dict):the usual flax parameter dictionary.
+
+    Returns:
+        P matrix.
+    """
     
     p = ps["params"]["p"]
     X = ps["params"]["X"]
