@@ -67,21 +67,6 @@ def identity_init():
     return init_func
 
 
-def solve_discrete_lyapunov_direct(a, q):
-    """
-    JAX implementation of `scipy.linalg.solve_discrete_lyapunov`.
-    Only solves via the direct method.
-    """
-    a = jnp.asarray(a)
-    q = jnp.asarray(q)
-
-    lhs = jnp.kron(a, a.conj())
-    lhs = jnp.eye(lhs.shape[0]) - lhs
-    x = jnp.linalg.solve(lhs, q.flatten())
-
-    return jnp.reshape(x, q.shape)
-
-
 def count_num_params(d):
     """
     Recursively counts the total number of elements in all jax.numpy arrays

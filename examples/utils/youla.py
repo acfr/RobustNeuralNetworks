@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 import optax
-from optax import tree_utils as otu
 
 import numpy as np
 from datetime import datetime
@@ -157,8 +156,8 @@ def train_yoularen(
     env: ExampleSystem, 
     model: ren.RENBase, 
     lr = 1e-3, 
-    min_lr = 1e-6,
-    lr_patience = 10,
+    decay_steps = 10,
+    clip_grad = 10,
     epochs: int = 100, 
     batches: int = 32,
     test_batches: int = 32,
@@ -166,6 +165,7 @@ def train_yoularen(
     max_steps: int = 200, 
     verbose: bool = True,
     seed: int = 0,
+    test_seed: int = 0,
 ):
     """Train a Youla-REN with analytic policy gradients.
 
@@ -173,8 +173,8 @@ def train_yoularen(
         env (ExampleSystem): Linear system to control.
         model (ren.RENBase): REN model to train.
         lr (optional): Initial learning rate. Defaults to 1e-3.
-        min_lr: Minimum learning rate after decay. Defaults to 1e-7.
-        lr_patience: How many steps loss can increase before decay imposed. Defaults to 1.
+        decay_steps: How many steps before lr decay imposed. Defaults to 10.
+        clip_grad: Gradient clipping. Defaults to 10.
         epochs (int, optional):  Number of training epochs. Defaults to 100.
         batches (int, optional):  Number of training batches. Defaults to 32.
         test_batches (int, optional):  Number of test batches. Defaults to 32.
@@ -201,13 +201,12 @@ def train_yoularen(
     grad_loss = jax.jit(jax.value_and_grad(loss_fn, has_aux=True))
     
     @jax.jit
-    def train_step(params, opt_state, scheduler_state, x, q, w):
+    def train_step(params, opt_state, x, q, w):
         """Run a single SGD training step."""
         (loss_value, states), grads = grad_loss(params, x, q, w)
-        x_next, q_next = states
         updates, opt_state = optimizer.update(grads, opt_state)
-        updates = otu.tree_scalar_mul(scheduler_state.scale, updates)
         params = optax.apply_updates(params, updates)
+        x_next, q_next = states
         return params, opt_state, loss_value, x_next, q_next
     
     # Only support max_steps as integer multiple of rollout_length
@@ -217,14 +216,22 @@ def train_yoularen(
     
     # Random seeds
     rng = jax.random.key(seed)
-    key1, key2, key3, key4, rng = jax.random.split(rng, 5)
+    test_rng = jax.random.key(test_seed)
+    key1, key2, rng = jax.random.split(rng, 3)
+    test_rng1, test_rng2 = jax.random.split(test_rng)
     
-    # Set up optimizer and learning rate scheduler
-    optimizer = optax.adam(lr)
-    scheduler = optax.contrib.reduce_on_plateau(
-        factor=0.1,
-        min_scale=min_lr / lr,
-        patience=lr_patience        # Decay if no improvement after this many steps
+    # Set up optimizer with learning rate scheduler
+    steps = decay_steps * num_epochs_per_reset
+    scheduler = optax.exponential_decay(
+        init_value=lr,
+        transition_steps=steps,
+        decay_rate=0.1,
+        end_value=1e-6,
+        staircase=True
+    )
+    optimizer = optax.chain(
+        optax.clip(clip_grad),
+        optax.inject_hyperparams(optax.adam)(learning_rate=scheduler)
     )
     
     # Initialise the REN and optimizer
@@ -235,12 +242,11 @@ def train_yoularen(
     ren_state = model.initialize_carry(key1, input_shape)
     params = model.init(key2, ren_state, y_tilde)
     opt_state = optimizer.init(params)
-    scheduler_state = scheduler.init(params)
     
     # Test dataset
     test_x0 = env.init_state(test_batches)
-    test_q0 = model.initialize_carry(key4, (test_batches, y_tilde.shape[-1]))
-    test_disturbances = generate_disturbance(key3, max_steps, batches)
+    test_q0 = model.initialize_carry(test_rng1, (test_batches, y_tilde.shape[-1]))
+    test_disturbances = generate_disturbance(test_rng2, max_steps, batches)
     
     # Loop through for training
     test_loss = []
@@ -270,7 +276,6 @@ def train_yoularen(
             params, opt_state, loss_value, env_state, ren_state = train_step(
                 params,
                 opt_state,
-                scheduler_state,
                 env_state,
                 ren_state,
                 disturbances[k]
@@ -279,7 +284,7 @@ def train_yoularen(
             
         # Store loss over full rollout and print training info
         train_loss.append(jnp.array(batch_loss).mean())
-        current_lr = lr * scheduler_state.scale
+        current_lr = opt_state[1].hyperparams['learning_rate']
         
         if verbose:
             print(f"epoch: {epoch+1}/{epochs}, " +
@@ -288,11 +293,6 @@ def train_yoularen(
                   f"lr: {current_lr:.3g}, " +
                   f"Time: {timelog[-1]}")
             
-        # Update the learning rate scaling factor
-        _, scheduler_state = scheduler.update(
-            updates=params, state=scheduler_state, value=test_loss[-1]
-        )
-    
     # Final test cost, store results, return
     timelog.append(datetime.now())
     test_loss.append(loss_fn(params, test_x0, test_q0, test_disturbances)[0])
