@@ -29,9 +29,10 @@ tf.random.set_seed(seed)
 
 # Define some learning hyperparameters
 # We'll use these to re-size the data
-train_steps = 1200      # Do fewer to speed up
+train_steps = 2400      # Do fewer to speed up
 eval_every = 100        # Do fewer to speed up
 batch_size = 64         # Do fewer to speed up
+test_batch_size = 256
 
 
 #### 1. Data loading
@@ -42,7 +43,7 @@ test_ds: tf.data.Dataset = tfds.load('mnist', split='test', data_dir="data/")
 
 # Data pre-processing:
 #   1. Flatten the images (we're just using MLPs here)
-#   2. Normalise the data (TODO should we bother?)
+#   2. Normalise the data
 def flatten_and_normalise(sample):
     image = sample["image"]
     label = sample["label"]
@@ -56,7 +57,7 @@ test_ds = test_ds.map(flatten_and_normalise)
 # Shuffle the dataset and group into batches. Skip any incomplete batches
 train_ds = train_ds.repeat().shuffle(1024, seed=seed)
 train_ds = train_ds.batch(batch_size, drop_remainder=True).take(train_steps).prefetch(1)
-test_ds = test_ds.batch(batch_size, drop_remainder=True).prefetch(1)
+test_ds = test_ds.batch(test_batch_size, drop_remainder=True).prefetch(1)
 
 
 #### 2. Define Flax model
@@ -99,7 +100,7 @@ class LBDN(nn.Module):
 
 # Instantiate the models
 model_mlp = MLP()
-model_lbdn = LBDN(gamma=1.0)
+model_lbdn = LBDN(gamma=2.0)
 
 
 #### 3. Define loss metrics
@@ -220,6 +221,7 @@ def plot_mnist_results(test_batch, pred, name):
         ax.set_title(f"Label: {label}, Pred: {pred[i]}")
         ax.axis('off')
     plt.savefig(filepath / f"test_{name}.pdf")
+    plt.close()
 
 
 # Run the predictions
@@ -234,21 +236,25 @@ plot_mnist_results(test_batch, pred_lbdn, "lbdn")
 
 #### 7. Add adversarial attacks with PGD
 
-def compute_pgd_attack(    
+def pgd_attack(    
     model,
     params,
     test_batch,
     attack_size=1,
-    max_iter=100,
+    max_iter=500,
     learning_rate=0.01,
-    verbose=True,
+    verbose=False,
     seed=0
 ):
     
+    # Edge case
+    if attack_size == 0:
+        return jnp.zeros(test_batch["image"].shape), test_batch
+    
     # Define how to constrain attack size (l2 norm)
     def project_attack(attack, attack_size):
-        return (attack_size * attack / 
-                jnp.linalg.norm(attack, axis=-1, keepdims=True))
+        attack = attack / jnp.linalg.norm(attack, axis=-1, keepdims=True)
+        return attack_size * attack
     
     # Initialise an attack
     rng = jax.random.key(seed)
@@ -288,17 +294,47 @@ def compute_pgd_attack(
     attack_batch = {"image": test_batch["image"] + attack, 
                       "label": test_batch["label"]}
     return attack, attack_batch
+  
+  
+# Compute accuracy as a function of attack size
+def attacked_test_error(model, params, test_batch, attack_size):
+    _, attack_batch = pgd_attack(model, params, test_batch, attack_size)
+    logits = model.apply(params, attack_batch['image'])
+    labels = test_batch["label"]
+    return 100 * jnp.mean(jnp.argmax(logits, axis=-1) == labels)
+  
+attack_sizes = jnp.arange(0, 3.1, 0.1)
+acc_mlp = []
+acc_lbdn = []
+for a in attack_sizes:
+    acc_mlp.append(attacked_test_error(model_mlp, params_mlp, test_batch, a))
+    acc_lbdn.append(attacked_test_error(model_lbdn, params_lbdn, test_batch, a))
 
-# Attack and plot for MLP
-attack_mlp, attack_batch_mlp = compute_pgd_attack(
-    model_mlp, params_mlp, test_batch, attack_size=2, max_iter=400
-)
+# Plot the results
+plt.plot(attack_sizes, acc_mlp, color=color_mlp, label="MLP")
+plt.plot(attack_sizes, acc_lbdn, "--", color=color_lbdn, label="Lipschtiz")
+plt.xlabel("Attack size (normalised)")
+plt.ylabel("Accuracy (\%)")
+plt.legend()
+plt.tight_layout()
+plt.savefig(filepath / "attacks.pdf")
+
+# Examples when MLP is at about 20% accuracy
+attack_size = 1.0
+_, attack_batch_mlp = pgd_attack(model_mlp, params_mlp, test_batch, attack_size)
 pred_mlp = eval_mnist_classifier(model_mlp, params_mlp, attack_batch_mlp)
-plot_mnist_results(attack_batch_mlp, pred_mlp, "mlp_attacked")
+plot_mnist_results(attack_batch_mlp, pred_mlp, "mlp_attacked_10")
 
-# Attack and plot for Lipschitz
-attack_lbdn, attack_batch_lbdn = compute_pgd_attack(
-    model_lbdn, params_lbdn, test_batch, attack_size=2, max_iter=400
-)
+_, attack_batch_lbdn = pgd_attack(model_lbdn, params_lbdn, test_batch, attack_size)
 pred_lbdn = eval_mnist_classifier(model_lbdn, params_lbdn, attack_batch_lbdn)
-plot_mnist_results(attack_batch_lbdn, pred_lbdn, "lipschitz_attacked")
+plot_mnist_results(attack_batch_lbdn, pred_lbdn, "lipschitz_attacked_10")
+
+# Examples when Lipschitz is at about 20 % accuracy
+attack_size = 2.1
+_, attack_batch_mlp = pgd_attack(model_mlp, params_mlp, test_batch, attack_size)
+pred_mlp = eval_mnist_classifier(model_mlp, params_mlp, attack_batch_mlp)
+plot_mnist_results(attack_batch_mlp, pred_mlp, "mlp_attacked_21")
+
+_, attack_batch_lbdn = pgd_attack(model_lbdn, params_lbdn, test_batch, attack_size)
+pred_lbdn = eval_mnist_classifier(model_lbdn, params_lbdn, attack_batch_lbdn)
+plot_mnist_results(attack_batch_lbdn, pred_lbdn, "lipschitz_attacked_21")
