@@ -54,7 +54,7 @@ train_ds = train_ds.map(flatten_and_normalise)
 test_ds = test_ds.map(flatten_and_normalise)
 
 # Shuffle the dataset and group into batches. Skip any incomplete batches
-train_ds = train_ds.repeat().shuffle(1024)
+train_ds = train_ds.repeat().shuffle(1024, seed=seed)
 train_ds = train_ds.batch(batch_size, drop_remainder=True).take(train_steps).prefetch(1)
 test_ds = test_ds.batch(batch_size, drop_remainder=True).prefetch(1)
 
@@ -98,23 +98,11 @@ class LBDN(nn.Module):
         return x
 
 # Instantiate the models
-# model = MLP()
-model = LBDN(gamma=10.0)
-
-rng = jax.random.key(seed)
-inputs = jnp.ones((1, n_inputs), jnp.float32)
-params = model.init(rng, inputs)
+model_mlp = MLP()
+model_lbdn = LBDN(gamma=10.0)
 
 
-#### 3. Create the optimiser and define loss metrics
-
-# Hyperparameters
-learning_rate = 0.005
-momentum = 0.9
-
-# Optimiser
-optimizer = optax.adamw(learning_rate, momentum)
-opt_state = optimizer.init(params)
+#### 3. Define loss metrics
 
 # Define function for tracking loss and accuracy
 def get_loss(logits, labels):
@@ -123,65 +111,84 @@ def get_loss(logits, labels):
   
 def compute_metrics(logits, labels):
     loss = get_loss(logits, labels)
-    accuracy = jnp.mean(jnp.argmax(logits, axis=-1) == labels)
+    accuracy = 100 * jnp.mean(jnp.argmax(logits, axis=-1) == labels)
     return {"loss": loss, "accuracy": accuracy}
 
 
-#### 4. Define training step function
+#### 4. Define training function
 
-# Loss function
-@jax.jit
-def loss_fn(params, batch):
-    logits = model.apply(params, batch['image'])
-    loss = get_loss(logits, batch['label'])
-    return loss, logits
-
-# Training step
-@jax.jit
-def train_step(params, opt_state, batch):
-    grad_fn = jax.grad(loss_fn, has_aux=True)
-    grads, _ = grad_fn(params, batch)
-    updates, opt_state = optimizer.update(grads, opt_state, params)
-    params = optax.apply_updates(params, updates)
-    return params, opt_state
-
-
-#### 5. Run the training
-
-# # from IPython.display import clear_output
-metrics = {
-  "test_loss": [],
-  "test_accuracy": [],
-}
-
-for step, batch in enumerate(train_ds.as_numpy_iterator()):
+def train_mnist_classifier(model, seed=0):
+  
+    # Initialise the model parameters
+    rng = jax.random.key(seed)
+    inputs = jnp.ones((1, n_inputs), jnp.float32)
+    params = model.init(rng, inputs)
     
-    # Run the optimiser for one step
-    params, opt_state = train_step(params, opt_state, batch)
+    # Set up the optimiser
+    optimizer = optax.adam(learning_rate=0.005)
+    opt_state = optimizer.init(params)
     
-    # Start logging metrics after a step has passed
-    if step > 0 and (step % eval_every == 0 or step == train_steps - 1):
+    # Loss function
+    @jax.jit
+    def loss_fn(params, batch):
+        logits = model.apply(params, batch['image'])
+        loss = get_loss(logits, batch['label'])
+        return loss, logits
+
+    # A single training step
+    @jax.jit
+    def train_step(params, opt_state, batch):
+        grad_fn = jax.grad(loss_fn, has_aux=True)
+        grads, _ = grad_fn(params, batch)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        params = optax.apply_updates(params, updates)
+        return params, opt_state
+      
+    # Train over many batches and log test error metrics
+    metrics = {"test_loss": [], "test_accuracy": [], "step": []}
+    for step, batch in enumerate(train_ds.as_numpy_iterator()):
         
-        # Do test evaluation on all the test batches
-        batch_metrics = {"loss": [], "accuracy": []}
-        for t_step, test_batch in enumerate(test_ds.as_numpy_iterator()):
-            _, test_logits = loss_fn(params, test_batch)
-            results = compute_metrics(test_logits, test_batch["label"])
-            batch_metrics["loss"].append(results["loss"])
-            batch_metrics["accuracy"].append(results["accuracy"])
-        metrics["test_loss"].append(np.mean(batch_metrics["loss"]))
-        metrics["test_accuracy"].append(np.mean(batch_metrics["accuracy"]))
+        # Run the optimiser for one step
+        params, opt_state = train_step(params, opt_state, batch)
+        
+        # Log metrics intermittently
+        if step == 0 or (step % eval_every == 0 or step == train_steps - 1):
+            batch_metrics = {"loss": [], "accuracy": []}
+            for test_batch in test_ds.as_numpy_iterator():
+                _, test_logits = loss_fn(params, test_batch)
+                results = compute_metrics(test_logits, test_batch["label"])
+                batch_metrics["loss"].append(results["loss"])
+                batch_metrics["accuracy"].append(results["accuracy"])
+            metrics["test_loss"].append(np.mean(batch_metrics["loss"]))
+            metrics["test_accuracy"].append(np.mean(batch_metrics["accuracy"]))
+            metrics["step"].append(step)
+            
+    return params, metrics
+
+
+#### 5. Train models
+params_mlp, metrics_mlp = train_mnist_classifier(model_mlp, seed)
+params_lbdn, metrics_lbdn = train_mnist_classifier(model_lbdn, seed)
 
 # Plot loss and accuracy in subplots
+color_mlp = "#009E73"
+color_lbdn = "#D55E00"
+
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 3))
-ax1.plot(metrics[f'test_loss'])
-ax2.plot(metrics[f'test_accuracy'])
+
+ax1.plot(metrics_mlp["step"], metrics_mlp["test_loss"], color=color_mlp, label="MLP")
+ax2.plot(metrics_mlp["step"], metrics_mlp["test_accuracy"], color=color_mlp, label="MLP")
+
+ax1.plot(metrics_lbdn["step"], metrics_lbdn["test_loss"], "--", color=color_lbdn, label="Lipschitz")
+ax2.plot(metrics_lbdn["step"], metrics_lbdn["test_accuracy"], "--", color=color_lbdn, label="Lipschitz")
 
 ax1.set_xlabel("Training epochs")
-ax1.set_ylabel("Test loss")
-
-ax2.set_ylabel("Test accuracy")
 ax2.set_xlabel("Training epochs")
+ax1.set_ylabel("Test loss")
+ax2.set_ylabel("Test accuracy (\%)")
+
+ax1.legend()
+ax2.legend()
 
 plt.tight_layout()
 plt.savefig(filepath / "train.pdf")
@@ -189,28 +196,41 @@ plt.close()
 
 
 #### 6. Perform inference
-
-@jax.jit
-def pred_step(params, batch):
-  logits = model.apply(params, batch['image'])
-  return logits.argmax(axis=1)
-
-est_batch = test_ds.as_numpy_iterator().next()
-pred = pred_step(params, test_batch)
-
-fig, axs = plt.subplots(2, 5, figsize=(12, 5))
-for i, ax in enumerate(axs.flatten()):
-    
-  # Reshape image again for plotting
-  label = test_batch['label'][i]
-  image = test_batch['image'][i]
-  image = jnp.reshape(image, (28, 28))
+def eval_mnist_classifier(model, params):
   
-  # Plot the number
-  ax.imshow(image, cmap='gray')
-  ax.set_title(f"Label: {label}, Pred: {pred[i]}")
-  ax.axis('off')
-plt.savefig(filepath / "test.pdf")
+    @jax.jit
+    def pred_step(params, batch):
+      logits = model.apply(params, batch['image'])
+      return logits.argmax(axis=1)
+
+    # Do prediction on a test batch
+    test_batch = test_ds.as_numpy_iterator().next()
+    pred = pred_step(params, test_batch)
+    
+    return test_batch, pred
+  
+def plot_mnist_results(test_batch, pred, name):
+
+    fig, axs = plt.subplots(2, 5, figsize=(12, 5))
+    for i, ax in enumerate(axs.flatten()):
+        
+        # Reshape image again for plotting
+        label = test_batch['label'][i]
+        image = test_batch['image'][i]
+        image = jnp.reshape(image, (28, 28))
+        
+        # Plot the number
+        ax.imshow(image, cmap='gray')
+        ax.set_title(f"Label: {label}, Pred: {pred[i]}")
+        ax.axis('off')
+    plt.savefig(filepath / f"test_{name}.pdf")
+    
+test_batch, pred = eval_mnist_classifier(model_mlp, params_mlp)
+plot_mnist_results(test_batch, pred, "mlp")
+
+test_batch, pred = eval_mnist_classifier(model_lbdn, params_lbdn)
+plot_mnist_results(test_batch, pred, "lbdn")
 
 
-#### 7. TODO: ADVERSARIAL ATTACKS
+#### 7. Add adversarial attacks with PGD
+
