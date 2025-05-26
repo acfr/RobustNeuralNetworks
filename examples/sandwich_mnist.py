@@ -1,7 +1,3 @@
-# Additional requirements to add:
-#   - tensorflow: 2.19.0
-#   - tensorflow-datasets: 4.9.8
-
 import jax
 import jax.numpy as jnp                 # JAX NumPy
 import matplotlib.pyplot as plt         # Plotting
@@ -197,14 +193,10 @@ plt.close()
 
 
 #### 6. Perform inference
-def eval_mnist_classifier(model, params, test_batch):
-  
-    @jax.jit
-    def pred_step(params, batch):
-      logits = model.apply(params, batch['image'])
-      return logits.argmax(axis=1)
-    
-    return pred_step(params, test_batch)
+@jax.jit(static_argnums=0)
+def predict(model, params, batch):
+    logits = model.apply(params, batch['image'])
+    return logits.argmax(axis=1)
   
 def plot_mnist_results(test_batch, pred, name):
 
@@ -226,8 +218,8 @@ def plot_mnist_results(test_batch, pred, name):
 
 # Run the predictions
 test_batch = test_ds.as_numpy_iterator().next()
-pred_mlp = eval_mnist_classifier(model_mlp, params_mlp, test_batch)
-pred_lbdn = eval_mnist_classifier(model_lbdn, params_lbdn, test_batch)
+pred_mlp = predict(model_mlp, params_mlp, test_batch)
+pred_lbdn = predict(model_lbdn, params_lbdn, test_batch)
 
 # Plot the predictions
 plot_mnist_results(test_batch, pred_mlp, "mlp")
@@ -322,19 +314,19 @@ plt.savefig(filepath / "attacks.pdf")
 # Examples when MLP is at about 20% accuracy
 attack_size = 1.0
 _, attack_batch_mlp = pgd_attack(model_mlp, params_mlp, test_batch, attack_size)
-pred_mlp = eval_mnist_classifier(model_mlp, params_mlp, attack_batch_mlp)
+pred_mlp = predict(model_mlp, params_mlp, attack_batch_mlp)
 plot_mnist_results(attack_batch_mlp, pred_mlp, "mlp_attacked_10")
 
 _, attack_batch_lbdn = pgd_attack(model_lbdn, params_lbdn, test_batch, attack_size)
-pred_lbdn = eval_mnist_classifier(model_lbdn, params_lbdn, attack_batch_lbdn)
+pred_lbdn = predict(model_lbdn, params_lbdn, attack_batch_lbdn)
 plot_mnist_results(attack_batch_lbdn, pred_lbdn, "lipschitz_attacked_10")
 
 # Examples when Lipschitz is at about 20 % accuracy
 attack_size = 2.1
 _, attack_batch_mlp = pgd_attack(model_mlp, params_mlp, test_batch, attack_size)
-pred_mlp = eval_mnist_classifier(model_mlp, params_mlp, attack_batch_mlp)
+pred_mlp = predict(model_mlp, params_mlp, attack_batch_mlp)
 plot_mnist_results(attack_batch_mlp, pred_mlp, "mlp_attacked_21")
 
 _, attack_batch_lbdn = pgd_attack(model_lbdn, params_lbdn, test_batch, attack_size)
-pred_lbdn = eval_mnist_classifier(model_lbdn, params_lbdn, attack_batch_lbdn)
+pred_lbdn = predict(model_lbdn, params_lbdn, attack_batch_lbdn)
 plot_mnist_results(attack_batch_lbdn, pred_lbdn, "lipschitz_attacked_21")

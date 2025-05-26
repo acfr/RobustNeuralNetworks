@@ -22,12 +22,11 @@ To install the required dependencies, open a terminal in the root directory of t
 
 This will create a Python virtual environment and install all dependencies.
 
-### A Note on Dependencies
-
 All code was tested and developed in Ubuntu 22.04 with CUDA 12.4 and Python 3.10.12.
 
-Requirements were generated with [`pipreqs`](https://github.com/bndr/pipreqs). The `install.sh` script assumes the user is running JAX on an NVIDIA GPU with CUDA 12 already installed. If no GPU is available, simply remove the line
+### Running the Jupyter Notebook
 
-    pip install -U "jax[cuda12_pip]"
+To run Jupyter notebooks in the `examples/` folder, you will need to make sure that you open them from within the virtual environment. Instructions on how to do this from within VSCode are available [here](https://code.visualstudio.com/docs/datascience/jupyter-notebooks). As a quick summary:
 
-from the `install.sh` script. If you have a GPU that is not running CUDA (or a different CUDA version), edit the above installation command accordingly.
+- Open the notebook in VSCode.
+- In the top-right of the notebook, select the local virtual environment `venv` as your Python kernel. This was installed for you if you ran the `./install.sh` command above.
