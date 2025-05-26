@@ -1,3 +1,5 @@
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
+
 '''
 Unitary layer using Cayley transform.
 This layer applies a learned orthogonal (unitary) transformation to the input

@@ -1,3 +1,5 @@
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
+
 '''
 PLNet is a neural network architecture that based on bilipnet.
 It takes the quadratic potential of the output of the bilipnet.

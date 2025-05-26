@@ -1,3 +1,5 @@
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
+
 from cycler import cycler
 from matplotlib import pyplot as plt
 

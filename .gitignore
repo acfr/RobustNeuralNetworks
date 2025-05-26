@@ -1,4 +1,4 @@
-# Don't include the sysID data
+# Don't include the sysID data from the examples
 data/
 results/
 

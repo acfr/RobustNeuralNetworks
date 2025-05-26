@@ -1,3 +1,5 @@
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
+
 import flax.linen as linen # This is used in eval()
 import jax.numpy as jnp
 import numpy as np

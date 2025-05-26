@@ -1,4 +1,5 @@
-###################################################
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
+
 '''
 Define the three-operator split solver - DYS
 Adapted from code in 

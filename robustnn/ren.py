@@ -1,3 +1,5 @@
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
+
 import jax.numpy as jnp
 from flax.typing import Array
 from robustnn import ren_base as ren

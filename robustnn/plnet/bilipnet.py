@@ -1,3 +1,5 @@
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
+
 '''
 BilipNet is a neural network architecture that combines Unitary and Monotone Lipschitz layers.
 It is a subclass of the Flax Module and is designed to be used with the Flax library for JAX.
