@@ -99,7 +99,7 @@ class LBDN(nn.Module):
 
 # Instantiate the models
 model_mlp = MLP()
-model_lbdn = LBDN(gamma=10.0)
+model_lbdn = LBDN(gamma=1.0)
 
 
 #### 3. Define loss metrics
@@ -196,18 +196,14 @@ plt.close()
 
 
 #### 6. Perform inference
-def eval_mnist_classifier(model, params):
+def eval_mnist_classifier(model, params, test_batch):
   
     @jax.jit
     def pred_step(params, batch):
       logits = model.apply(params, batch['image'])
       return logits.argmax(axis=1)
-
-    # Do prediction on a test batch
-    test_batch = test_ds.as_numpy_iterator().next()
-    pred = pred_step(params, test_batch)
     
-    return test_batch, pred
+    return pred_step(params, test_batch)
   
 def plot_mnist_results(test_batch, pred, name):
 
@@ -224,13 +220,85 @@ def plot_mnist_results(test_batch, pred, name):
         ax.set_title(f"Label: {label}, Pred: {pred[i]}")
         ax.axis('off')
     plt.savefig(filepath / f"test_{name}.pdf")
-    
-test_batch, pred = eval_mnist_classifier(model_mlp, params_mlp)
-plot_mnist_results(test_batch, pred, "mlp")
 
-test_batch, pred = eval_mnist_classifier(model_lbdn, params_lbdn)
-plot_mnist_results(test_batch, pred, "lbdn")
+
+# Run the predictions
+test_batch = test_ds.as_numpy_iterator().next()
+pred_mlp = eval_mnist_classifier(model_mlp, params_mlp, test_batch)
+pred_lbdn = eval_mnist_classifier(model_lbdn, params_lbdn, test_batch)
+
+# Plot the predictions
+plot_mnist_results(test_batch, pred_mlp, "mlp")
+plot_mnist_results(test_batch, pred_lbdn, "lbdn")
 
 
 #### 7. Add adversarial attacks with PGD
 
+def compute_pgd_attack(    
+    model,
+    params,
+    test_batch,
+    attack_size=1,
+    max_iter=100,
+    learning_rate=0.01,
+    verbose=True,
+    seed=0
+):
+    
+    # Define how to constrain attack size (l2 norm)
+    def project_attack(attack, attack_size):
+        return (attack_size * attack / 
+                jnp.linalg.norm(attack, axis=-1, keepdims=True))
+    
+    # Initialise an attack
+    rng = jax.random.key(seed)
+    rng, key1 = jax.random.split(rng)
+    attack = jax.random.uniform(key1, test_batch["image"].shape)
+    attack = (project_attack(attack, attack_size),)
+    
+    # Set up the optimizer 
+    optimizer = optax.adam(learning_rate)
+    opt_state = optimizer.init(attack)
+
+    # Loss function
+    @jax.jit
+    def loss_fn(attack, batch):
+        attack = project_attack(attack[0], attack_size)
+        attacked_image = batch['image'] + attack
+        logits = model.apply(params, attacked_image)
+        return -get_loss(logits, batch['label'])
+
+    # A single attack step with projected gradient descent
+    @jax.jit
+    def attack_step(attack, opt_state, batch):
+        grad_fn = jax.value_and_grad(loss_fn)
+        loss, grads = grad_fn(attack, batch)
+        updates, opt_state = optimizer.update(grads, opt_state)
+        attack = optax.apply_updates(attack, updates)
+        return attack, opt_state, loss
+
+    # Use gradient descent to estimate the Lipschitz bound
+    for iter in range(max_iter):
+        attack, opt_state, loss = attack_step(attack, opt_state, test_batch)
+        if verbose and iter % 20 == 0:
+            print("Iter: ", iter, "\t L: ", loss)
+    
+    # Return the attack and the perturbed image
+    attack = project_attack(attack[0], attack_size)
+    attack_batch = {"image": test_batch["image"] + attack, 
+                      "label": test_batch["label"]}
+    return attack, attack_batch
+
+# Attack and plot for MLP
+attack_mlp, attack_batch_mlp = compute_pgd_attack(
+    model_mlp, params_mlp, test_batch, attack_size=2, max_iter=400
+)
+pred_mlp = eval_mnist_classifier(model_mlp, params_mlp, attack_batch_mlp)
+plot_mnist_results(attack_batch_mlp, pred_mlp, "mlp_attacked")
+
+# Attack and plot for Lipschitz
+attack_lbdn, attack_batch_lbdn = compute_pgd_attack(
+    model_lbdn, params_lbdn, test_batch, attack_size=2, max_iter=400
+)
+pred_lbdn = eval_mnist_classifier(model_lbdn, params_lbdn, attack_batch_lbdn)
+plot_mnist_results(attack_batch_lbdn, pred_lbdn, "lipschitz_attacked")
