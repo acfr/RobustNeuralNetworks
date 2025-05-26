@@ -1,5 +1,18 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
 
+'''
+Base class for Recurrent Equilibrium Networks (RENs).
+RENs are recurrent neural networks which are internally stable (contracting) and
+satisfy user-defined bounds on their input-output behaviour (characterised by
+incremental integral quadratic constraints).
+
+RENs originally introduced in: [Recurrent Equilibrium Networks: Flexible Dynamic Models With Guaranteed Stability and Robustness](https://ieeexplore.ieee.org/document/10179161).
+
+Adapted from Julia implentation: https://github.com/acfr/RobustNeuralNetworks.jl
+
+Author: Nic Barbara.
+'''
+
 import jax
 import jax.numpy as jnp
 

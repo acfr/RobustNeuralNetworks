@@ -1,13 +1,15 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
 
 '''
-Implementation of Lipschitz Bounded Deep Networks (Linear) in JAX/FLAX
+Lipschitz-Bounded Deep Networks (LBDNS) and the Sandwich Layer.
+The Sandiwch network is a 1-Lipschitz dense layer, and can be used to build an
+LBDN, which is an MLP with a prescribed upper bound on its Lipschitz constant.
+
+Sandwich layer originally introduced in: [Direct Parameterization of Lipschitz-Bounded Deep Networks](https://proceedings.mlr.press/v202/wang23v.html).
 
 Adapted from Julia implentation: https://github.com/acfr/RobustNeuralNetworks.jl
 
 Authors: Nic Barbara (Mar '24, Feb '25), Jack Naylor (Sep '23) from the ACFR.
-
-These networks are compatible with other FLAX modules.
 '''
 
 import jax.numpy as jnp

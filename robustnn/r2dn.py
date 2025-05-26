@@ -1,5 +1,16 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
 
+'''
+Robust Recurrent Deep Networks (R2DNs).
+R2DNs are recurrent neural networks which are internally stable (contracting) and
+satisfy user-defined bounds on their input-output behaviour (characterised by
+a Lipschitz bound).
+
+R2DNs originally introduced in: [R2DN: Scalable Parameterization of Contracting and Lipschitz Recurrent Deep Networks](https://arxiv.org/abs/2504.01250).
+
+Author: Nic Barbara.
+'''
+
 import jax
 import jax.numpy as jnp
 
