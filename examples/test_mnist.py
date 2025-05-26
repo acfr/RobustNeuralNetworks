@@ -147,7 +147,8 @@ for step, batch in enumerate(train_ds.as_numpy_iterator()):
 
 # Plot loss and accuracy in subplots
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 3))
-for dataset in ('train', 'test'):
+# for dataset in ('train', 'test'):
+for dataset in ['test']:
     ax1.plot(metrics_history[f'{dataset}_loss'], label=f'{dataset}_loss')
     ax2.plot(metrics_history[f'{dataset}_accuracy'], label=f'{dataset}_accuracy')
 
@@ -160,7 +161,7 @@ ax2.set_xlabel("Training epochs")
 ax2.legend()
 
 plt.tight_layout()
-plt.savefig(filepath / "train.pdf")
+plt.savefig(filepath / "train_nnx.pdf")
 plt.close()
 
 
@@ -188,4 +189,4 @@ for i, ax in enumerate(axs.flatten()):
   ax.imshow(image, cmap='gray')
   ax.set_title(f"Label: {label}, Pred: {pred[i]}")
   ax.axis('off')
-plt.savefig(filepath / "test.pdf")
+plt.savefig(filepath / "test_nnx.pdf")
