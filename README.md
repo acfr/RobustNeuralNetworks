@@ -4,7 +4,7 @@ This repository contains a collection or robust neural network architectures dev
 
 Implemented networks architectures include:
 
-- Lipschitz-bounded Sandwich MLPs from [Wang & Manchester (ICML 2023)](https://proceedings.mlr.press/v202/wang23v.html).
+- Lipschitz-bounded Sandwich MLPs from [Wang & Manchester (ICML 2023)](https://proceedings.mlr.press/v202/wang23v.html). A tutorial can be found here: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nic-barbara/RobustNeuralNetworks/blob/l4dc25/examples/sandwich_mnist.ipynb)
 
 - Recurrent Equilibrium Network (REN) from [Revay, Wang, & Manchester (TAC 2023)](https://ieeexplore.ieee.org/document/10179161).
 
@@ -14,7 +14,7 @@ Implemented networks architectures include:
 
 This repository (and README) are a work-in-progress. More network architectures will be added as we go along. 
 
-## Installation
+## Installation for Development
 
 To install the required dependencies, open a terminal in the root directory of this repository and enter the following commands.
 
