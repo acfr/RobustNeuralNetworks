@@ -1,11 +1,38 @@
 #!/bin/bash
 
+# Function to check if CUDA is available
+check_cuda() {
+    # Check if nvidia-smi exists and works
+    if command -v nvidia-smi &> /dev/null; then
+        if nvidia-smi &> /dev/null; then
+            echo "CUDA detected: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits | head -n1)"
+            return 0
+        fi
+    fi
+
+    # Check if nvcc (CUDA compiler) is available
+    if command -v nvcc &> /dev/null; then
+        echo "CUDA compiler detected: $(nvcc --version | grep release | awk '{print $6}' | cut -c2-)"
+        return 0
+    fi
+
+    echo "No CUDA detected"
+    return 1
+}
+
+
+# Instantiate into a venv
 python3 -m venv venv
 source venv/bin/activate
 
 pip install pip --upgrade
+# Install basic requirements
 pip install -r requirements.txt
 pip install -e .
 
-pip install ipykernel
-python -m ipykernel install --user --name=venv
+# Install the correct jax based upon hardware
+if check_cuda; then
+   pip install -U "jax[cuda12_pip]==0.5.3"
+else
+   pip install -U jax
+fi
