@@ -2,7 +2,7 @@
 
 This repository contains a collection or robust neural network architectures developed at the Australian Centre For Robotics (ACFR). All networks are implemented in Python/JAX.
 
-Implemented networks architectures include:
+Implemented network architectures include:
 
 - Lipschitz-bounded Sandwich MLPs from [Wang & Manchester (ICML 2023)](https://proceedings.mlr.press/v202/wang23v.html).
 
