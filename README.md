@@ -18,16 +18,14 @@ This repository (and README) are a work-in-progress. More network architectures 
 
 To install the required dependencies, open a terminal in the root directory of this repository and enter the following commands.
 
+```bash
     ./install.sh
+```
 
-This will create a Python virtual environment and install all dependencies.
+This will create a Python virtual environment at ./venv and install all dependencies.
 
 ### A Note on Dependencies
 
-All code was tested and developed in Ubuntu 22.04 with CUDA 12.4 and Python 3.10.12.
+All code was tested and developed in Ubuntu 22.04 with CUDA 12.4 and Python 3.10.12. 
 
-Requirements were generated with [`pipreqs`](https://github.com/bndr/pipreqs). The `install.sh` script assumes the user is running JAX on an NVIDIA GPU with CUDA 12 already installed. If no GPU is available, simply remove the line
-
-    pip install -U "jax[cuda12_pip]"
-
-from the `install.sh` script. If you have a GPU that is not running CUDA (or a different CUDA version), edit the above installation command accordingly.
+Requirements were generated with [`pipreqs`](https://github.com/bndr/pipreqs). The ```install.sh``` will check for whether CUDA is available for your machine, and install the corresponding jax package. 
