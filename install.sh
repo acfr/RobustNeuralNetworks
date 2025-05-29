@@ -20,7 +20,6 @@ check_cuda() {
     return 1
 }
 
-
 # Instantiate into a venv
 python3 -m venv venv
 source venv/bin/activate
@@ -28,7 +27,7 @@ source venv/bin/activate
 pip install pip --upgrade
 # Install basic requirements
 pip install -r requirements.txt
-pip install -e .
+pip install -e . --use-pep517 # to avoid issues with setuptools
 
 # Install the correct jax based upon hardware
 if check_cuda; then

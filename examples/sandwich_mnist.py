@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings('ignore')
+
 import jax
 import jax.numpy as jnp                 # JAX NumPy
 import matplotlib.pyplot as plt         # Plotting
