@@ -32,7 +32,7 @@ pip install -e .
 
 # Install the correct jax based upon hardware
 if check_cuda; then
-   pip install -U "jax[cuda12_pip]==0.5.3"
+    pip install "jax[cuda12_pip]==0.5.3"
 else
-   pip install -U jax
+    pip install "jax<=0.5.3"
 fi
