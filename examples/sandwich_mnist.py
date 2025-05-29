@@ -9,26 +9,20 @@ import tensorflow as tf                 # TensorFlow / `tf.data` operations.
 import flax.linen as nn
 from robustnn import lbdn
 
+from functools import partial
 from pathlib import Path
 from utils.plot_utils import startup_plotting
 
 # Set up plot saving
 startup_plotting()
 dirpath = Path(__file__).resolve().parent
-filepath = dirpath / "results/mnist/"
+filepath = dirpath / "../results/mnist/"
 if not filepath.exists():
     filepath.mkdir(parents=True)
 
 # Set the random seed for reproducibility.
 seed = 42
 tf.random.set_seed(seed)
-
-# Define some learning hyperparameters
-# We'll use these to re-size the data
-train_steps = 2400      # Do fewer to speed up
-eval_every = 100        # Do fewer to speed up
-batch_size = 64         # Do fewer to speed up
-test_batch_size = 256
 
 
 #### 1. Data loading
@@ -50,6 +44,16 @@ def flatten_and_normalise(sample):
 train_ds = train_ds.map(flatten_and_normalise)
 test_ds = test_ds.map(flatten_and_normalise)
 
+# Data sizes for MNIST
+n_inputs = 28 * 28      # Images are 28 x 28 pixels each
+n_out = 10              # Numbers are 0 to 9, so 10 options
+
+# Hyperparameters/data sizes
+train_steps = 2000      # Number of training steps to take
+eval_every = 100        # How often to evaluate during training
+batch_size = 128        # Training batch size
+test_batch_size = 256   # Test batch size
+
 # Shuffle the dataset and group into batches. Skip any incomplete batches
 train_ds = train_ds.repeat().shuffle(1024, seed=seed)
 train_ds = train_ds.batch(batch_size, drop_remainder=True).take(train_steps).prefetch(1)
@@ -58,17 +62,13 @@ test_ds = test_ds.batch(test_batch_size, drop_remainder=True).prefetch(1)
 
 #### 2. Define Flax model
 
-# Data sizes for MNIST
-n_inputs = 28 * 28    # Images are 28 x 28 pixels each
-n_out = 10        # Numbers are 0 to 9, so 10 options
-
-class MLP(nn.Module):
+class UnconstrainedMLP(nn.Module):
     """A simple MLP model."""
-    
+
     def setup(self):
-      self.linear1 = nn.Dense(64)
-      self.linear2 = nn.Dense(64)
-      self.linear3 = nn.Dense(n_out)
+      self.linear1 = nn.Dense(64)       # Layer 1 has 64 hidden neurons
+      self.linear2 = nn.Dense(64)       # Layer 2 has 64 hidden neurons
+      self.linear3 = nn.Dense(n_out)    # Layer 3 has n_out=10 outputs (one for each number)
 
     def __call__(self, x):
         x = nn.relu(self.linear1(x))
@@ -76,10 +76,10 @@ class MLP(nn.Module):
         x = self.linear3(x)
         return x
       
-class LBDN(nn.Module):
-    """A simple LBDN model built with Sandwich layers."""
+class LipschitzMLP(nn.Module):
+    """A simple Lipschitz-bounded MLP built with Sandwich layers."""
     gamma: jnp.float32 = 1.0 # type: ignore
-    
+
     def setup(self):
       self.sandwich1 = lbdn.SandwichLayer(n_inputs, 64, activation=nn.relu)
       self.sandwich2 = lbdn.SandwichLayer(64, 64, activation=nn.relu)
@@ -95,36 +95,41 @@ class LBDN(nn.Module):
         return x
 
 # Instantiate the models
-model_mlp = MLP()
-model_lbdn = LBDN(gamma=2.0)
+model_mlp = UnconstrainedMLP()
+model_lip = LipschitzMLP(gamma=2.0)
 
 
-#### 3. Define loss metrics
+#### 3. Define loss metrics and utils
 
-# Define function for tracking loss and accuracy
+# Loss function: standard cross-entropy loss for image classification
 def get_loss(logits, labels):
     loss = optax.softmax_cross_entropy_with_integer_labels(logits, labels)
     return loss.mean()
-  
-def compute_metrics(logits, labels):
-    loss = get_loss(logits, labels)
-    accuracy = 100 * jnp.mean(jnp.argmax(logits, axis=-1) == labels)
-    return {"loss": loss, "accuracy": accuracy}
+
+# Compute classification accuracy
+def compute_accuracy(logits, labels):
+    return 100 * jnp.mean(jnp.argmax(logits, axis=-1) == labels)
+
+# Helper function to make predictions on a batch of data given a model and its learnable parameters
+@partial(jax.jit, static_argnums=0)
+def predict(model, params, batch):
+    logits = model.apply(params, batch['image'])
+    return logits.argmax(axis=1)
 
 
 #### 4. Define training function
 
-def train_mnist_classifier(model, seed=0):
-  
+def train_mnist_classifier(model, seed=42, verbose=True):
+
     # Initialise the model parameters
     rng = jax.random.key(seed)
     inputs = jnp.ones((1, n_inputs), jnp.float32)
     params = model.init(rng, inputs)
-    
+
     # Set up the optimiser
     optimizer = optax.adam(learning_rate=0.005)
     opt_state = optimizer.init(params)
-    
+
     # Loss function
     @jax.jit
     def loss_fn(params, batch):
@@ -140,121 +145,113 @@ def train_mnist_classifier(model, seed=0):
         updates, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
         return params, opt_state
-      
-    # Train over many batches and log test error metrics
-    metrics = {"test_loss": [], "test_accuracy": [], "step": []}
+
+    # Train over many batches and log test accuracy
+    metrics = {"step": [], "test_accuracy": []}
     for step, batch in enumerate(train_ds.as_numpy_iterator()):
-        
+
         # Run the optimiser for one step
         params, opt_state = train_step(params, opt_state, batch)
-        
+
         # Log metrics intermittently
         if step == 0 or (step % eval_every == 0 or step == train_steps - 1):
-            batch_metrics = {"loss": [], "accuracy": []}
+            batch_accuracy = []
             for test_batch in test_ds.as_numpy_iterator():
                 _, test_logits = loss_fn(params, test_batch)
-                results = compute_metrics(test_logits, test_batch["label"])
-                batch_metrics["loss"].append(results["loss"])
-                batch_metrics["accuracy"].append(results["accuracy"])
-            metrics["test_loss"].append(np.mean(batch_metrics["loss"]))
-            metrics["test_accuracy"].append(np.mean(batch_metrics["accuracy"]))
+                acc = compute_accuracy(test_logits, test_batch["label"])
+                batch_accuracy.append(acc)
             metrics["step"].append(step)
-            
+            metrics["test_accuracy"].append(np.mean(batch_accuracy))
+
+            # Print the results to inform the user
+            if verbose and (step % (5*eval_every) == 0 or step == train_steps - 1):
+                print(f"Training step: {step}\tTest accuracy (%): {metrics['test_accuracy'][-1]:.2f}")
+
     return params, metrics
 
 
 #### 5. Train models
-params_mlp, metrics_mlp = train_mnist_classifier(model_mlp, seed)
-params_lbdn, metrics_lbdn = train_mnist_classifier(model_lbdn, seed)
+params_mlp, metrics_mlp = train_mnist_classifier(model_mlp, seed, verbose=True)
+params_lip, metrics_lip = train_mnist_classifier(model_lip, seed, verbose=True)
 
 # Plot loss and accuracy in subplots
 color_mlp = "#009E73"
-color_lbdn = "#D55E00"
+color_lip = "#D55E00"
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 3))
+fig, ax = plt.subplots(1, 1, figsize=(6, 4))
+ax.plot(metrics_mlp["step"], metrics_mlp["test_accuracy"], color=color_mlp, label="Unconstrained")
+ax.plot(metrics_lip["step"], metrics_lip["test_accuracy"], "--", color=color_lip, label="Lipschitz")
 
-ax1.plot(metrics_mlp["step"], metrics_mlp["test_loss"], color=color_mlp, label="MLP")
-ax2.plot(metrics_mlp["step"], metrics_mlp["test_accuracy"], color=color_mlp, label="MLP")
-
-ax1.plot(metrics_lbdn["step"], metrics_lbdn["test_loss"], "--", color=color_lbdn, label="Lipschitz")
-ax2.plot(metrics_lbdn["step"], metrics_lbdn["test_accuracy"], "--", color=color_lbdn, label="Lipschitz")
-
-ax1.set_xlabel("Training epochs")
-ax2.set_xlabel("Training epochs")
-ax1.set_ylabel("Test loss")
-ax2.set_ylabel("Test accuracy (\%)")
-
-ax1.legend()
-ax2.legend()
-
+ax.set_xlabel("Training epochs")
+ax.set_ylabel("Test accuracy (\%)")
+ax.set_xlim(0, train_steps)
+ax.legend(loc="lower right")
 plt.tight_layout()
+
 plt.savefig(filepath / "train.pdf")
 plt.close()
 
 
 #### 6. Perform inference
-@jax.jit(static_argnums=0)
-def predict(model, params, batch):
-    logits = model.apply(params, batch['image'])
-    return logits.argmax(axis=1)
-  
+
 def plot_mnist_results(test_batch, pred, name):
 
-    fig, axs = plt.subplots(2, 5, figsize=(12, 5))
+    fig, axs = plt.subplots(1, 3, figsize=(9, 5))
     for i, ax in enumerate(axs.flatten()):
-        
+
         # Reshape image again for plotting
+        i = i + 1   # Choose nice examples
         label = test_batch['label'][i]
         image = test_batch['image'][i]
         image = jnp.reshape(image, (28, 28))
-        
+
         # Plot the number
         ax.imshow(image, cmap='gray')
         ax.set_title(f"Label: {label}, Pred: {pred[i]}")
         ax.axis('off')
+        fig.suptitle(name)
     plt.savefig(filepath / f"test_{name}.pdf")
     plt.close()
-
 
 # Run the predictions
 test_batch = test_ds.as_numpy_iterator().next()
 pred_mlp = predict(model_mlp, params_mlp, test_batch)
-pred_lbdn = predict(model_lbdn, params_lbdn, test_batch)
+pred_lip = predict(model_lip, params_lip, test_batch)
 
 # Plot the predictions
-plot_mnist_results(test_batch, pred_mlp, "mlp")
-plot_mnist_results(test_batch, pred_lbdn, "lbdn")
+plot_mnist_results(test_batch, pred_mlp, "Unconstrained MLP")
+plot_mnist_results(test_batch, pred_lip, "Lipschitz-bounded MLP")
 
 
 #### 7. Add adversarial attacks with PGD
 
-def pgd_attack(    
+# Compute l2-optimal adversarial attacks with projected gradient descent.
+def pgd_attack(
     model,
     params,
     test_batch,
     attack_size=1,
     max_iter=500,
     learning_rate=0.01,
-    verbose=False,
-    seed=0
+    seed=42
 ):
-    
+
     # Edge case
     if attack_size == 0:
         return jnp.zeros(test_batch["image"].shape), test_batch
-    
+
     # Define how to constrain attack size (l2 norm)
     def project_attack(attack, attack_size):
         attack = attack / jnp.linalg.norm(attack, axis=-1, keepdims=True)
         return attack_size * attack
-    
+
     # Initialise an attack
     rng = jax.random.key(seed)
     rng, key1 = jax.random.split(rng)
     attack = jax.random.uniform(key1, test_batch["image"].shape)
     attack = (project_attack(attack, attack_size),)
-    
-    # Set up the optimizer 
+
+    # Set up the optimizer
     optimizer = optax.adam(learning_rate)
     opt_state = optimizer.init(attack)
 
@@ -269,21 +266,19 @@ def pgd_attack(
     # A single attack step with projected gradient descent
     @jax.jit
     def attack_step(attack, opt_state, batch):
-        grad_fn = jax.value_and_grad(loss_fn)
-        loss, grads = grad_fn(attack, batch)
+        grad_fn = jax.grad(loss_fn)
+        grads = grad_fn(attack, batch)
         updates, opt_state = optimizer.update(grads, opt_state)
         attack = optax.apply_updates(attack, updates)
-        return attack, opt_state, loss
+        return attack, opt_state
 
     # Use gradient descent to estimate the Lipschitz bound
-    for iter in range(max_iter):
-        attack, opt_state, loss = attack_step(attack, opt_state, test_batch)
-        if verbose and iter % 20 == 0:
-            print("Iter: ", iter, "\t L: ", loss)
-    
+    for _ in range(max_iter):
+        attack, opt_state = attack_step(attack, opt_state, test_batch)
+
     # Return the attack and the perturbed image
     attack = project_attack(attack[0], attack_size)
-    attack_batch = {"image": test_batch["image"] + attack, 
+    attack_batch = {"image": test_batch["image"] + attack,
                       "label": test_batch["label"]}
     return attack, attack_batch
   
@@ -294,39 +289,36 @@ def attacked_test_error(model, params, test_batch, attack_size):
     logits = model.apply(params, attack_batch['image'])
     labels = test_batch["label"]
     return 100 * jnp.mean(jnp.argmax(logits, axis=-1) == labels)
-  
-attack_sizes = jnp.arange(0, 3.1, 0.1)
-acc_mlp = []
-acc_lbdn = []
+
+# Run the attacks
+attack_resolution = 0.2
+attack_sizes = jnp.arange(0, 3 + attack_resolution, attack_resolution)
+acc_mlp, acc_lip = [], []
+print("Attack size:", end=" ")
 for a in attack_sizes:
+    print(f"{a:.1f}", end=", ")
     acc_mlp.append(attacked_test_error(model_mlp, params_mlp, test_batch, a))
-    acc_lbdn.append(attacked_test_error(model_lbdn, params_lbdn, test_batch, a))
+    acc_lip.append(attacked_test_error(model_lip, params_lip, test_batch, a))
+print()
+
 
 # Plot the results
-plt.plot(attack_sizes, acc_mlp, color=color_mlp, label="MLP")
-plt.plot(attack_sizes, acc_lbdn, "--", color=color_lbdn, label="Lipschtiz")
+plt.plot(attack_sizes, acc_mlp, color=color_mlp, label="Unconstrained")
+plt.plot(attack_sizes, acc_lip, "--", color=color_lip, label="Lipschtiz")
 plt.xlabel("Attack size (normalised)")
-plt.ylabel("Accuracy (\%)")
+plt.ylabel("Accuracy (%)")
 plt.legend()
 plt.tight_layout()
 plt.savefig(filepath / "attacks.pdf")
 
 # Examples when MLP is at about 20% accuracy
-attack_size = 1.0
+attack_size = 0.9
 _, attack_batch_mlp = pgd_attack(model_mlp, params_mlp, test_batch, attack_size)
 pred_mlp = predict(model_mlp, params_mlp, attack_batch_mlp)
-plot_mnist_results(attack_batch_mlp, pred_mlp, "mlp_attacked_10")
-
-_, attack_batch_lbdn = pgd_attack(model_lbdn, params_lbdn, test_batch, attack_size)
-pred_lbdn = predict(model_lbdn, params_lbdn, attack_batch_lbdn)
-plot_mnist_results(attack_batch_lbdn, pred_lbdn, "lipschitz_attacked_10")
+plot_mnist_results(attack_batch_mlp, pred_mlp, f"Unconstrained MLP with attack size {attack_size}")
 
 # Examples when Lipschitz is at about 20 % accuracy
-attack_size = 2.1
-_, attack_batch_mlp = pgd_attack(model_mlp, params_mlp, test_batch, attack_size)
-pred_mlp = predict(model_mlp, params_mlp, attack_batch_mlp)
-plot_mnist_results(attack_batch_mlp, pred_mlp, "mlp_attacked_21")
-
-_, attack_batch_lbdn = pgd_attack(model_lbdn, params_lbdn, test_batch, attack_size)
-pred_lbdn = predict(model_lbdn, params_lbdn, attack_batch_lbdn)
-plot_mnist_results(attack_batch_lbdn, pred_lbdn, "lipschitz_attacked_21")
+attack_size = 2.0
+_, attack_batch_lip = pgd_attack(model_lip, params_lip, test_batch, attack_size)
+pred_lip = predict(model_lip, params_lip, attack_batch_lip)
+plot_mnist_results(attack_batch_lip, pred_lip, f"Lipschitz-bounded MLP with attack size {attack_size}")
