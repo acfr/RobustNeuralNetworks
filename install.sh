@@ -20,19 +20,22 @@ check_cuda() {
     return 1
 }
 
-
 # Instantiate into a venv
 python3 -m venv venv
 source venv/bin/activate
 
-pip install pip --upgrade
 # Install basic requirements
+pip install pip --upgrade
 pip install -r requirements.txt
-pip install -e .
 
 # Install the correct jax based upon hardware
 if check_cuda; then
-   pip install -U "jax[cuda12_pip]==0.5.3"
+    pip install "jax[cuda12_pip]==0.5.3"
 else
-   pip install -U jax
+    pip install "jax<=0.5.3"
 fi
+
+# Install the package locally in editable mode for dev
+# Flag PEP517 to avoid issues with deprecated versions of local/editable 
+# installs using setuptools (https://github.com/pypa/pip/issues/11457)
+pip install -e . --use-pep517
