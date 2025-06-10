@@ -2,7 +2,9 @@
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 from pathlib import Path
 
 from robustnn import ren
@@ -115,12 +117,22 @@ def train_and_test(config):
     x_true = results["true_states"]
     xhat = results["pred_states"]
     
+    # For nice colours, change the color map a little bit
+    def truncate_colormap(cmap, minval=0.1, maxval=1.0, n=256):
+        new_cmap = LinearSegmentedColormap.from_list(
+            f'trunc({cmap.name},{minval:.2f},{maxval:.2f})',
+            cmap(np.linspace(minval, maxval, n))
+        )
+        return new_cmap
+    cmap = plt.get_cmap('hot')
+    cmap = truncate_colormap(cmap, minval=0.0, maxval=0.85)
+    
     # Function for plotting the heat maps
     def plot_heatmap(data, i, ax):
         xlabel = "Time steps" if i >= 3 else ""
         ylabel = "True" if i == 1 else ("Observer" if i == 2 else "Error")
         
-        im = ax.imshow(data, aspect='auto', cmap="inferno", origin='lower')
+        im = ax.imshow(data, aspect='auto', cmap=cmap, origin='lower')
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_yticks([])
