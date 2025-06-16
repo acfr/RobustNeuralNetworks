@@ -1,4 +1,4 @@
-# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/nic-barbara/RobustNeuralNetworks/blob/main/LICENSE 
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
 '''
 BilipNet is a neural network architecture that combines Unitary and Monotone Lipschitz layers.
