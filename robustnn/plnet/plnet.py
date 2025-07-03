@@ -154,6 +154,12 @@ class PLNet(nn.Module):
 
         return y
     
+    def _get_bounds(self):
+        """Get the bounds for the BiLipNet layer."""
+
+        lipmin, lipmax, tau = self.BiLipBlock._get_bounds()
+        return lipmin, lipmax, tau
+
     @nn.compact
     def __call__(self, x: jnp.array, x_optimal: jnp.array = None) -> jnp.array:
         """
@@ -171,6 +177,15 @@ class PLNet(nn.Module):
         """
         explicit = self._direct_to_explicit(x_optimal)
         return self._explicit_call(x, explicit)  
+    
+    def get_bounds(self, params: dict = None) -> tuple:
+        """Get the bounds for the BiLipNet layer.
+        Args:
+            params (dict): Flax model parameters dictionary.
+        Returns:
+            tuple: (lipmin, lipmax, tau)
+        """
+        return self.apply(params, method="_get_bounds")
 
     def explicit_call(self, params: dict, x: Array, explicit: ExplicitPLParams):
         """

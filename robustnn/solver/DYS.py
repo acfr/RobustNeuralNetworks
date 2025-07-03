@@ -46,7 +46,7 @@ def mln_RA(gam, mu, S, V, alpha_, bz, zh, uh, units):
 from robustnn.plnet.monlipnet import ExplicitMonLipParams
 def DavisYinSplit(uk, bz, e: ExplicitMonLipParams, 
         inverse_activation_fn: Callable = nn.relu, 
-        Lambda: float = 1.0) -> Tuple[Array, Array]:
+        Lambda: float = 1.0, alpha: float = 1.0) -> Tuple[Array, Array]:
     """
     Davis-Yin split solver for MonLip networks.
     Args:
@@ -65,7 +65,7 @@ def DavisYinSplit(uk, bz, e: ExplicitMonLipParams,
     uh = 2*zh - uk 
     # eq 31
     # a/(1+a) V z + a/(1+a) (bz - gamma / u * S * ST zh) + 1/(1+a) uh
-    zk = mln_RA(e.gam, e.mu, e.S, e.V, e.alpha, bz, zh, uh, e.units)
+    zk = mln_RA(e.gam, e.mu, e.S, e.V, alpha, bz, zh, uh, e.units)
     # u=u+z-z
     uk += Lambda * (zk - zh) 
 

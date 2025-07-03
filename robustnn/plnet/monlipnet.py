@@ -13,7 +13,6 @@ from typing import Any, Sequence, Callable
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
 from flax.struct import dataclass
-from robustnn.solver.DYS import DavisYinSplit
 
 @dataclass
 class DirectMonLipParams:
@@ -58,7 +57,7 @@ class ExplicitInverseMonLipParams:
     Lambda: float = 1.0 # step size for the update in DYS solver
 
 
-
+from robustnn.solver.DYS import DavisYinSplit
 class MonLipNet(nn.Module):
     '''
     Monotone Lipschitz neural network layer using Cayley transform.
@@ -111,23 +110,23 @@ class MonLipNet(nn.Module):
         elif self.is_mu_fixed:
             mu = self.mu
             log_nu = self.variables['params']['lognu']
-            nu = jnp.exp(log_nu)
+            nu = jnp.exp(log_nu)[-1]
             tau = nu / mu
         elif self.is_nu_fixed:
             nu = self.nu
             log_mu = self.variables['params']['logmu']
-            mu = jnp.exp(log_mu)
+            mu = jnp.exp(log_mu)[-1]
             tau = nu / mu
         elif self.is_tau_fixed:
             tau = self.tau
             log_mu = self.variables['params']['logmu']
-            mu = jnp.exp(log_mu)
+            mu = jnp.exp(log_mu)[-1]
             nu = tau * mu
         else:
             log_mu = self.variables['params']['logmu']
-            mu = jnp.exp(log_mu)
+            mu = jnp.exp(log_mu)[-1]
             log_nu = self.variables['params']['lognu']
-            nu = jnp.exp(log_nu)
+            nu = jnp.exp(log_nu)[-1]
             tau = nu / mu
         return mu, nu, tau
 
@@ -151,23 +150,23 @@ class MonLipNet(nn.Module):
         elif self.is_mu_fixed:
             mu = self.mu
             log_nu = self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32)
-            nu = jnp.exp(log_nu)
+            nu = jnp.exp(log_nu)[-1]
             tau = nu / mu
         elif self.is_nu_fixed:
             nu = self.nu
             log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)
+            mu = jnp.exp(log_mu)[-1]
             tau = nu / mu
         elif self.is_tau_fixed:
             tau = self.tau
             log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)
+            mu = jnp.exp(log_mu)[-1]
             nu = tau * mu
         else:
             log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)
+            mu = jnp.exp(log_mu)[-1]
             log_nu = self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32)
-            nu = jnp.exp(log_nu)
+            nu = jnp.exp(log_nu)[-1]
             tau = nu / mu
 
         by = self.param('by', nn.initializers.zeros_init(), (self.input_size,), jnp.float32)
@@ -200,7 +199,7 @@ class MonLipNet(nn.Module):
         Q = QT.T
         sqrt_2g, sqrt_g2 = jnp.sqrt(2. * gam), jnp.sqrt(gam / 2.)
 
-        V, S, bh = [], [], []
+        V, S = [], []
         STks, BTks = [], []
         Ak_1s = [jnp.zeros((0, 0))]
         idx, nz_1 = 0, 0
@@ -237,10 +236,10 @@ class MonLipNet(nn.Module):
             nu=nu,
             gam=gam,
             units=self.units,
-            V=V,
-            S=S,
-            by=by,
-            bh=bh,
+            V=jnp.array(V, dtype=jnp.float32),
+            S=jnp.array(S, dtype=jnp.float32),
+            by=jnp.array(by, dtype=jnp.float32),
+            bh=jnp.array(bh, dtype=jnp.float32),
             sqrt_g2=sqrt_g2,
             sqrt_2g=sqrt_2g,
             STks=STks,
@@ -311,6 +310,7 @@ class MonLipNet(nn.Module):
 
         # y to b
         # inverse of equation 12
+        # bz = (y - e.by) / e.sqrt_2g
         bz = e.sqrt_2g/e.mu * (y-e.by) @ e.S.T + e.bh
         uk = jnp.zeros(jnp.shape(bz))
 
@@ -319,11 +319,18 @@ class MonLipNet(nn.Module):
         for i in range(e_inv.iterations):
             # iterate until converge for zk using DYS solver
             zk, uk = DavisYinSplit(uk, bz, e, 
-                inverse_activation_fn=e_inv.inverse_activation_fn, Lambda=e_inv.Lambda)
+                inverse_activation_fn=e_inv.inverse_activation_fn, 
+                Lambda=e_inv.Lambda,
+                alpha=e_inv.alpha)
 
         # z to x
         x = (y - e.by - e.sqrt_g2 * zk @ e.S) / e.mu
 
+
+        # check loss here
+        # import jax
+        # diff = jnp.linalg.norm(y - self.__call__(x), axis=-1)
+        # jax.debug.print(f"MonLipNet inverse loss: {jnp.mean(diff)}")
         return x
 
 

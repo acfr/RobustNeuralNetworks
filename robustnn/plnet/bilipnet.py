@@ -38,6 +38,7 @@ class ExplicitBiLipParams:
     lipmax: float
     distortion: float
 
+@dataclass
 class ExplicitInverseBiLipParams:
     """Data class to keep track of explicit params for Monontone Lipschitz layer."""
     monlip_layers: Sequence[ExplicitInverseMonLipParams]
@@ -197,8 +198,8 @@ class BiLipNet(nn.Module):
         """Call method for the BiLipNet layer using explicit parameters."""
         for k in range(self.depth, 0, -1):
             x = self.uni[k]._explicit_inverse_call( x, explicit.unitary_layers[k])
-            x = self.mon[k-1]._explicit_inverse_call( x, explicit.monlip_layers[k])
-        x = self.uni[0]._explicit_call( x, explicit.unitary_layers[self.depth])
+            x = self.mon[k-1]._explicit_inverse_call( x, explicit.monlip_layers[k-1])
+        x = self.uni[0]._explicit_inverse_call( x, explicit.unitary_layers[0])
         return x
     
     @nn.compact
