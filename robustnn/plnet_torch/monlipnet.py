@@ -4,6 +4,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Sequence
 import numpy as np 
+from robustnn.solver.DYS import DavisYinSplit
+
+class Params(nn.Module):
+    def __init__(self, **kwargs):
+        super().__init__()
+        for k, v in kwargs.items():
+            if isinstance(v, torch.Tensor):
+                self.register_buffer(k, v)  # not learnable
+            else:
+                setattr(self, k, v)
 
 def cayley(W: torch.Tensor) -> torch.Tensor:
     cout, cin = W.shape
@@ -112,7 +122,7 @@ class MonLipLayer(nn.Module):
             nz_1 = nz
         self.Fr = nn.ParameterList(Fr)
         self.fr = nn.ParameterList(fr)
-        self.b = nn.ParameterList(b)
+        self.bs = nn.ParameterList(b)
         # cached weights
         self.Q = None 
         self.R = None 
@@ -138,8 +148,8 @@ class MonLipLayer(nn.Module):
         idx = 0 
         for k, nz in enumerate(self.units):
             xk = xh[..., idx:idx+nz]
-            gh = sqrt_2 * self.act (sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.b[k]) @ R[k]
-            # gh = sqrt_2 * F.relu (sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.b[k]) @ R[k]
+            gh = sqrt_2 * self.act (sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.bs[k]) @ R[k]
+            # gh = sqrt_2 * F.relu (sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.bs[k]) @ R[k]
             hk = gh[..., :nz] - xk
             gk = gh[..., nz:]
             yh.append(hk_1-gk)
@@ -150,3 +160,99 @@ class MonLipLayer(nn.Module):
         yh = torch.cat(yh, dim=-1)
         y = 0.5 * ((self.mu + self.nu) * x + sqrt_gam * yh @ Q) + self.by 
         return y
+    
+    def _get_explicit_params(self):
+        """
+        Get explicit parameters for the MonLip layer.
+        Returns:
+            dict: Dictionary containing the explicit parameters.
+        """
+        gam = self.nu-self.mu
+        by = self.by
+        bs = self.bs
+        bh = torch.cat(bs, axis=0)
+        QT = cayley((self.fq / norm(self.Fq)) * self.Fq)
+        Q = QT.T
+        sqrt_2g, sqrt_g2 = math.sqrt(2. * gam), math.sqrt(gam / 2.)
+
+        V, S = [], []
+        STks, BTks = [], []
+        Ak_1s = [torch.zeros((0, 0))]
+        idx, nz_1 = 0, 0
+        for k, nz in enumerate(self.units):
+            Qk = Q[idx:idx+nz, :] 
+            Fab = self.Fr[k]
+            fab = self.fr[k]
+            ABT = cayley((fab / norm(Fab)) * Fab)
+            ATk, BTk = ABT[:nz, :], ABT[nz:, :]
+            QTk_1, QTk = QT[:, idx-nz_1:idx], QT[:, idx:idx+nz]
+            STk = QTk @ ATk - QTk_1 @ BTk
+
+            # calculate V and S
+            if k > 0:
+                Ak, Bk = ATk.T, BTk.T
+                V.append(2 * Bk @ ATk_1)
+                S.append(Ak @ Qk - Bk @ Qk_1)
+            else:
+                Ak = ATk.T
+                S.append(ABT.T @ Qk)
+            ATk_1, Qk_1 = Ak.T, Qk
+            
+            STks.append(STk)
+            BTks.append(BTk)
+            Ak_1s.append(ATk.T)
+            idx += nz
+            nz_1 = nz
+
+        Ak_1s=Ak_1s[:-1]
+        S = torch.cat(S, axis=0)
+
+        return Params(
+            mu=self.mu,
+            nu=self.nu,
+            gam=self.nu - self.mu,
+            units=self.units,
+            V=V,
+            S=S,
+            by=by,
+            bh=bh,
+            sqrt_2g=sqrt_2g,
+            sqrt_g2=sqrt_g2,
+            STks=STks,
+            Ak_1s=Ak_1s,
+            BTks=BTks,
+            bs=bs,
+        )
+
+    
+    def inverse(self, y,
+                alpha: float = 1.0,
+                inverse_activation_fn: callable = F.relu,
+                iterations: int = 200,
+                Lambda: float = 1.0):
+        mon_params = self._get_explicit_params()
+
+        # y to b
+        # inverse of equation 12
+        # bz = (y - e.by) / e.sqrt_2g
+        bz = mon_params.sqrt_2g/mon_params.mu * (y-mon_params.by) @ mon_params.S.T + mon_params.bh
+        uk = torch.zeros(bz)
+
+        # iterate until converge for zk using DYS solver
+        # todo: might change this for loop to jitable loop
+        for i in range(iterations):
+            # iterate until converge for zk using DYS solver
+            zk, uk = DavisYinSplit(uk, bz, mon_params, 
+                inverse_activation_fn=inverse_activation_fn, 
+                Lambda=Lambda,
+                alpha=alpha)
+
+        # z to x
+        x = (y - mon_params.by - mon_params.sqrt_g2 * zk @ mon_params.S) / mon_params.mu
+
+
+        # check loss here
+        # import jax
+        # diff = jnp.linalg.norm(y - self.__call__(x), axis=-1)
+        # jax.debug.print(f"MonLipNet inverse loss: {jnp.mean(diff)}")
+        return x
