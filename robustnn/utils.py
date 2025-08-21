@@ -3,7 +3,7 @@
 import jax
 import jax.numpy as jnp
 
-from typing import Callable, Any, Tuple
+from typing import Callable, Any, Tuple, Union
 from flax.typing import Array, PrecisionLike
 
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
@@ -16,7 +16,7 @@ def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
     return jnp.sqrt(jnp.sum(x**2, **kwargs) + eps)
 
 
-def cayley(W: Array, return_split:bool=False) -> Array | Tuple[Array, Array]:
+def cayley(W: Array, return_split:bool=False) -> Union[Array, Tuple[Array, Array]]:
     """Perform Cayley transform on a stacked matrix `W = [U; V]`
     with `U.shape == (n, n)` and `V.shape == (m, n)`.
 

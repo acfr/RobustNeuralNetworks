@@ -17,7 +17,7 @@ class MonLipLayer(nn.Module):
                  is_mu_fixed: bool = False,
                  is_nu_fixed: bool = False,
                  is_tau_fixed: bool = False,
-                 act: nn.Module = nn.ReLU):
+                 act: nn.Module = nn.ReLU()):
         super().__init__()
         self.is_mu_fixed = is_mu_fixed
         self.is_nu_fixed = is_nu_fixed
@@ -97,7 +97,7 @@ class MonLipLayer(nn.Module):
         idx = 0 
         for k, nz in enumerate(self.units):
             xk = xh[..., idx:idx+nz]
-            gh = sqrt_2 * self.act (sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.bs[k]) @ R[k]
+            gh = sqrt_2 * (self.act(sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.bs[k]) ) @ R[k]
             # gh = sqrt_2 * F.relu (sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.bs[k]) @ R[k]
             hk = gh[..., :nz] - xk
             gk = gh[..., nz:]
@@ -185,7 +185,7 @@ class MonLipLayer(nn.Module):
         # inverse of equation 12
         # bz = (y - e.by) / e.sqrt_2g
         bz = mon_params.sqrt_2g/mon_params.mu * (y-mon_params.by) @ mon_params.S.T + mon_params.bh
-        uk = torch.zeros(bz)
+        uk = torch.zeros_like(bz)
 
         # iterate until converge for zk using DYS solver
         # todo: might change this for loop to jitable loop

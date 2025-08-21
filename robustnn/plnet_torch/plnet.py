@@ -25,7 +25,7 @@ class PLNet(nn.Module):
         self.bln = BiLipBlock 
         self.use_bias = add_constant
         if add_constant:
-            self.bias = nn.Parameter(torch.zeros((1,))) 
+            self.bias = nn.Parameter(torch.zeros(1)) 
 
         self.optimal_point = optimal_point
 

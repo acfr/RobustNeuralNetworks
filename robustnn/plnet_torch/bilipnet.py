@@ -16,7 +16,7 @@ class BiLipNet(nn.Module):
                  is_nu_fixed: bool = False,
                  is_tau_fixed: bool = False,
                  nlayer: int = 1,
-                 act: nn.Module = nn.ReLU):
+                 act: nn.Module = nn.ReLU()):
         super().__init__()
         self.nlayer = nlayer
 
