@@ -119,20 +119,23 @@ class MonLipLayer(nn.Module):
         gam = self.nu-self.mu
         by = self.by
         bs = self.bs
-        bh = torch.cat(bs, axis=0)
-        QT = cayley((self.fq / norm(self.Fq)) * self.Fq)
+        # bh = torch.cat(bs, axis=0)
+        bh = torch.cat([b for b in bs], dim=0)
+        QT = cayley((self.fq / norm(self.Fq.T)) * self.Fq.T)
         Q = QT.T
         sqrt_2g, sqrt_g2 = math.sqrt(2. * gam), math.sqrt(gam / 2.)
 
         V, S = [], []
         STks, BTks = [], []
-        Ak_1s = [torch.zeros((0, 0))]
+        Ak_1s = [torch.zeros((0, 0)).detach().cpu().numpy()]
         idx, nz_1 = 0, 0
         for k, nz in enumerate(self.units):
             Qk = Q[idx:idx+nz, :] 
-            Fab = self.Fr[k]
+            Fab = self.Fr[k].T
             fab = self.fr[k]
             ABT = cayley((fab / norm(Fab)) * Fab)
+
+            # todo: check the dimension here
             ATk, BTk = ABT[:nz, :], ABT[nz:, :]
             QTk_1, QTk = QT[:, idx-nz_1:idx], QT[:, idx:idx+nz]
             STk = QTk @ ATk - QTk_1 @ BTk
@@ -140,37 +143,37 @@ class MonLipLayer(nn.Module):
             # calculate V and S
             if k > 0:
                 Ak, Bk = ATk.T, BTk.T
-                V.append(2 * Bk @ ATk_1)
-                S.append(Ak @ Qk - Bk @ Qk_1)
+                V.append((2 * Bk @ ATk_1).detach().cpu().numpy())
+                S.append((Ak @ Qk - Bk @ Qk_1))
             else:
                 Ak = ATk.T
                 S.append(ABT.T @ Qk)
             ATk_1, Qk_1 = Ak.T, Qk
             
-            STks.append(STk)
-            BTks.append(BTk)
-            Ak_1s.append(ATk.T)
+            STks.append(STk.detach().cpu().numpy())
+            BTks.append(BTk.detach().cpu().numpy())
+            Ak_1s.append(ATk.T.detach().cpu().numpy())
             idx += nz
             nz_1 = nz
 
         Ak_1s=Ak_1s[:-1]
-        S = torch.cat(S, axis=0)
+        S = torch.cat(S, axis=0).detach().cpu().numpy()
 
         return Params(
-            mu=self.mu,
-            nu=self.nu,
-            gam=self.nu - self.mu,
+            mu=self.mu.detach().cpu().numpy(),
+            nu=self.nu.detach().cpu().numpy(),
+            gam=self.nu.detach().cpu().numpy() - self.mu.detach().cpu().numpy(),
             units=self.units,
             V=V,
             S=S,
-            by=by,
-            bh=bh,
+            by=by.detach().cpu().numpy(),
+            bh=bh.detach().cpu().numpy(),
             sqrt_2g=sqrt_2g,
             sqrt_g2=sqrt_g2,
             STks=STks,
             Ak_1s=Ak_1s,
             BTks=BTks,
-            bs=bs,
+            bs=[b.detach().cpu().numpy() for b in bs],
         )
 
     
@@ -185,7 +188,7 @@ class MonLipLayer(nn.Module):
         # inverse of equation 12
         # bz = (y - e.by) / e.sqrt_2g
         bz = mon_params.sqrt_2g/mon_params.mu * (y-mon_params.by) @ mon_params.S.T + mon_params.bh
-        uk = torch.zeros_like(bz)
+        uk = np.zeros_like(bz)
 
         # iterate until converge for zk using DYS solver
         # todo: might change this for loop to jitable loop

@@ -15,10 +15,10 @@ class BiLipNet(nn.Module):
                  is_mu_fixed: bool = False,
                  is_nu_fixed: bool = False,
                  is_tau_fixed: bool = False,
-                 nlayer: int = 1,
+                 depth: int = 1,
                  act: nn.Module = nn.ReLU()):
         super().__init__()
-        self.nlayer = nlayer
+        self.depth = depth
 
         # set up mu, nu, and tau
         # Determine which one to compute
@@ -32,21 +32,21 @@ class BiLipNet(nn.Module):
         elif nu is None:
             nu = mu * tau
 
-        mu = mu ** (1./nlayer)
-        nu = nu ** (1./nlayer)
+        mu = mu ** (1./depth)
+        nu = nu ** (1./depth)
         tau = nu / mu
 
-        olayer = [CayleyLinear(features, features) for _ in range(nlayer+1)]
+        olayer = [CayleyLinear(features, features) for _ in range(depth+1)]
         self.orth_layers = nn.Sequential(*olayer)
         mlayer = [MonLipLayer(features, unit_features, mu, nu, tau,
-                              is_mu_fixed, is_nu_fixed, is_tau_fixed, act) for _ in range(nlayer)]
+                              is_mu_fixed, is_nu_fixed, is_tau_fixed, act) for _ in range(depth)]
         self.mon_layers = nn.Sequential(*mlayer)
 
     def forward(self, x):
-        for k in range(self.nlayer):
+        for k in range(self.depth):
             x = self.orth_layers[k](x)
             x = self.mon_layers[k](x)
-        x = self.orth_layers[self.nlayer](x)
+        x = self.orth_layers[self.depth](x)
         return x 
     
     def inverse(self, y,
