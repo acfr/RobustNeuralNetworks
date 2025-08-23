@@ -181,21 +181,21 @@ class MonLipNet(nn.Module):
             tau = nu / mu
 
         by = self.param('by', nn.initializers.zeros_init(), (self.input_size,), jnp.float32)
-        # Fq = self.param('Fq', nn.initializers.glorot_normal(), (self.input_size, sum(self.units)), jnp.float32)
-        Fq = self.param('Fq', seq_init, (self.input_size, sum(self.units)), jnp.float32)
+        Fq = self.param('Fq', nn.initializers.glorot_normal(), (self.input_size, sum(self.units)), jnp.float32)
+        # Fq = self.param('Fq', seq_init, (self.input_size, sum(self.units)), jnp.float32)
         fq = self.param('fq', nn.initializers.constant(jnp.linalg.norm(Fq)), (1,), jnp.float32)
         Fabs = []
         fabs = []
         bs = []
         nz_1 = 0
         for k, nz in enumerate(self.units):
-            # Fab = self.param(f'Fab{k}', nn.initializers.glorot_normal(), (nz+nz_1, nz), jnp.float32)
-            Fab = self.param(
-                f'Fab{k}',
-                seq_init,                          # 👈 custom initializer
-                (nz + nz_1, nz),
-                jnp.float32
-            )
+            Fab = self.param(f'Fab{k}', nn.initializers.glorot_normal(), (nz+nz_1, nz), jnp.float32)
+            # Fab = self.param(
+            #     f'Fab{k}',
+            #     seq_init,                          # 👈 custom initializer
+            #     (nz + nz_1, nz),
+            #     jnp.float32
+            # )
             fab = self.param(f'fab{k}', nn.initializers.constant(jnp.linalg.norm(Fab)), (1,), jnp.float32)
             bs.append(self.param(f'b{k}', nn.initializers.zeros_init(), (nz,), jnp.float32))
             Fabs.append(Fab)

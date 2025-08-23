@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Sequence
 from robustnn.plnet_torch.monlipnet import MonLipLayer, CayleyLinear
+import numpy as np
 
 class BiLipNet(nn.Module):
     def __init__(self,
@@ -65,13 +66,31 @@ class BiLipNet(nn.Module):
         Returns:
             torch.Tensor: Inverted tensor.
         """
+        x = y
         for k in range(self.depth, 0, -1):
-            x = self.orth_layers[k].inverse(y)
+            # x_old = x
+            # print(x)
+            x = self.orth_layers[k].inverse(x)
+            # print(f"Orthogonal layer {k} inverse error: {np.linalg.norm(self.orth_layers[k](torch.from_numpy(x).to("cuda")).detach().cpu().numpy()
+            #                                               - x_old)}")
+            
+            # x_old = x
+            # print(x)
             x = self.mon_layers[k-1].inverse(
                 x, 
                 alpha=alphas[k-1],
                 inverse_activation_fn=inverse_activation_fns[k-1],
                 iterations=iterations[k-1],
                 Lambda=Lambdas[k-1])
+            x = np.array(x)
+
+            # print(f"x shape: {x.shape}, x_old shape: {x_old.shape}")
+            # print(f"Monlip layer {k-1} inverse error: {np.linalg.norm(self.mon_layers[k-1](torch.from_numpy(x).to("cuda")).detach().cpu().numpy() 
+            #                                               - x_old)}")
+        # print(x)
+        # x_old = x
         x = self.orth_layers[0].inverse( x)
+        # print(f"Orthogonal layer 0 inverse error: {np.linalg.norm(self.orth_layers[0](torch.from_numpy(x).to("cuda")).detach().cpu().numpy()
+        #                                                   - x_old)}")
+        # print(x)
         return x

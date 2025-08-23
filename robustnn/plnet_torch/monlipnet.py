@@ -76,8 +76,8 @@ class MonLipLayer(nn.Module):
         # self.nu = nu  
         self.units = unit_features
         self.Fq = nn.Parameter(torch.empty(sum(self.units), features))
-        # nn.init.xavier_normal_(self.Fq)
-        seq_init_transposed_(self.Fq)
+        nn.init.xavier_normal_(self.Fq)
+        # seq_init_transposed_(self.Fq)
         self.fq = nn.Parameter(torch.empty((1,)))
         nn.init.constant_(self.fq, norm(self.Fq))
         self.by = nn.Parameter(torch.zeros(features))
@@ -85,8 +85,8 @@ class MonLipLayer(nn.Module):
         nz_1 = 0
         for nz in self.units:
             R = nn.Parameter(torch.empty((nz, nz+nz_1)))
-            # nn.init.xavier_normal_(R)
-            seq_init_transposed_(R)
+            nn.init.xavier_normal_(R)
+            # seq_init_transposed_(R)
             r = nn.Parameter(torch.empty((1,)))
             nn.init.constant_(r, norm(R))
             Fr.append(R)
