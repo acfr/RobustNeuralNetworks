@@ -52,6 +52,7 @@ class CayleyLinear(nn.Linear):
                         self.alpha * self.weight / norm(self.weight))
             Q = self.Q_cached
 
+        # print(f"Q: {Q} and X: {X}")
         return F.linear(X, Q, self.bias)
     
     def inverse(self, y):
@@ -62,5 +63,9 @@ class CayleyLinear(nn.Linear):
         Returns:
             torch.Tensor: Inverted tensor.
         """
+        # todo: this is not correct, need to implement the non-tensor form
+        bias_np = self.bias.detach().cpu().numpy()
         Q = cayley(self.alpha * self.weight / norm(self.weight))
-        return F.linear(y, Q.T, -self.bias)
+        Q_np = Q.detach().cpu().numpy()
+
+        return y @ Q_np.T - bias_np

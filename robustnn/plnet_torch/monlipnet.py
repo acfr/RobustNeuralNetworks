@@ -7,6 +7,28 @@ import numpy as np
 from robustnn.solver.DYS import DavisYinSplit
 from robustnn.plnet_torch.orthogonal import Params, cayley, norm, CayleyLinear
 
+# this function should only be used for testing purpose
+# it avoids the bacckpropogation of the parameters
+# and initializes the tensor with [1, 2, ..., prod(shape)]
+def seq_init_(tensor):
+    """In-place init with [1,2,...], safe for nn.Parameter."""
+    with torch.no_grad():
+        numel = tensor.numel()
+        values = torch.arange(1, numel + 1, dtype=tensor.dtype, device=tensor.device)
+        tensor.view(-1).copy_(values)  # copy into tensor in place
+    return tensor
+
+def seq_init_transposed_(tensor):
+    """In-place init with [1,2,...] but filled in column-major order (transposed)."""
+    with torch.no_grad():
+        numel = tensor.numel()
+        values = torch.arange(1, numel + 1, dtype=tensor.dtype, device=tensor.device)
+        # reshape in transposed form, then transpose back to match tensor.shape
+        reshaped = values.view(tensor.shape[1], tensor.shape[0]).t()
+        tensor.copy_(reshaped)
+    return tensor
+
+
 class MonLipLayer(nn.Module):
     def __init__(self, 
                  features: int, 
@@ -54,7 +76,8 @@ class MonLipLayer(nn.Module):
         # self.nu = nu  
         self.units = unit_features
         self.Fq = nn.Parameter(torch.empty(sum(self.units), features))
-        nn.init.xavier_normal_(self.Fq)
+        # nn.init.xavier_normal_(self.Fq)
+        seq_init_transposed_(self.Fq)
         self.fq = nn.Parameter(torch.empty((1,)))
         nn.init.constant_(self.fq, norm(self.Fq))
         self.by = nn.Parameter(torch.zeros(features))
@@ -62,7 +85,8 @@ class MonLipLayer(nn.Module):
         nz_1 = 0
         for nz in self.units:
             R = nn.Parameter(torch.empty((nz, nz+nz_1)))
-            nn.init.xavier_normal_(R)
+            # nn.init.xavier_normal_(R)
+            seq_init_transposed_(R)
             r = nn.Parameter(torch.empty((1,)))
             nn.init.constant_(r, norm(R))
             Fr.append(R)
@@ -190,6 +214,8 @@ class MonLipLayer(nn.Module):
         bz = mon_params.sqrt_2g/mon_params.mu * (y-mon_params.by) @ mon_params.S.T + mon_params.bh
         uk = np.zeros_like(bz)
 
+        # print(f"bz: {bz} and uk: {uk}")
+
         # iterate until converge for zk using DYS solver
         # todo: might change this for loop to jitable loop
         for i in range(iterations):
@@ -198,6 +224,9 @@ class MonLipLayer(nn.Module):
                 inverse_activation_fn=inverse_activation_fn, 
                 Lambda=Lambda,
                 alpha=alpha)
+            
+            # print(f"zk: {zk} and uk: {uk} at iteration {i}")
+
 
         # z to x
         x = (y - mon_params.by - mon_params.sqrt_g2 * zk @ mon_params.S) / mon_params.mu
