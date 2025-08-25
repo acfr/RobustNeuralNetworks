@@ -145,19 +145,19 @@ class MonLipLayer(nn.Module):
         bs = self.bs
         # bh = torch.cat(bs, axis=0)
         bh = torch.cat([b for b in bs], dim=0)
-        QT = cayley((self.fq / norm(self.Fq.T)) * self.Fq.T)
+        QT = cayley((self.fq / norm(self.Fq.T, eps=0)) * self.Fq.T)
         Q = QT.T
         sqrt_2g, sqrt_g2 = math.sqrt(2. * gam), math.sqrt(gam / 2.)
 
         V, S = [], []
         STks, BTks = [], []
-        Ak_1s = [torch.zeros((0, 0)).detach().cpu().numpy()]
+        Ak_1s = [torch.zeros((0, 0)).numpy(force=True)]
         idx, nz_1 = 0, 0
         for k, nz in enumerate(self.units):
             Qk = Q[idx:idx+nz, :] 
             Fab = self.Fr[k].T
             fab = self.fr[k]
-            ABT = cayley((fab / norm(Fab)) * Fab)
+            ABT = cayley((fab / norm(Fab, eps=0)) * Fab)
 
             # todo: check the dimension here
             ATk, BTk = ABT[:nz, :], ABT[nz:, :]
@@ -167,37 +167,37 @@ class MonLipLayer(nn.Module):
             # calculate V and S
             if k > 0:
                 Ak, Bk = ATk.T, BTk.T
-                V.append((2 * Bk @ ATk_1).detach().cpu().numpy())
+                V.append((2 * Bk @ ATk_1).numpy(force=True))
                 S.append((Ak @ Qk - Bk @ Qk_1))
             else:
                 Ak = ATk.T
                 S.append(ABT.T @ Qk)
             ATk_1, Qk_1 = Ak.T, Qk
             
-            STks.append(STk.detach().cpu().numpy())
-            BTks.append(BTk.detach().cpu().numpy())
-            Ak_1s.append(ATk.T.detach().cpu().numpy())
+            STks.append(STk.numpy(force=True))
+            BTks.append(BTk.numpy(force=True))
+            Ak_1s.append(ATk.T.numpy(force=True))
             idx += nz
             nz_1 = nz
 
         Ak_1s=Ak_1s[:-1]
-        S = torch.cat(S, axis=0).detach().cpu().numpy()
+        S = torch.cat(S, axis=0).numpy(force=True)
 
         return Params(
-            mu=self.mu.detach().cpu().numpy(),
-            nu=self.nu.detach().cpu().numpy(),
-            gam=self.nu.detach().cpu().numpy() - self.mu.detach().cpu().numpy(),
+            mu=self.mu.numpy(force=True),
+            nu=self.nu.numpy(force=True),
+            gam=self.nu.numpy(force=True) - self.mu.numpy(force=True),
             units=self.units,
             V=V,
             S=S,
-            by=by.detach().cpu().numpy(),
-            bh=bh.detach().cpu().numpy(),
+            by=by.numpy(force=True),
+            bh=bh.numpy(force=True),
             sqrt_2g=sqrt_2g,
             sqrt_g2=sqrt_g2,
             STks=STks,
             Ak_1s=Ak_1s,
             BTks=BTks,
-            bs=[b.detach().cpu().numpy() for b in bs],
+            bs=[b.numpy(force=True) for b in bs],
         )
 
     

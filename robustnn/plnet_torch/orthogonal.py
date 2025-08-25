@@ -22,7 +22,7 @@ def cayley(W: torch.Tensor) -> torch.Tensor:
 
     return torch.cat((iIpA @ (I - A), -2 * V @ iIpA), axis=0)
 
-def norm(x, eps=1e-6):
+def norm(x, eps=0.0):
     return x.norm() + eps
 
 class CayleyLinear(nn.Linear):
@@ -64,9 +64,9 @@ class CayleyLinear(nn.Linear):
             torch.Tensor: Inverted tensor.
         """
         # todo: this is not correct, need to implement the non-tensor form
-        bias_np = self.bias.detach().cpu().numpy()
+        bias_np = self.bias.numpy(force=True)
         # print(f'bias_np: {bias_np}')
-        Q = cayley(self.alpha * self.weight / norm(self.weight))
-        Q_np = Q.detach().cpu().numpy()
+        Q = cayley(self.alpha * self.weight / norm(self.weight, eps=0.0))
+        Q_np = Q.numpy(force=True)
     
         return  (y - bias_np) @ Q_np
