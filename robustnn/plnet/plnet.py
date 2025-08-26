@@ -127,7 +127,7 @@ class PLNet(nn.Module):
             bilip_layer=self.BiLipBlock._direct_to_explicit(),
             f_function=f_function,
             c=self.direct.c,
-            optimal_point=self.optimal_point,
+            optimal_point=optimal_point,
             lipmin=lipmin,
             lipmax=lipmax,
             distortion=distortion

@@ -15,6 +15,8 @@ import torch.nn.functional as F
 from typing import Sequence
 import numpy as np 
 from robustnn.plnet_torch.bilipnet import BiLipNet
+from robustnn.plnet_torch.orthogonal import Params
+import numpy as np
 
 class PLNet(nn.Module):
     def __init__(self, 
@@ -36,11 +38,82 @@ class PLNet(nn.Module):
             x0 = self.bln(self.optimal_point)
         else:
             x0 = torch.zeros_like(x)
-        y = 0.5 * ((x - x0) ** 2).sum(dim=-1)
+        y = 0.5 * ((x - x0) ** 2).mean(dim=-1)
 
         if self.use_bias:
             y += self.bias
         return y 
+    
+    def direct_to_explicit(self, x_optimal = None, act_mon = lambda x: np.maximum(0, x)) -> Params:
+        """
+        Convert the direct parameters to explicit parameters.
+
+        Args:
+            x_optimal: The optimal point for the quadratic potential. 
+                       (None if no update on optimal point)
+                       The dimension of x_optimal should be the same as the input size of the model 
+                       or the size of 1
+            act_mon: The activation function for the monotone layers. Default is ReLU in numpy.
+        """
+        # check if we have an optimal point - use the new one from input, if no flow back to the original one
+        optimal_point = self.optimal_point
+        if x_optimal is not None:
+            optimal_point = x_optimal
+        
+        if optimal_point is not None:
+            def f_function(x: np.array, explicit: Params) -> np.array:
+                # call the bilipnet with the optimal point
+                # f = g(x) - g(x_optimal)
+                g_x = self.bln.explicit_call(x, explicit, act_mon)
+                g_x_optimal = self.bln.explicit_call(optimal_point, explicit, act_mon)
+                
+                # Calculate the quadratic potential
+                return g_x - g_x_optimal
+        else:
+            def f_function(x: np.array, explicit: Params) -> np.array:
+                # call the bilipnet with the optimal point
+                # f = g(x)
+                return self.bln.explicit_call(x, explicit, act_mon)
+        
+        # get the bilipnet properties
+        lipmin, lipmax, distortion = self.bln.get_bounds()
+
+        # convert the bilipnet to explicit
+        explicit_params = Params(
+            bilip_layer=self.bln.direct_to_explicit(),
+            f_function=f_function,
+            c=self.bias if self.use_bias else 0.,
+            optimal_point=optimal_point,
+            lipmin=lipmin,
+            lipmax=lipmax,
+            distortion=distortion
+        )
+
+        return explicit_params
+
+    def explicit_call(self, x: np.array, explicit: Params) -> np.array:
+        """
+        Explicit call for the PLNet layer.
+
+        Args:
+            x: Input tensor.
+            explicit: Explicit parameters for the BiLipNet layer.
+            x_optimal: The optimal point for the quadratic potential. 
+                        (None if no update on optimal point)
+        """
+        # Get the bilipnet output
+        f = explicit.f_function(x, explicit.bilip_layer)
+
+        # Calculate the quadratic potential
+        y = 0.5 * np.mean(np.square(f), axis=-1) + explicit.c
+
+        return y
+    
+    def _get_bounds(self):
+        """Get the bounds for the BiLipNet layer."""
+
+        lipmin, lipmax, tau = self.bln.get_bounds()
+        return lipmin, lipmax, tau
     
 if __name__ == "__main__":
     batch_size=5
