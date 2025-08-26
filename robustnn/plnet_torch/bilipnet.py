@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from typing import Sequence
 from robustnn.plnet_torch.monlipnet import MonLipLayer, CayleyLinear
 import numpy as np
+from robustnn.plnet_torch.orthogonal import Params
 
 class BiLipNet(nn.Module):
     def __init__(self,
@@ -53,6 +54,47 @@ class BiLipNet(nn.Module):
             x = self.mon_layers[k](x)
         x = self.orth_layers[self.depth](x)
         return x 
+    
+    def direct_to_explicit(self) -> Params:
+        """Convert direct params to explicit params."""
+        monlip_explict_layers = [
+            layer.direct_to_explicit() for layer in self.mon_layers
+        ]
+        unitary_explict_layers = [
+            layer.direct_to_explicit() for layer in self.orth_layers
+        ]
+
+        lipmin, lipmax, tau = self.get_bounds()
+        # get the bilipnet properties
+        return Params(monlip_layers=monlip_explict_layers,
+                                   unitary_layers=unitary_explict_layers,
+                                   lipmin=lipmin,
+                                   lipmax=lipmax,
+                                   distortion=tau)
+    
+    def explicit_call(self, x: np.array, explicit: Params, act_mon = lambda x: np.maximum(0, x)) -> np.array:
+        """Call method for the BiLipNet layer using explicit parameters.
+        Args:
+            x (np.array): Input array of shape (batch_size, input_dim).
+            explicit (Params): Params object containing explicit parameters.
+            act_mon (callable): Activation function for the MonLip layers. (need to be numpy version!)
+        """
+        for k in range(self.depth):
+            x = self.orth_layers[k].explicit_call( x, explicit.unitary_layers[k])
+            x = self.mon_layers[k].explicit_call( x, explicit.monlip_layers[k], act_mon)
+        x = self.orth_layers[self.depth].explicit_call( x, explicit.unitary_layers[self.depth])
+        return x
+    
+    def get_bounds(self):
+        """Get the bounds for the BiLipNet layer."""
+
+        lipmin, lipmax, tau = 1., 1., 1.
+        for k in range(self.depth):
+            mu, nu, ta = self.mon_layers[k].get_bounds()
+            lipmin *= mu 
+            lipmax *= nu 
+            tau *= ta 
+        return lipmin, lipmax, tau
     
     def inverse(self, y,
                 alphas: Sequence[float],

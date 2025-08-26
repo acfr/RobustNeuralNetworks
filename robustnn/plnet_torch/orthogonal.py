@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 class Params(nn.Module):
     def __init__(self, **kwargs):
@@ -55,6 +56,29 @@ class CayleyLinear(nn.Linear):
         # print(f"Q: {Q} and X: {X}")
         return F.linear(X, Q, self.bias)
     
+    def explicit_call(self, x: np.array, explicit: Params) -> np.array:
+        """
+        Forward method using explicit parameters.
+        Args:
+            x (np.array): Input array of shape (batch_size, input_dim).
+            explicit (Params): Params object containing explicit parameters.
+        Returns:
+            np.array: Output array of shape (batch_size, output_dim).
+        """
+        Q = explicit.Q
+        b = explicit.b
+        z = x @ Q.T + b
+        return z
+    
+    def direct_to_explicit(self):
+        """
+        Get explicit parameters for the Cayley linear layer.
+        Returns:
+            dict: Dictionary containing the explicit parameters.
+        """
+        Q = cayley((self.alpha / norm(self.weight, eps=0)) * self.weight)
+        return Params(Q=Q.numpy(force=True), b=self.bias.numpy(force=True))
+    
     def inverse(self, y):
         """
         Inverse of the Cayley linear layer.
@@ -63,10 +87,11 @@ class CayleyLinear(nn.Linear):
         Returns:
             torch.Tensor: Inverted tensor.
         """
-        # todo: this is not correct, need to implement the non-tensor form
-        bias_np = self.bias.numpy(force=True)
-        # print(f'bias_np: {bias_np}')
-        Q = cayley(self.alpha * self.weight / norm(self.weight, eps=0.0))
-        Q_np = Q.numpy(force=True)
-    
-        return  (y - bias_np) @ Q_np
+        orth_params = self.direct_to_explicit()
+        # bias_np = self.bias.numpy(force=True)
+        # # print(f'bias_np: {bias_np}')
+        # Q = cayley(self.alpha * self.weight / norm(self.weight, eps=0.0))
+        # Q_np = Q.numpy(force=True)
+        # return  (y - bias_np) @ Q_np
+
+        return  (y - orth_params.b) @ orth_params.Q

@@ -134,7 +134,14 @@ class MonLipLayer(nn.Module):
         y = 0.5 * ((self.mu + self.nu) * x + sqrt_gam * yh @ Q) + self.by 
         return y
     
-    def _get_explicit_params(self):
+    def get_bounds(self):
+        """Get the current bounds."""
+        mu = self.mu.item()
+        nu = self.nu.item()
+        tau = self.tau.item()
+        return mu, nu, tau
+    
+    def direct_to_explicit(self):
         """
         Get explicit parameters for the MonLip layer.
         Returns:
@@ -200,13 +207,25 @@ class MonLipLayer(nn.Module):
             bs=[b.numpy(force=True) for b in bs],
         )
 
+    def explicit_call(self, x: np.array, explicit: Params, 
+                         act = lambda x: np.maximum(0, x)) -> np.array:
+        """Apply the explicit parameters to the input tensor."""
+        # building equation 8 in paper [https://arxiv.org/html/2402.01344v2]
+        # y = mu * x + by + sum(sqrt(g/2) * zk @ STk.T)
+        y = explicit.mu * x + explicit.by
+        zk = x[..., :0]
+        for k, nz in enumerate(self.units):
+            # zk = act(Vk @ zk + sqrt(2g) * x @ STk + bs)
+            zk = act( 2 * (zk @ explicit.Ak_1s[k]) @ explicit.BTks[k] + explicit.sqrt_2g * x @ explicit.STks[k] + explicit.bs[k])
+            y += explicit.sqrt_g2 * zk @ explicit.STks[k].T
+        return y
     
-    def inverse(self, y,
+    def inverse(self, y: np.array,
                 alpha: float = 1.0,
                 inverse_activation_fn: callable = F.relu,
                 iterations: int = 200,
                 Lambda: float = 1.0):
-        mon_params = self._get_explicit_params()
+        mon_params = self.direct_to_explicit()
 
         # y to b
         # inverse of equation 12
