@@ -56,7 +56,7 @@ class PLNet(nn.Module):
             act_mon: The activation function for the monotone layers. Default is ReLU in numpy.
         """
         # check if we have an optimal point - use the new one from input, if no flow back to the original one
-        optimal_point = self.optimal_point
+        optimal_point = self.optimal_point.numpy(force=True)
         if x_optimal is not None:
             optimal_point = x_optimal
         
