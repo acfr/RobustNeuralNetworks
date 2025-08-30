@@ -84,7 +84,6 @@ class MonLipNet(nn.Module):
         for nz in self.units:
             R = nn.Parameter(torch.empty((nz, nz+nz_1)))
             nn.init.xavier_normal_(R)
-            # seq_init_transposed_(R)
             r = nn.Parameter(torch.empty((1,)))
             nn.init.constant_(r, norm(R))
             Fr.append(R)
@@ -154,7 +153,6 @@ class MonLipNet(nn.Module):
         gam = self.nu-self.mu
         by = self.by
         bs = self.bs
-        # bh = torch.cat(bs, axis=0)
         bh = torch.cat([b for b in bs], dim=0)
         QT = cayley((self.fq / norm(self.Fq.T, eps=0)) * self.Fq.T)
         Q = QT.T
