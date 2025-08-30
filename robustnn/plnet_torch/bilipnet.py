@@ -10,9 +10,9 @@ Author: Dechuan Liu (Aug 2024)
 
 import torch.nn as nn
 from typing import Sequence
-from robustnn.plnet_torch.monlipnet import MonLipLayer, CayleyLinear
+from robustnn.plnet_torch.monlipnet import MonLipNet
 import numpy as np
-from robustnn.plnet_torch.orthogonal import Params
+from robustnn.plnet_torch.orthogonal import Params, Unitary
 
 class BiLipNet(nn.Module):
     def __init__(self,
@@ -63,9 +63,9 @@ class BiLipNet(nn.Module):
         else:
             tau = nu / mu
 
-        olayer = [CayleyLinear(features, features) for _ in range(depth+1)]
+        olayer = [Unitary(features, features) for _ in range(depth+1)]
         self.orth_layers = nn.Sequential(*olayer)
-        mlayer = [MonLipLayer(features, unit_features, mu, nu, tau,
+        mlayer = [MonLipNet(features, unit_features, mu, nu, tau,
                               is_mu_fixed, is_nu_fixed, is_tau_fixed, act) for _ in range(depth)]
         self.mon_layers = nn.Sequential(*mlayer)
 

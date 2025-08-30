@@ -1,18 +1,17 @@
-'''
-This file is a test file for the PLNet model implementation under pytorch.
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
-Todo: The inverse of the Bi-lipschitz netowrk is not implemented yet.
+'''
+PLNet is a neural network architecture that based on bilipnet.
+It takes the quadratic potential of the output of the bilipnet.
+This is useful for applications where we want to learn a potential function
+that is Lipschitz continuous and has a known/unkown minimum.
 
 Adapted from code in 
     "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
-Author: Dechuan Liu (May 2024)
+Author: Dechuan Liu (Aug 2024)
 '''
-
 import torch
-import math 
 import torch.nn as nn
-import torch.nn.functional as F
-from typing import Sequence
 import numpy as np 
 from robustnn.plnet_torch.bilipnet import BiLipNet
 from robustnn.plnet_torch.orthogonal import Params
@@ -20,9 +19,19 @@ import numpy as np
 
 class PLNet(nn.Module):
     def __init__(self, 
-                 BiLipBlock: nn.Module,
+                 BiLipBlock: BiLipNet,
                  add_constant: bool = False,
                  optimal_point: torch.Tensor = None):
+        """
+        PLNet is a neural network architecture that based on bilipnet.
+        It takes the quadratic potential of the output of the bilipnet.
+        This is useful for applications where we want to learn a potential function
+        that is Lipschitz continuous and has a known/unkown minimum.
+        arguments:
+            BiLipBlock: an instance of BiLipNet
+            add_constant: whether to add a constant term to the quadratic potential
+            optimal_point: the optimal point for the quadratic potential (None if no optimal point)
+        """
         super().__init__()
         self.bln = BiLipBlock 
         self.use_bias = add_constant
@@ -32,6 +41,13 @@ class PLNet(nn.Module):
         self.optimal_point = optimal_point
 
     def forward(self, x):
+        """
+        Forward pass of the PLNet layer.
+        arguments: 
+            x: (batch_size, in_features) in torch tensor
+        return: 
+            (batch_size,) in torch tensor
+        """
         x = self.bln(x)
 
         if self.optimal_point is not None:
@@ -47,8 +63,7 @@ class PLNet(nn.Module):
     def direct_to_explicit(self, x_optimal = None, act_mon = lambda x: np.maximum(0, x)) -> Params:
         """
         Convert the direct parameters to explicit parameters.
-
-        Args:
+        arguments:
             x_optimal: The optimal point for the quadratic potential. 
                        (None if no update on optimal point)
                        The dimension of x_optimal should be the same as the input size of the model 
@@ -56,7 +71,9 @@ class PLNet(nn.Module):
             act_mon: The activation function for the monotone layers. Default is ReLU in numpy.
         """
         # check if we have an optimal point - use the new one from input, if no flow back to the original one
-        optimal_point = self.optimal_point.numpy(force=True)
+        optimal_point = None
+        if self.optimal_point is not None:
+            optimal_point = self.optimal_point.numpy(force=True)
         if x_optimal is not None:
             optimal_point = x_optimal
         
@@ -94,9 +111,8 @@ class PLNet(nn.Module):
     def explicit_call(self, x: np.array, explicit: Params) -> np.array:
         """
         Explicit call for the PLNet layer.
-
-        Args:
-            x: Input tensor.
+        augments:
+            x: Input numpy array.
             explicit: Explicit parameters for the BiLipNet layer.
             x_optimal: The optimal point for the quadratic potential. 
                         (None if no update on optimal point)
@@ -111,21 +127,5 @@ class PLNet(nn.Module):
     
     def _get_bounds(self):
         """Get the bounds for the BiLipNet layer."""
-
         lipmin, lipmax, tau = self.bln.get_bounds()
         return lipmin, lipmax, tau
-    
-if __name__ == "__main__":
-    batch_size=5
-    features = 32
-    units = [32, 64, 128]
-    mu=0.5
-    nu=2.0
-    bln = BiLipNet(features, units, mu, nu)
-    nparams = np.sum([p.numel() for p in bln.parameters() if p.requires_grad])
-    print(nparams)
-    model = PLNet(bln)
-    nparams = np.sum([p.numel() for p in model.parameters() if p.requires_grad])
-    print(nparams)
-    x=torch.randn((batch_size, features))
-    y=model(x)

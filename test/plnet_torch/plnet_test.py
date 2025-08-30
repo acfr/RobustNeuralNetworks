@@ -1,6 +1,7 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
 from robustnn.plnet_torch.bilipnet import BiLipNet
+from robustnn.plnet_torch.plnet import PLNet
 import torch
 import numpy as np
 
@@ -22,7 +23,7 @@ mu = 1
 nu = 2
 tau = 2
 
-# Initialize a bi-lip layer
+# Initialize a unitary layer
 bilipnet_layer = BiLipNet(features=input_size, 
                             unit_features=units,
                             mu=mu,
@@ -33,23 +34,22 @@ bilipnet_layer = BiLipNet(features=input_size,
                             is_tau_fixed=False, 
                             depth=depth,
                             )
+plnet_layer = PLNet(BiLipBlock=bilipnet_layer)
 
-# Bound:  (1.0, 1.9999999315429164, 1.9999999315429164)
-print("Bound: ", bilipnet_layer.get_bounds())
+# call results: tensor([ 2.3951, 10.4903], grad_fn=<MulBackward0>)
+print("call results:", plnet_layer(random_input))
 
-# call results: tensor([[1.3719, 2.7746],
-#         [2.7158, 5.8810]], grad_fn=<AddmmBackward0>)
-print("call results:", bilipnet_layer(random_input))
-
-# explict call results: [[1.3719137 2.774568 ]
-#  [2.7157617 5.8809733]]
-explict_call_res = bilipnet_layer.explicit_call(random_input.numpy(force=True), bilipnet_layer.direct_to_explicit())
+# explict call results: [ 2.3950937 10.490302 ]
+explict_call_res = plnet_layer.explicit_call(random_input.numpy(force=True), plnet_layer.direct_to_explicit())
 print("explict call results:", explict_call_res )
 
-# inverse: [[0.99999946 1.9999995 ]
-#  [2.9999998  3.9999983 ]]
-print("inverse:", bilipnet_layer.inverse(explict_call_res,
-                                         alphas=[0.1]*2,
-                                         inverse_activation_fns=[lambda x: np.maximum(0, x), lambda x: np.maximum(0, x)],
-                                         iterations=[500, 500],
-                                         Lambdas=[1, 1] ) )
+random_input_min = torch.tensor([[2.0,3.0],[4.0,5.0]])
+# explict call with gt:  [0.7159801 0.7159799]
+print("explict call with gt: ", plnet_layer.explicit_call(random_input.numpy(force=True), 
+                                                          plnet_layer.direct_to_explicit(x_optimal=random_input_min.numpy(force=True)) ))
+
+random_input_min = random_input
+# explict call with same gt:  [0. 0.]
+print("explict call with same gt: ", plnet_layer.explicit_call(random_input.numpy(force=True), 
+                                                          plnet_layer.direct_to_explicit(x_optimal=random_input_min.numpy(force=True)) ))
+
