@@ -1,3 +1,13 @@
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
+
+'''
+Monotone Lipschitz neural network layer 
+
+Adapted from code in 
+    "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
+Author: Dechuan Liu (Aug 2024)
+'''
+
 import torch
 import math 
 import torch.nn as nn
@@ -5,31 +15,9 @@ import torch.nn.functional as F
 from typing import Sequence
 import numpy as np 
 from robustnn.solver.DYS import DavisYinSplit
-from robustnn.plnet_torch.orthogonal import Params, cayley, norm, CayleyLinear
+from robustnn.plnet_torch.orthogonal import Params, cayley, norm
 
-# this function should only be used for testing purpose
-# it avoids the bacckpropogation of the parameters
-# and initializes the tensor with [1, 2, ..., prod(shape)]
-def seq_init_(tensor):
-    """In-place init with [1,2,...], safe for nn.Parameter."""
-    with torch.no_grad():
-        numel = tensor.numel()
-        values = torch.arange(1, numel + 1, dtype=tensor.dtype, device=tensor.device)
-        tensor.view(-1).copy_(values)  # copy into tensor in place
-    return tensor
-
-def seq_init_transposed_(tensor):
-    """In-place init with [1,2,...] but filled in column-major order (transposed)."""
-    with torch.no_grad():
-        numel = tensor.numel()
-        values = torch.arange(1, numel + 1, dtype=tensor.dtype, device=tensor.device)
-        # reshape in transposed form, then transpose back to match tensor.shape
-        reshaped = values.view(tensor.shape[1], tensor.shape[0]).t()
-        tensor.copy_(reshaped)
-    return tensor
-
-
-class MonLipLayer(nn.Module):
+class MonLipNet(nn.Module):
     def __init__(self, 
                  features: int, 
                  unit_features: Sequence[int],
@@ -40,6 +28,19 @@ class MonLipLayer(nn.Module):
                  is_nu_fixed: bool = False,
                  is_tau_fixed: bool = False,
                  act: nn.Module = nn.ReLU()):
+        """
+        Monotone Lipschitz layer as described in the paper (Same as jax version).
+        arguments:
+            features: input and output feature size (same)
+            unit_features: list of hidden unit sizes for each monotone layer
+            mu: lower Lipschitz bound (if None, will be computed)
+            nu: upper Lipschitz bound (if None, will be computed)
+            tau: Lipschitz constant (if None, will be computed)
+            is_mu_fixed: whether mu is fixed during training
+            is_nu_fixed: whether nu is fixed during training
+            is_tau_fixed: whether tau is fixed during training
+            act: activation function in torch (default ReLU)
+        """
         super().__init__()
         self.is_mu_fixed = is_mu_fixed
         self.is_nu_fixed = is_nu_fixed
@@ -72,12 +73,9 @@ class MonLipLayer(nn.Module):
         else:
             self.register_buffer("tau", torch.tensor(tau, dtype=torch.float32))
 
-        # self.mu = mu
-        # self.nu = nu  
         self.units = unit_features
         self.Fq = nn.Parameter(torch.empty(sum(self.units), features))
         nn.init.xavier_normal_(self.Fq)
-        # seq_init_transposed_(self.Fq)
         self.fq = nn.Parameter(torch.empty((1,)))
         nn.init.constant_(self.fq, norm(self.Fq))
         self.by = nn.Parameter(torch.zeros(features))
@@ -102,6 +100,13 @@ class MonLipLayer(nn.Module):
         self.act = act
 
     def forward(self, x):
+        '''
+        Forward pass of the MonLip layer.
+        arguments:
+            x: (batch_size, features) in torch tensor
+        return: 
+            (batch_size, features) in torch tensor
+        '''
         sqrt_gam = math.sqrt(self.nu - self.mu)
         sqrt_2 = math.sqrt(2.)
         if self.training:
@@ -122,7 +127,6 @@ class MonLipLayer(nn.Module):
         for k, nz in enumerate(self.units):
             xk = xh[..., idx:idx+nz]
             gh = sqrt_2 * (self.act(sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.bs[k]) ) @ R[k]
-            # gh = sqrt_2 * F.relu (sqrt_2 * torch.cat((xk, hk_1), dim=-1) @ R[k].T + self.bs[k]) @ R[k]
             hk = gh[..., :nz] - xk
             gk = gh[..., nz:]
             yh.append(hk_1-gk)
@@ -144,8 +148,8 @@ class MonLipLayer(nn.Module):
     def direct_to_explicit(self):
         """
         Get explicit parameters for the MonLip layer.
-        Returns:
-            dict: Dictionary containing the explicit parameters.
+        returns:
+            Params: Params containing the explicit parameters. 
         """
         gam = self.nu-self.mu
         by = self.by
@@ -160,13 +164,13 @@ class MonLipLayer(nn.Module):
         STks, BTks = [], []
         Ak_1s = [torch.zeros((0, 0)).numpy(force=True)]
         idx, nz_1 = 0, 0
+
         for k, nz in enumerate(self.units):
             Qk = Q[idx:idx+nz, :] 
             Fab = self.Fr[k].T
             fab = self.fr[k]
             ABT = cayley((fab / norm(Fab, eps=0)) * Fab)
 
-            # todo: check the dimension here
             ATk, BTk = ABT[:nz, :], ABT[nz:, :]
             QTk_1, QTk = QT[:, idx-nz_1:idx], QT[:, idx:idx+nz]
             STk = QTk @ ATk - QTk_1 @ BTk
@@ -209,7 +213,15 @@ class MonLipLayer(nn.Module):
 
     def explicit_call(self, x: np.array, explicit: Params, 
                          act = lambda x: np.maximum(0, x)) -> np.array:
-        """Apply the explicit parameters to the input tensor."""
+        """
+        Apply the explicit parameters to the input tensor.
+        arguments:
+            x: (batch_size, features) in numpy array
+            explicit: Params containing the explicit parameters (in numpy array)
+            act: activation function for the monotone layers (need to be numpy version!)
+        return: 
+            (batch_size, features) in numpy array 
+        """
         # building equation 8 in paper [https://arxiv.org/html/2402.01344v2]
         # y = mu * x + by + sum(sqrt(g/2) * zk @ STk.T)
         y = explicit.mu * x + explicit.by
@@ -222,9 +234,19 @@ class MonLipLayer(nn.Module):
     
     def inverse(self, y: np.array,
                 alpha: float = 1.0,
-                inverse_activation_fn: callable = F.relu,
+                inverse_activation_fn: callable = lambda x: np.maximum(0, x),
                 iterations: int = 200,
                 Lambda: float = 1.0):
+        """
+        Inverse of the MonLip layer using Davis-Yin splitting method.
+        arguments:
+            y: (batch_size, features) in numpy array
+            alpha: alpha value for the solver
+            inverse_activation_fn: inverse activation function (need to be numpy version!)
+            iterations: number of iterations for the solver
+            Lambda: step size for the solver
+        """
+        
         mon_params = self.direct_to_explicit()
 
         # y to b
@@ -233,10 +255,7 @@ class MonLipLayer(nn.Module):
         bz = mon_params.sqrt_2g/mon_params.mu * (y-mon_params.by) @ mon_params.S.T + mon_params.bh
         uk = np.zeros_like(bz)
 
-        # print(f"bz: {bz} and uk: {uk}")
-
         # iterate until converge for zk using DYS solver
-        # todo: might change this for loop to jitable loop
         for i in range(iterations):
             # iterate until converge for zk using DYS solver
             zk, uk = DavisYinSplit(uk, bz, mon_params, 
@@ -244,15 +263,6 @@ class MonLipLayer(nn.Module):
                 Lambda=Lambda,
                 alpha=alpha)
             
-            # print(f"zk: {zk} and uk: {uk} at iteration {i}")
-
-
         # z to x
         x = (y - mon_params.by - mon_params.sqrt_g2 * zk @ mon_params.S) / mon_params.mu
-
-
-        # check loss here
-        # import jax
-        # diff = jnp.linalg.norm(y - self.__call__(x), axis=-1)
-        # jax.debug.print(f"MonLipNet inverse loss: {jnp.mean(diff)}")
         return x
