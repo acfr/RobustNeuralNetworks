@@ -100,7 +100,6 @@ class Unitary(nn.Linear):
                         self.alpha * self.weight / norm(self.weight))
             Q = self.Q_cached
 
-        # print(f"Q: {Q} and X: {X}")
         return F.linear(X, Q, self.bias)
     
     def explicit_call(self, x: np.array, explicit: Params) -> np.array:
