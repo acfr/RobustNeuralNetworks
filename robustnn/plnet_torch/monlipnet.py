@@ -141,7 +141,11 @@ class MonLipNet(nn.Module):
         """Get the current bounds."""
         mu = self.mu.item()
         nu = self.nu.item()
-        tau = self.tau.item()
+
+        if self.is_tau_fixed:
+            tau = self.tau.item()
+        else:
+            tau = nu / mu
         return mu, nu, tau
     
     def direct_to_explicit(self):
