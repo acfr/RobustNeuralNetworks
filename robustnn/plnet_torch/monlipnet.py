@@ -58,17 +58,17 @@ class MonLipNet(nn.Module):
             tau = nu / mu
 
         # Register properly
-        if is_mu_fixed:
+        if not is_mu_fixed:
             self.mu = nn.Parameter(torch.tensor(mu, dtype=torch.float32))
         else:
             self.register_buffer("mu", torch.tensor(mu, dtype=torch.float32))
 
-        if is_nu_fixed:
+        if not is_nu_fixed:
             self.nu = nn.Parameter(torch.tensor(nu, dtype=torch.float32))
         else:
             self.register_buffer("nu", torch.tensor(nu, dtype=torch.float32))
 
-        if is_tau_fixed:
+        if not is_tau_fixed:
             self.tau = nn.Parameter(torch.tensor(tau, dtype=torch.float32))
         else:
             self.register_buffer("tau", torch.tensor(tau, dtype=torch.float32))
