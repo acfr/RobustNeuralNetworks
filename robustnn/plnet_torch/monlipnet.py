@@ -106,7 +106,7 @@ class MonLipNet(nn.Module):
         return: 
             (batch_size, features) in torch tensor
         '''
-        sqrt_gam = math.sqrt(self.nu - self.mu)
+        sqrt_gam = torch.sqrt(self.nu - self.mu)
         sqrt_2 = math.sqrt(2.)
         if self.training:
             self.Q, self.R = None, None 
@@ -156,7 +156,7 @@ class MonLipNet(nn.Module):
         bh = torch.cat([b for b in bs], dim=0)
         QT = cayley((self.fq / norm(self.Fq.T, eps=0)) * self.Fq.T)
         Q = QT.T
-        sqrt_2g, sqrt_g2 = math.sqrt(2. * gam), math.sqrt(gam / 2.)
+        sqrt_2g, sqrt_g2 = torch.sqrt(2. * gam), torch.sqrt(gam / 2.)
 
         V, S = [], []
         STks, BTks = [], []
@@ -201,8 +201,8 @@ class MonLipNet(nn.Module):
             S=S,
             by=by.numpy(force=True),
             bh=bh.numpy(force=True),
-            sqrt_2g=sqrt_2g,
-            sqrt_g2=sqrt_g2,
+            sqrt_2g=sqrt_2g.numpy(force=True),
+            sqrt_g2=sqrt_g2.numpy(force=True),
             STks=STks,
             Ak_1s=Ak_1s,
             BTks=BTks,

@@ -30,7 +30,7 @@ bilipnet_layer = BiLipNet(features=input_size,
                             nu=nu,
                             tau=tau,
                             is_mu_fixed=True,
-                            is_nu_fixed=True,
+                            is_nu_fixed=False,
                             is_tau_fixed=False, 
                             depth=depth,
                             )
