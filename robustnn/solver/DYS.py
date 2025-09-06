@@ -41,10 +41,8 @@ def mln_RA(gam, mu, S, V, alpha_, bz, zh, uh, units):
     return jnp.concatenate(z, axis=-1)
 
 
-# todo
 # The following functions are used for DavisYinSplit
-from robustnn.plnet.monlipnet import ExplicitMonLipParams
-def DavisYinSplit(uk, bz, e: ExplicitMonLipParams, 
+def DavisYinSplit(uk, bz, e, 
         inverse_activation_fn: Callable = nn.relu, 
         Lambda: float = 1.0, alpha: float = 1.0) -> Tuple[Array, Array]:
     """
