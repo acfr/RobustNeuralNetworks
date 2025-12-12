@@ -1,20 +1,3 @@
-# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
-
-'''
-Recurrent Equilibrium Networks (RENs).
-RENs are recurrent neural networks which are internally stable (contracting) and
-satisfy user-defined bounds on their input-output behaviour (characterised by
-incremental integral quadratic constraints).
-
-All of the RENs in this file inherit from the `RENBase` class.
-
-RENs originally introduced in: [Recurrent Equilibrium Networks: Flexible Dynamic Models With Guaranteed Stability and Robustness](https://ieeexplore.ieee.org/document/10179161).
-
-Adapted from Julia implentation: https://github.com/acfr/RobustNeuralNetworks.jl
-
-Author: Nic Barbara.
-'''
-
 import jax.numpy as jnp
 from flax.typing import Array
 from robustnn import ren_base as ren
@@ -180,7 +163,7 @@ class GeneralREN(ren.RENBase):
     
     We expect users to JIT calls to the `.init()` and `.apply()` methods for a
     REN, so we leave error checking as a separate API call. Use 
-    `model.check_valid_qsr(*model.qsr)` to check for appropriate (Q, S, R) matrices.
+    `model.check_valid_qsr()` to check for appropriate (Q, S, R) matrices.
     """
     Q: Array = None
     S: Array = None
@@ -201,7 +184,7 @@ class GeneralREN(ren.RENBase):
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
-        Q, S, R = self._adjust_iqc_params()
+        Q, S, R = _adjust_iqc_params(self.Q, self.S, self.R, self.eps, self.param_dtype)
         
         # Compute useful decompositions
         R_temp = R - S @ jnp.linalg.solve(Q, S.T)
@@ -256,29 +239,34 @@ class GeneralREN(ren.RENBase):
         """
         nu = self.input_size
         ny = self.output_size
-        Q, S, R = self._adjust_iqc_params()
-        
-        if not Q.shape == (ny, ny):
-            raise ValueError("`Q` should have size `(output_size, output_size)`.")
-        
-        if not S.shape == (nu, ny):
-            raise ValueError("`S` should have size `(input_size, output_size)`.")
-        
-        if not R.shape == (nu, nu):
-            raise ValueError("`R` should have size `(input_size, input_size)`.")
-        
-        if not _check_posdef(-Q):
-            raise ValueError("`Q` must be negative definite.")
-        
-        R_temp = R - S @ jnp.linalg.solve(Q, S.T)
-        if not _check_posdef(R_temp):
-            raise ValueError("`R - S @ (inv(Q) @ S.T)` must be positive definite.")
-        
-    def _adjust_iqc_params(self):
-        """Small delta to help numerical conditioning with cholesky decomposition."""
-        Q = self.Q - self.eps * jnp.identity(self.Q.shape[0], self.param_dtype)
-        R = self.R + self.eps * jnp.identity(self.R.shape[0], self.param_dtype)
-        return Q, self.S, R
+        _check_valid_qsr(nu, ny, self.Q, self.S, self.R, self.eps, self.param_dtype)
+
+ 
+def _check_valid_qsr(nu, ny, Q, S, R, eps, dtype):
+    Q, S, R = _adjust_iqc_params(Q, S, R, eps, dtype)
+    
+    if not Q.shape == (ny, ny):
+        raise ValueError("`Q` should have size `(output_size, output_size)`.")
+    
+    if not S.shape == (nu, ny):
+        raise ValueError("`S` should have size `(input_size, output_size)`.")
+    
+    if not R.shape == (nu, nu):
+        raise ValueError("`R` should have size `(input_size, input_size)`.")
+    
+    if not _check_posdef(-Q):
+        raise ValueError("`Q` must be negative definite.")
+    
+    R_temp = R - S @ jnp.linalg.solve(Q, S.T)
+    if not _check_posdef(R_temp):
+        raise ValueError("`R - S @ (inv(Q) @ S.T)` must be positive definite.")
+
+
+def _adjust_iqc_params(Q, S, R, eps, dtype):
+    """Small delta to help numerical conditioning with cholesky decomposition."""
+    Q = Q - eps * jnp.identity(Q.shape[0], dtype)
+    R = R + eps * jnp.identity(R.shape[0], dtype)
+    return Q, S, R
 
 
 def _check_posdef(A: Array, eps=jnp.finfo(jnp.float32).eps):
