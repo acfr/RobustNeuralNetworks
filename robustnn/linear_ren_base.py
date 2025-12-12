@@ -1,3 +1,13 @@
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
+
+'''
+Base class for linear Recurrent Equilibrium Networks (RENs).
+
+See ./robustnn/ren_base.py for a description. These linear RENs have nv = 0.
+
+Author: Nic Barbara.
+'''
+
 import jax
 import jax.numpy as jnp
 
