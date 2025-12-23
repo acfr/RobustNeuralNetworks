@@ -29,7 +29,8 @@ def get_valid_init():
 class DirectLinRENParams:
     """Data class to keep track of direct params for a linear REN.
     
-    These are the free, trainable params of the model.
+    These are the free, trainable params of the model. They are a subset
+    of the usual REN parameters, where B = B2, C = C2, D = D22.
     """
     p: Array
     X: Array
@@ -47,7 +48,8 @@ class DirectLinRENParams:
 class ExplicitLinRENParams:
     """Data class to keep track of explicit params for a Linear REN.
     
-    These are the parameters used for evaluating the model.
+    These are the parameters used for evaluating the model. They are a subset
+    of the usual REN parameters, where B = B2, C = C2, D = D22.
     """
     A: Array
     B: Array
