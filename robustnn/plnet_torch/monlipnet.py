@@ -45,33 +45,28 @@ class MonLipNet(nn.Module):
         self.is_mu_fixed = is_mu_fixed
         self.is_nu_fixed = is_nu_fixed
         self.is_tau_fixed = is_tau_fixed
-        known = [mu is not None, nu is not None, tau is not None]
+        known = (mu is not None, nu is not None, tau is not None)
         if sum(known) < 2:
             raise ValueError("At least two of mu, nu, tau must be specified.")
 
-        # Compute missing parameter
-        if mu is None:
-            mu = nu / tau
-        elif nu is None:
-            nu = mu * tau
-        elif tau is None:
-            tau = nu / mu
+        # Compute missing parameter using lookup table
+        calc_map = {
+            (False, True, True): lambda: (nu / tau, nu, tau),
+            (True, False, True): lambda: (mu, mu * tau, tau),
+            (True, True, False): lambda: (mu, nu, nu / mu),
+            (True, True, True): lambda: (mu, nu, tau),
+        }
+        mu, nu, tau = calc_map[known]()
 
-        # Register properly
-        if not is_mu_fixed:
-            self.mu = nn.Parameter(torch.tensor(mu, dtype=torch.float32))
-        else:
-            self.register_buffer("mu", torch.tensor(mu, dtype=torch.float32))
-
-        if not is_nu_fixed:
-            self.nu = nn.Parameter(torch.tensor(nu, dtype=torch.float32))
-        else:
-            self.register_buffer("nu", torch.tensor(nu, dtype=torch.float32))
-
-        if not is_tau_fixed:
-            self.tau = nn.Parameter(torch.tensor(tau, dtype=torch.float32))
-        else:
-            self.register_buffer("tau", torch.tensor(tau, dtype=torch.float32))
+        # Register parameters or buffers based on is_*_fixed flags
+        for name, value, is_fixed in [('mu', mu, is_mu_fixed),
+                                       ('nu', nu, is_nu_fixed),
+                                       ('tau', tau, is_tau_fixed)]:
+            tensor = torch.tensor(value, dtype=torch.float32)
+            if is_fixed:
+                self.register_buffer(name, tensor)
+            else:
+                setattr(self, name, nn.Parameter(tensor))
 
         self.units = unit_features
         self.Fq = nn.Parameter(torch.empty(sum(self.units), features))
