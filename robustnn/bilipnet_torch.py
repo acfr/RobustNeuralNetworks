@@ -10,9 +10,9 @@ Author: Dechuan Liu (Aug 2024)
 
 import torch.nn as nn
 from typing import Sequence
-from robustnn.plnet_torch.monlipnet import MonLipNet
+from robustnn.monlipnet_torch import MonLipNet
 import numpy as np
-from robustnn.plnet_torch.orthogonal import Params, Unitary
+from robustnn.orthogonal_torch import Params, Unitary
 
 class BiLipNet(nn.Module):
     def __init__(self,

@@ -1,7 +1,7 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
-from robustnn.plnet_torch.bilipnet import BiLipNet
-from robustnn.plnet_torch.plnet import PLNet
+from robustnn.bilipnet_torch import BiLipNet
+from robustnn.plnet_torch import PLNet
 import torch
 import numpy as np
 

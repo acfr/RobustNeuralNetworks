@@ -57,7 +57,7 @@ class ExplicitInverseMonLipParams:
     Lambda: float = 1.0 # step size for the update in DYS solver
 
 
-from robustnn.solver.DYS import DavisYinSplit
+from robustnn.solver_DYS import DavisYinSplit
 class MonLipNet(nn.Module):
     '''
     Monotone Lipschitz neural network layer using Cayley transform.

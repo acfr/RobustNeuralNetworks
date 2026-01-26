@@ -1,6 +1,6 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
-from robustnn.plnet_torch.orthogonal import Unitary
+from robustnn.orthogonal_torch import Unitary
 import torch
 import numpy as np
 

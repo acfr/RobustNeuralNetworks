@@ -14,8 +14,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Sequence
 import numpy as np 
-from robustnn.solver.DYS import DavisYinSplit
-from robustnn.plnet_torch.orthogonal import Params, cayley, norm
+from robustnn.solver_DYS import DavisYinSplit
+from robustnn.orthogonal_torch import Params, cayley, norm
 
 class MonLipNet(nn.Module):
     def __init__(self, 
