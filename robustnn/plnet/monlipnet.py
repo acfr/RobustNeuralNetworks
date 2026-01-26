@@ -93,81 +93,72 @@ class MonLipNet(nn.Module):
 
     def _get_bounds(self):
         """Get the bounds for the MonLipNet layer."""
-        if self.is_mu_fixed and self.is_nu_fixed and self.is_tau_fixed:
+        fixed = (self.is_mu_fixed, self.is_nu_fixed, self.is_tau_fixed)
+
+        if fixed == (True, True, True):
             raise ValueError("Cannot fix mu, nu, and tau at the same time.")
-        elif self.is_mu_fixed and self.is_nu_fixed:
-            mu = self.mu
-            nu = self.nu
-            tau = self.nu / self.mu
-        elif self.is_mu_fixed and self.is_tau_fixed:
-            mu = self.mu
-            nu = self.tau * self.mu
-            tau = self.tau
-        elif self.is_nu_fixed and self.is_tau_fixed:
-            nu = self.nu
-            mu = self.nu / self.tau
-            tau = self.tau
-        elif self.is_mu_fixed:
-            mu = self.mu
-            log_nu = self.variables['params']['lognu']
-            nu = jnp.exp(log_nu)[-1]
+
+        # Use a lookup table for the logic
+        def get_mu():
+            return jnp.exp(self.variables['params']['logmu'])[-1]
+
+        def get_nu():
+            return jnp.exp(self.variables['params']['lognu'])[-1]
+
+        calc_map = {
+            # mu_fixed, nu_fixed, tau_fixed
+            (True, True, False): lambda: (self.mu, self.nu, self.nu / self.mu),
+            (True, False, True): lambda: (self.mu, self.tau * self.mu, self.tau),
+            (False, True, True): lambda: (self.nu / self.tau, self.nu, self.tau),
+            (True, False, False): lambda: (self.mu, get_nu(), None),
+            (False, True, False): lambda: (get_mu(), self.nu, None),
+            (False, False, True): lambda: (get_mu(), None, self.tau),
+            (False, False, False): lambda: (get_mu(), get_nu(), None),
+        }
+
+        mu, nu, tau = calc_map[fixed]()
+
+        # Calculate any missing values
+        if tau is None:
             tau = nu / mu
-        elif self.is_nu_fixed:
-            nu = self.nu
-            log_mu = self.variables['params']['logmu']
-            mu = jnp.exp(log_mu)[-1]
-            tau = nu / mu
-        elif self.is_tau_fixed:
-            tau = self.tau
-            log_mu = self.variables['params']['logmu']
-            mu = jnp.exp(log_mu)[-1]
+        elif nu is None:
             nu = tau * mu
-        else:
-            log_mu = self.variables['params']['logmu']
-            mu = jnp.exp(log_mu)[-1]
-            log_nu = self.variables['params']['lognu']
-            nu = jnp.exp(log_nu)[-1]
-            tau = nu / mu
+
         return mu, nu, tau
 
     def setup(self):
         """Setup method for the MonLipNet layer."""
-        # setup mu, nu, tau
-        if self.is_mu_fixed and self.is_nu_fixed and self.is_tau_fixed:
+        # setup mu, nu, tau (constraint: tau = nu / mu)
+        fixed = (self.is_mu_fixed, self.is_nu_fixed, self.is_tau_fixed)
+
+        if fixed == (True, True, True):
             raise ValueError("Cannot fix mu, nu, and tau at the same time.")
-        elif self.is_mu_fixed and self.is_nu_fixed:
-            mu = self.mu
-            nu = self.nu
-            tau = self.nu / self.mu
-        elif self.is_mu_fixed and self.is_tau_fixed:
-            mu = self.mu
-            nu = self.tau * self.mu
-            tau = self.tau
-        elif self.is_nu_fixed and self.is_tau_fixed:
-            nu = self.nu
-            mu = self.nu / self.tau
-            tau = self.tau
-        elif self.is_mu_fixed:
-            mu = self.mu
-            log_nu = self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32)
-            nu = jnp.exp(log_nu)[-1]
+
+        # Use a lookup table for the logic
+        def learn_mu():
+            return jnp.exp(self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32))[-1]
+
+        def learn_nu():
+            return jnp.exp(self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32))[-1]
+
+        calc_map = {
+            # mu_fixed, nu_fixed, tau_fixed
+            (True, True, False): lambda: (self.mu, self.nu, self.nu / self.mu),
+            (True, False, True): lambda: (self.mu, self.tau * self.mu, self.tau),
+            (False, True, True): lambda: (self.nu / self.tau, self.nu, self.tau),
+            (True, False, False): lambda: (self.mu, learn_nu(), None),
+            (False, True, False): lambda: (learn_mu(), self.nu, None),
+            (False, False, True): lambda: (learn_mu(), None, self.tau),
+            (False, False, False): lambda: (learn_mu(), learn_nu(), None),
+        }
+
+        mu, nu, tau = calc_map[fixed]()
+
+        # Calculate any missing values
+        if tau is None:
             tau = nu / mu
-        elif self.is_nu_fixed:
-            nu = self.nu
-            log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)[-1]
-            tau = nu / mu
-        elif self.is_tau_fixed:
-            tau = self.tau
-            log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)[-1]
+        elif nu is None:
             nu = tau * mu
-        else:
-            log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)[-1]
-            log_nu = self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32)
-            nu = jnp.exp(log_nu)[-1]
-            tau = nu / mu
 
         by = self.param('by', nn.initializers.zeros_init(), (self.input_size,), jnp.float32)
         Fq = self.param('Fq', nn.initializers.glorot_normal(), (self.input_size, sum(self.units)), jnp.float32)
