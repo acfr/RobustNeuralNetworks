@@ -13,8 +13,8 @@ from typing import Any, Sequence, Callable
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
 from flax.struct import dataclass
-from robustnn.plnet.monlipnet import MonLipNet, ExplicitMonLipParams, DirectMonLipParams, ExplicitInverseMonLipParams
-from robustnn.plnet.orthogonal import Unitary, ExplicitOrthogonalParams, DirectOrthogonalParams
+from robustnn.monlipnet_jax import MonLipNet, ExplicitMonLipParams, DirectMonLipParams, ExplicitInverseMonLipParams
+from robustnn.orthogonal_jax import Unitary, ExplicitOrthogonalParams, DirectOrthogonalParams
 
 @dataclass
 class DirectBiLipParams:

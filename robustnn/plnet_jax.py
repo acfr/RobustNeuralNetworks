@@ -16,7 +16,7 @@ from flax.struct import dataclass
 from robustnn.utils import cayley
 from flax.typing import Array, PrecisionLike
 from typing import Any, Sequence, Callable
-from robustnn.plnet.bilipnet import BiLipNet, ExplicitBiLipParams, DirectBiLipParams
+from robustnn.bilipnet_jax import BiLipNet, ExplicitBiLipParams, DirectBiLipParams
 
 @dataclass
 class DirectPLParams:

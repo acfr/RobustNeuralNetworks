@@ -1,7 +1,7 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
-from robustnn.plnet.bilipnet import BiLipNet
-from robustnn.plnet.plnet import PLNet
+from robustnn.bilipnet_jax import BiLipNet
+from robustnn.plnet_jax import PLNet
 from flax import linen as nn
 import jax
 import jax.numpy as jnp

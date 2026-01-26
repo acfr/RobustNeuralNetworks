@@ -1,6 +1,6 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
-from robustnn.plnet.orthogonal import Unitary
+from robustnn.orthogonal_jax import Unitary
 from flax import linen as nn
 import jax
 import jax.numpy as jnp

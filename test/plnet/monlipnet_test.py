@@ -1,6 +1,6 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
-from robustnn.plnet.monlipnet import MonLipNet
+from robustnn.monlipnet_jax import MonLipNet
 from flax import linen as nn
 import jax
 import jax.numpy as jnp

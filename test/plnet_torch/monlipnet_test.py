@@ -1,6 +1,6 @@
 # This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
 
-from robustnn.plnet_torch.monlipnet import MonLipNet
+from robustnn.monlipnet_torch import MonLipNet
 import torch
 import numpy as np
 

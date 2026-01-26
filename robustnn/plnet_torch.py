@@ -13,8 +13,8 @@ Author: Dechuan Liu (Aug 2024)
 import torch
 import torch.nn as nn
 import numpy as np 
-from robustnn.plnet_torch.bilipnet import BiLipNet
-from robustnn.plnet_torch.orthogonal import Params
+from robustnn.bilipnet_torch import BiLipNet
+from robustnn.orthogonal_torch import Params
 import numpy as np
 
 class PLNet(nn.Module):
