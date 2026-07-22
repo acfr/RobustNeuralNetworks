@@ -11,12 +11,13 @@ Adapted from code in
 Author: Dechuan Liu (May 2024)
 '''
 import jax.numpy as jnp
-from flax import linen as nn 
+from flax import linen as nn
 from flax.struct import dataclass
 from robustnn.utils import cayley
 from flax.typing import Array, PrecisionLike
 from typing import Any, Sequence, Callable
-from robustnn.bilipnet_jax import BiLipNet, ExplicitBiLipParams, DirectBiLipParams
+from robustnn.bilipnet_jax import BiLipNet, ExplicitBiLipParams, DirectBiLipParams, ExplicitInverseBiLipParams
+from robustnn.solver_DYS import DavisYinSplit
 
 @dataclass
 class DirectPLParams:
@@ -76,6 +77,7 @@ class PLNet(nn.Module):
     BiLipBlock: nn.Module
     add_constant: float = False
     optimal_point: Array = None
+    solver: Callable = DavisYinSplit
 
     def setup(self):
         if self.add_constant:
@@ -207,13 +209,56 @@ class PLNet(nn.Module):
 
         Args:
             params (dict): Flax model parameters dictionary.
-            x_optimal: The optimal point for the quadratic potential. 
+            x_optimal: The optimal point for the quadratic potential.
                        (None if no update on optimal point)
 
         Returns:
             ExplicitPLParams: explicit PLNet layer params.
         """
         return self.apply(params, x_optimal=x_optimal, method="_direct_to_explicit")
-    
 
-    
+    def _direct_to_explicit_inverse(self, alphas: Sequence[float],
+                                    inverse_activation_fns: Sequence[Callable],
+                                    iterations: Sequence[int],
+                                    Lambdas: Sequence[float]) -> ExplicitInverseBiLipParams:
+        """Delegate to BiLipBlock, injecting the solver set at PLNet construction."""
+        return self.BiLipBlock._direct_to_explicit_inverse(
+            alphas, inverse_activation_fns, iterations, Lambdas, solver=self.solver)
+
+    def _explicit_inverse_call(self, y: Array, explicit_inv: ExplicitInverseBiLipParams) -> Array:
+        """Delegate inverse call to BiLipBlock."""
+        return self.BiLipBlock._explicit_inverse_call(y, explicit_inv)
+
+    def direct_to_explicit_inverse(self, params: dict,
+                                   alphas: Sequence[float],
+                                   inverse_activation_fns: Sequence[Callable],
+                                   iterations: Sequence[int],
+                                   Lambdas: Sequence[float]) -> ExplicitInverseBiLipParams:
+        """
+        Convert from direct PLNet params to explicit inverse form.
+        The solver is taken from the one set at PLNet construction time.
+        Args:
+            params (dict): Flax model parameters dictionary.
+            alphas: Scaling factors for each MonLipNet layer.
+            inverse_activation_fns: Inverse activation functions for each layer.
+            iterations: Number of solver iterations for each layer.
+            Lambdas: Step sizes for each layer.
+        Returns:
+            ExplicitInverseBiLipParams: explicit params for the inverse call.
+        """
+        return self.apply(params, alphas, inverse_activation_fns, iterations, Lambdas,
+                          method="_direct_to_explicit_inverse")
+
+    def inverse_call(self, params: dict, y: Array, explicit_inv: ExplicitInverseBiLipParams) -> Array:
+        """Evaluate the inverse of the inner BiLipNet.
+        Args:
+            params (dict): Flax model parameters dictionary.
+            y (Array): BiLipNet outputs to invert.
+            explicit_inv (ExplicitInverseBiLipParams): explicit inverse params.
+        Returns:
+            Array: reconstructed inputs.
+        """
+        return self.apply(params, y, explicit_inv, method="_explicit_inverse_call")
+
+
+

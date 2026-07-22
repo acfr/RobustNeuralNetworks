@@ -8,13 +8,14 @@ Adapted from code in
 Author: Dechuan Liu (May 2024)
 '''
 import jax.numpy as jnp
-from flax import linen as nn 
+from flax import linen as nn
 from typing import Any, Sequence, Callable
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
 from flax.struct import dataclass
 from robustnn.monlipnet_jax import MonLipNet, ExplicitMonLipParams, DirectMonLipParams, ExplicitInverseMonLipParams
 from robustnn.orthogonal_jax import Unitary, ExplicitOrthogonalParams, DirectOrthogonalParams
+from robustnn.solver_DYS import DavisYinSplit
 
 @dataclass
 class DirectBiLipParams:
@@ -79,6 +80,7 @@ class BiLipNet(nn.Module):
     act_fn: Callable = nn.relu
     depth: int = 2
     use_bias: bool = True
+    solver: Callable = DavisYinSplit
 
     def setup(self):
         # setup mu, nu, tau (constraint: tau = nu / mu)
@@ -124,14 +126,15 @@ class BiLipNet(nn.Module):
             uni.append(Unitary(input_size=self.input_size,
                                use_bias=self.use_bias))
             mon.append(MonLipNet(input_size=self.input_size,
-                                 units=self.units, 
+                                 units=self.units,
                                  tau=layer_tau,
                                  mu=layer_mu,
                                  nu=layer_nu,
                                  is_mu_fixed=self.is_mu_fixed,
                                  is_nu_fixed=self.is_nu_fixed,
                                  is_tau_fixed=self.is_tau_fixed,
-                                 act_fn=self.act_fn))
+                                 act_fn=self.act_fn,
+                                 solver=self.solver))
         # append last layer
         uni.append(Unitary(input_size=self.input_size,
                                use_bias=self.use_bias))
@@ -161,10 +164,12 @@ class BiLipNet(nn.Module):
     def _direct_to_explicit_inverse(self, alphas: Sequence[float],
                                     inverse_activation_fns: Sequence[Callable],
                                     iterations: Sequence[int],
-                                    Lambdas: Sequence[float]) -> ExplicitInverseBiLipParams:
+                                    Lambdas: Sequence[float],
+                                    solver: Callable = None) -> ExplicitInverseBiLipParams:
         """Convert direct params to explicit params."""
         monlip_explict_layers = [
-            layer._direct_to_explicit_inverse(alphas[i], inverse_activation_fns[i], iterations[i], Lambdas[i])
+            layer._direct_to_explicit_inverse(alphas[i], inverse_activation_fns[i], iterations[i], Lambdas[i],
+                                               solver=solver)
             for i, layer in enumerate(self.mon)
         ]
 

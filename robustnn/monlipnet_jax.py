@@ -7,12 +7,15 @@ Adapted from code in
     "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
 Author: Dechuan Liu (May 2024)
 '''
+import jax
 import jax.numpy as jnp
-from flax import linen as nn 
+from flax import linen as nn
 from typing import Any, Sequence, Callable
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
 from flax.struct import dataclass
+from dataclasses import dataclass as py_dataclass
+from robustnn.solver_DYS import DavisYinSplit
 
 @dataclass
 class DirectMonLipParams:
@@ -29,7 +32,7 @@ class DirectMonLipParams:
     bs: Array
     by: Array
     
-@dataclass
+@py_dataclass(frozen=True)
 class ExplicitMonLipParams:
     """Data class to keep track of explicit params for Monontone Lipschitz layer."""
     mu: float
@@ -47,17 +50,51 @@ class ExplicitMonLipParams:
     BTks: Array
     bs: Array
 
-@dataclass
+# Register ExplicitMonLipParams: only `units` is aux (used as a Python int
+# slice bound inside mln_RA and must stay static).  mu/nu/gam are learned
+# scalars computed from params, so they must be leaves to allow JIT-compilation
+# of functions that build ExplicitMonLipParams from traced parameters.
+jax.tree_util.register_pytree_node(
+    ExplicitMonLipParams,
+    lambda e: (
+        [e.V, e.S, e.by, e.bh, e.sqrt_g2, e.sqrt_2g, e.STks, e.Ak_1s, e.BTks, e.bs,
+         e.mu, e.nu, e.gam],
+        (e.units,),
+    ),
+    lambda aux, leaves: ExplicitMonLipParams(
+        units=aux[0],
+        V=leaves[0], S=leaves[1], by=leaves[2], bh=leaves[3],
+        sqrt_g2=leaves[4], sqrt_2g=leaves[5], STks=leaves[6],
+        Ak_1s=leaves[7], BTks=leaves[8], bs=leaves[9],
+        mu=leaves[10], nu=leaves[11], gam=leaves[12],
+    ),
+)
+
+@py_dataclass(frozen=True)
 class ExplicitInverseMonLipParams:
     """Data class to keep track of explicit params for Monontone Lipschitz layer."""
     monlip: ExplicitMonLipParams
-    alpha: float # defined for inverse of Monlip layer
-    inverse_activation_fn: Callable # inverse activation function
-    iterations: int = 200 # number of iterations for the inverse call
-    Lambda: float = 1.0 # step size for the update in DYS solver
+    alpha: float                              # defined for inverse of Monlip layer
+    inverse_activation_fn: Callable           # inverse activation function
+    iterations: int = 200                     # number of iterations for the inverse call
+    Lambda: float = 1.0                       # step size for the update
+    solver: Callable = DavisYinSplit          # iterative solver for the inverse call
 
-
-from robustnn.solver_DYS import DavisYinSplit
+# Register ExplicitInverseMonLipParams as a JAX pytree where callable fields
+# (inverse_activation_fn, solver) live in the treedef (aux) rather than as
+# array leaves.  This allows instances to be passed as JIT arguments.
+jax.tree_util.register_pytree_node(
+    ExplicitInverseMonLipParams,
+    lambda e: (
+        (e.monlip,),
+        (e.alpha, e.inverse_activation_fn, e.iterations, e.Lambda, e.solver),
+    ),
+    lambda aux, children: ExplicitInverseMonLipParams(
+        monlip=children[0],
+        alpha=aux[0], inverse_activation_fn=aux[1],
+        iterations=aux[2], Lambda=aux[3], solver=aux[4],
+    ),
+)
 class MonLipNet(nn.Module):
     '''
     Monotone Lipschitz neural network layer using Cayley transform.
@@ -90,6 +127,7 @@ class MonLipNet(nn.Module):
     is_nu_fixed: bool = False
     is_tau_fixed: bool = False
     act_fn: Callable = nn.relu
+    solver: Callable = DavisYinSplit
 
     def _get_bounds(self):
         """Get the bounds for the MonLipNet layer."""
@@ -103,7 +141,14 @@ class MonLipNet(nn.Module):
             return jnp.exp(self.variables['params']['logmu'])[-1]
 
         def get_nu():
-            return jnp.exp(self.variables['params']['lognu'])[-1]
+            # lognu stores log(gam) = log(nu - mu_eff), not log(nu).
+            # Reconstruct: nu = mu_eff + exp(lognu).  Always > mu_eff.
+            log_gam = self.variables['params']['lognu']
+            if self.is_mu_fixed:
+                return jnp.asarray(self.mu) + jnp.exp(log_gam)[-1]
+            else:
+                # mu is also learned; read logmu from stored params
+                return jnp.exp(self.variables['params']['logmu'])[-1] + jnp.exp(log_gam)[-1]
 
         calc_map = {
             # mu_fixed, nu_fixed, tau_fixed
@@ -139,7 +184,19 @@ class MonLipNet(nn.Module):
             return jnp.exp(self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32))[-1]
 
         def learn_nu():
-            return jnp.exp(self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32))[-1]
+            # Reparameterise: lognu = log(gam) where gam = nu - mu_eff > 0.
+            # Reconstructed nu = mu_eff + exp(lognu) is guaranteed > mu_eff for any
+            # finite value of lognu, eliminating sqrt(gam<0) = NaN.
+            # The gradient of log(tau) w.r.t. lognu = gam/nu → 0 as gam → 0,
+            # providing a natural soft barrier against the nu→mu collapse.
+            gam_init = jnp.maximum(jnp.asarray(self.nu) - jnp.asarray(self.mu), 1e-6)
+            log_gam = self.param('lognu', nn.initializers.constant(jnp.log(gam_init)), (1,), jnp.float32)
+            if self.is_mu_fixed:
+                return jnp.asarray(self.mu) + jnp.exp(log_gam[-1])
+            else:
+                # mu is also learned; re-read logmu (already registered by learn_mu())
+                logmu = self.param('logmu', nn.initializers.constant(jnp.log(jnp.asarray(self.mu))), (1,), jnp.float32)
+                return jnp.exp(logmu[-1]) + jnp.exp(log_gam[-1])
 
         calc_map = {
             # mu_fixed, nu_fixed, tau_fixed
@@ -243,24 +300,26 @@ class MonLipNet(nn.Module):
                             inverse_activation_fn: Callable = nn.relu,
                             iterations: int = 200,
                             Lambda: float = 1.0,
+                            solver: Callable = None,
                             ) -> ExplicitInverseMonLipParams:
         """Convert the direct parameters to explicit parameters for inverse call.
         Args:
             alpha: Scaling factor for the explicit parameters in inverse
                 MonLipNet layer.
             inverse_activation_fn: Inverse activation function to be used (default: nn.relu).
-            iterations: Number of iterations for the inverse call (DYS solver) (default: 200).
-            Lambda: Step size for the update in DYS solver (default: 1.0).
+            iterations: Number of iterations for the inverse call (default: 200).
+            Lambda: Step size for the update (default: 1.0).
+            solver: Iterative solver to use. None falls back to the solver set at construction.
         Returns:
             ExplicitInverseMonLipParams: Explicit parameters for inverse call.
         """
-
         return ExplicitInverseMonLipParams(
             monlip=self._direct_to_explicit(),
             alpha=alpha,
             inverse_activation_fn=inverse_activation_fn,
             iterations=iterations,
             Lambda=Lambda,
+            solver=solver if solver is not None else self.solver,
         )
 
 
@@ -303,16 +362,20 @@ class MonLipNet(nn.Module):
         # inverse of equation 12
         # bz = (y - e.by) / e.sqrt_2g
         bz = e.sqrt_2g/e.mu * (y-e.by) @ e.S.T + e.bh
-        uk = jnp.zeros(jnp.shape(bz))
+        uk0 = jnp.zeros(jnp.shape(bz))
 
-        # iterate until converge for zk using DYS solver
-        # todo: might change this for loop to jitable loop
-        for i in range(e_inv.iterations):
-            # iterate until converge for zk using DYS solver
-            zk, uk = DavisYinSplit(uk, bz, e, 
-                inverse_activation_fn=e_inv.inverse_activation_fn, 
+        # Carry (uk, zk) so we only keep the final zk — avoids allocating an
+        # (n_iters × batch × sum_units) stack which OOMs at large batch/units.
+        def solver_step(carry, _):
+            uk, _ = carry
+            zk_new, uk_new = e_inv.solver(uk, bz, e,
+                inverse_activation_fn=e_inv.inverse_activation_fn,
                 Lambda=e_inv.Lambda,
                 alpha=e_inv.alpha)
+            return (uk_new, zk_new), None
+
+        (_, zk), _ = jax.lax.scan(
+            solver_step, (uk0, jnp.zeros_like(bz)), None, length=e_inv.iterations)
 
         # z to x
         x = (y - e.by - e.sqrt_g2 * zk @ e.S) / e.mu
@@ -365,13 +428,13 @@ class MonLipNet(nn.Module):
                             Lambda: float = 1.0) -> ExplicitInverseMonLipParams:
         """
         Convert from direct MonLipNet params to explicit form for inverse call.
+        The solver is taken from the one set at construction time.
         Args:
             params (dict): Flax model parameters dictionary.
-            alpha: Scaling factor for the explicit parameters in inverse
-                MonLipNet layer.
+            alpha: Scaling factor for the explicit parameters in inverse MonLipNet layer.
             inverse_activation_fn: Inverse activation function to be used (default: nn.relu).
-            iterations: Number of iterations for the inverse call (DYS solver) (default: 200).
-            Lambda: Step size for the update in DYS solver (default: 1.0).
+            iterations: Number of iterations for the inverse call (default: 200).
+            Lambda: Step size for the update (default: 1.0).
         Returns:
             ExplicitInverseMonLipParams: explicit MonLipNet params.
         """
