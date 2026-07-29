@@ -21,7 +21,8 @@ class PLNet(nn.Module):
     def __init__(self, 
                  BiLipBlock: BiLipNet,
                  add_constant: bool = False,
-                 optimal_point: torch.Tensor = None):
+                 optimal_point: torch.Tensor = None,
+                 c: float = 0.0):
         """
         PLNet is a neural network architecture that based on bilipnet.
         It takes the quadratic potential of the output of the bilipnet.
@@ -31,6 +32,7 @@ class PLNet(nn.Module):
             BiLipBlock: an instance of BiLipNet
             add_constant: whether to add a constant term to the quadratic potential
             optimal_point: the optimal point for the quadratic potential (None if no optimal point)
+            c: the constant value added (default is 0.0)
         """
         super().__init__()
         self.bln = BiLipBlock 
