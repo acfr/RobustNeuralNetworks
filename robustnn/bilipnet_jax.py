@@ -81,42 +81,37 @@ class BiLipNet(nn.Module):
     use_bias: bool = True
 
     def setup(self):
-        # setup mu, nu, tau
-        if self.is_mu_fixed and self.is_nu_fixed and self.is_tau_fixed:
+        # setup mu, nu, tau (constraint: tau = nu / mu)
+        fixed = (self.is_mu_fixed, self.is_nu_fixed, self.is_tau_fixed)
+
+        if fixed == (True, True, True):
             raise ValueError("Cannot fix mu, nu, and tau at the same time.")
-        elif self.is_mu_fixed and self.is_nu_fixed:
-            mu = self.mu
-            nu = self.nu
-            tau = self.nu / self.mu
-        elif self.is_mu_fixed and self.is_tau_fixed:
-            mu = self.mu
-            nu = self.tau * self.mu
-            tau = self.tau
-        elif self.is_nu_fixed and self.is_tau_fixed:
-            nu = self.nu
-            mu = self.nu / self.tau
-            tau = self.tau
-        elif self.is_mu_fixed:
-            mu = self.mu
-            log_nu = self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32)
-            nu = jnp.exp(log_nu)
+
+        # Use a lookup table for the logic
+        def learn_mu():
+            return jnp.exp(self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32))
+
+        def learn_nu():
+            return jnp.exp(self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32))
+
+        calc_map = {
+            # mu_fixed, nu_fixed, tau_fixed
+            (True, True, False): lambda: (self.mu, self.nu, self.nu / self.mu),
+            (True, False, True): lambda: (self.mu, self.tau * self.mu, self.tau),
+            (False, True, True): lambda: (self.nu / self.tau, self.nu, self.tau),
+            (True, False, False): lambda: (self.mu, learn_nu(), None),
+            (False, True, False): lambda: (learn_mu(), self.nu, None),
+            (False, False, True): lambda: (learn_mu(), None, self.tau),
+            (False, False, False): lambda: (learn_mu(), learn_nu(), None),
+        }
+
+        mu, nu, tau = calc_map[fixed]()
+
+        # Calculate any missing values
+        if tau is None:
             tau = nu / mu
-        elif self.is_nu_fixed:
-            nu = self.nu
-            log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)
-            tau = nu / mu
-        elif self.is_tau_fixed:
-            tau = self.tau
-            log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)
+        elif nu is None:
             nu = tau * mu
-        else:
-            log_mu = self.param('logmu', nn.initializers.constant(jnp.log(self.mu)), (1,), jnp.float32)
-            mu = jnp.exp(log_mu)
-            log_nu = self.param('lognu', nn.initializers.constant(jnp.log(self.nu)), (1,), jnp.float32)
-            nu = jnp.exp(log_nu)
-            tau = nu / mu
 
         # calculate mu, nu, tau for each layer
         layer_tau = (tau) ** (1/self.depth)

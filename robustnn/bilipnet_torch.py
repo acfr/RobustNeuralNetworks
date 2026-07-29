@@ -44,24 +44,23 @@ class BiLipNet(nn.Module):
         self.depth = depth
 
         # set up mu, nu, and tau
-        # Determine which one to compute
-        known = [mu is not None, nu is not None, tau is not None]
+        known = (mu is not None, nu is not None, tau is not None)
         if sum(known) < 2:
             raise ValueError("At least two of mu, nu, tau must be specified.")
 
-        # Compute missing parameter
-        if mu is None:
-            mu = nu / tau
-        elif nu is None:
-            nu = mu * tau
+        # Compute missing parameter using lookup table
+        calc_map = {
+            (False, True, True): lambda: (nu / tau, nu, tau),
+            (True, False, True): lambda: (mu, mu * tau, tau),
+            (True, True, False): lambda: (mu, nu, nu / mu),
+            (True, True, True): lambda: (mu, nu, tau),
+        }
+        mu, nu, tau = calc_map[known]()
 
+        # Apply per-layer scaling
         mu = mu ** (1./depth)
         nu = nu ** (1./depth)
-
-        if is_tau_fixed:
-            tau = tau ** (1./depth)
-        else:
-            tau = nu / mu
+        tau = tau ** (1./depth) if is_tau_fixed else nu / mu
 
         olayer = [Unitary(features, features) for _ in range(depth+1)]
         self.orth_layers = nn.Sequential(*olayer)
