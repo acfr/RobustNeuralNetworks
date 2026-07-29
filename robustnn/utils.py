@@ -88,6 +88,3 @@ def count_num_params(d):
             total_elements += count_num_params(value)
     
     return total_elements
-
-
-

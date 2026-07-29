@@ -196,13 +196,26 @@ class GeneralREN(ren.RENBase):
             raise NotImplementedError(
                 "Identity output currently not supported for QSR RENs. TODO."
             )
+    
+    def _get_qsr(self):
+        """Return the (Q, S, R) IQC matrices for this REN.
+        
+        Subclasses may override this to construct (Q, S, R) from other
+        parameters (eg: Lipschitz bounds) instead of taking them directly.
+        """
+        return self.Q, self.S, self.R
         
     def _direct_to_explicit(self) -> ren.ExplicitRENParams:
         ps = self.direct
+        Q, S, R = self._get_qsr()
+        return self._qsr_to_explicit(ps, Q, S, R)
+    
+    def _qsr_to_explicit(self, ps, Q, S, R) -> ren.ExplicitRENParams:
+        """Convert direct params to explicit form given the (Q, S, R) matrices."""
         nu = self.input_size
         nx = self.state_size
         ny = self.output_size
-        Q, S, R = _adjust_iqc_params(self.Q, self.S, self.R, self.eps, self.param_dtype)
+        Q, S, R = _adjust_iqc_params(Q, S, R, self.eps, self.param_dtype)
         
         # Compute useful decompositions
         R_temp = R - S @ jnp.linalg.solve(Q, S.T)
@@ -257,9 +270,70 @@ class GeneralREN(ren.RENBase):
         """
         nu = self.input_size
         ny = self.output_size
-        _check_valid_qsr(nu, ny, self.Q, self.S, self.R, self.eps, self.param_dtype)
+        Q, S, R = self._get_qsr()
+        _check_valid_qsr(nu, ny, Q, S, R, self.eps, self.param_dtype)
 
  
+class BiLipschitzREN(GeneralREN):
+    """Construct a bi-Lipschitz REN.
+    
+    A bi-Lipschitz REN is a square (``input_size == output_size``) REN whose
+    input-output map ``G`` satisfies, for all inputs ``u1, u2``,
+
+        mu * ||u1 - u2|| <= ||G(u1) - G(u2)|| <= nu * ||u1 - u2||,
+
+    where ``mu`` is the lower (inverse-Lipschitz) bound and ``nu`` is the upper
+    (Lipschitz) bound. This is just a `GeneralREN` with the incremental IQC
+    matrices derived from the bounds:
+
+        Q = -alpha2 * I,   S = I,   R = -alpha1 * I,
+        alpha1 = 2*mu*nu / (mu + nu),   alpha2 = 2 / (mu + nu).
+
+    Example usage:
+
+        >>> import jax, jax.numpy as jnp
+        >>> from robustnn import ren_jax as ren
+        
+        >>> rng = jax.random.key(0)
+        >>> key1, key2 = jax.random.split(rng)
+
+        >>> nu_io, nx, nv = 2, 3, 4
+        >>> model = ren.BiLipschitzREN(nu_io, nx, nv, nu_io, mu=0.5, nu=5.0)
+        
+        >>> batches = 5
+        >>> states = model.initialize_carry(key1, (batches, nu_io))
+        >>> inputs = jnp.ones((batches, nu_io))
+        >>> params = model.init(key2, states, inputs)
+    
+    Attributes:
+        mu: lower (inverse-Lipschitz) bound, ``0 < mu < nu`` (default 1.0).
+        nu: upper (Lipschitz) bound (default 10.0).
+    
+    See docs for `RENBase` for the full list of arguments.
+    """
+    mu: jnp.float32 = 1.0   # type: ignore # lower (inverse-Lipschitz) bound
+    nu: jnp.float32 = 10.0  # type: ignore # upper (Lipschitz) bound
+    
+    def _error_checking(self):
+        if self.input_size != self.output_size:
+            raise ValueError(
+                "BiLipschitzREN requires `input_size == output_size`."
+            )
+        super()._error_checking()
+    
+    def _get_qsr(self):
+        n = self.input_size
+        I = jnp.identity(n, self.param_dtype)
+        mu = jnp.float32(self.mu)
+        nu = jnp.float32(self.nu)
+        alpha1 = 2.0 * (mu * nu) / (mu + nu)
+        alpha2 = 2.0 / (mu + nu)
+        Q = -alpha2 * I
+        S = I
+        R = -alpha1 * I
+        return Q, S, R
+
+
 def _check_valid_qsr(nu, ny, Q, S, R, eps, dtype):
     Q, S, R = _adjust_iqc_params(Q, S, R, eps, dtype)
     

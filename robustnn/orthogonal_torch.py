@@ -135,3 +135,4 @@ class Unitary(nn.Linear):
         """
         orth_params = self.direct_to_explicit()
         return  (y - orth_params.b) @ orth_params.Q
+

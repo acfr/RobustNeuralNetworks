@@ -26,6 +26,7 @@ from flax.typing import Dtype, Array
 
 from robustnn.utils import l2_norm, identity_init
 from robustnn.utils import ActivationFn, Initializer
+from robustnn.solvers import DouglasRachfordSplit
 
 
 def get_valid_init():
@@ -49,6 +50,60 @@ def tril_equlibrium_layer(activation, D11, b):
         w_eq = w_eq.at[..., i].set(activation(Di_wi + bi))
     return w_eq
         
+
+# Default number of iterations for the Douglas-Rachford equilibrium solver used
+# by the INVERSE REN (where D11 is no longer lower-triangular).
+_INV_SOLVER_ITERS = 200
+
+
+@partial(jax.custom_vjp, nondiff_argnums=(0,))
+def _equilibrium_ift_grad(activation, D11, v, w_eq):
+    """Identity in the forward pass; attaches an implicit-function-theorem
+    gradient to a pre-computed equilibrium point `w_eq` (see Eqn. 13 of
+    Revay et al. (2023)). Used by the full (non-triangular) equilibrium solver."""
+    return w_eq
+
+
+def _equilibrium_ift_grad_fwd(activation, D11, v, w_eq):
+    I = jnp.identity(v.shape[-1])
+    return w_eq, (D11, v, I)
+
+
+def _equilibrium_ift_grad_bwd(activation, res, y_bar):
+    D11, v, I = res
+    D11_bar = jnp.zeros_like(D11)
+    v_bar = jnp.zeros_like(v)
+    
+    # Jacobian of the (scalar) activation evaluated at v is diagonal per sample.
+    _, vjp_act_v = jax.vjp(activation, v)
+    j_diag, = vjp_act_v(jnp.ones_like(v))
+    
+    w_eq_bar = jnp.zeros_like(v)
+    for i in range(w_eq_bar.shape[0]):
+        ji = j_diag[i, ...]
+        y_bar_i = y_bar[i, ...]
+        w_grad = jnp.linalg.solve(I - (ji * D11.T), y_bar_i.T).T
+        w_eq_bar = w_eq_bar.at[i, ...].set(w_grad)
+    return (D11_bar, v_bar, w_eq_bar)
+
+
+_equilibrium_ift_grad.defvjp(_equilibrium_ift_grad_fwd, _equilibrium_ift_grad_bwd)
+
+
+def full_equilibrium_layer(activation, D11, b, max_iter=_INV_SOLVER_ITERS):
+    """Solve `w = activation(D11 @ w + b)` for a full `D11`, with autodiff
+    support via the implicit function theorem.
+
+    The forward fixed point is found by Douglas-Rachford splitting (see
+    `robustnn.solvers.DouglasRachfordSplit`); this is used by the inverse
+    REN, whose `D11` matrix is generally not lower-triangular.
+    """
+    w_eq = jax.lax.stop_gradient(
+        DouglasRachfordSplit(activation, D11, b, max_iter=max_iter))
+    v = w_eq @ D11.T + b
+    w_eq = activation(v)
+    return _equilibrium_ift_grad(activation, D11, v, w_eq)
+
 
 @dataclass
 class DirectRENParams:
@@ -296,6 +351,66 @@ class RENBase(nn.Module):
         y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
         return x1, y
     
+    def _explicit_inverse(self, e: ExplicitRENParams) -> ExplicitRENParams:
+        """Construct the explicit params of the inverse REN.
+
+        Given an explicit REN with input-output map `y = G(x, u)`, this returns
+        the explicit params of the model that recovers `u` from `(x, y)`. This
+        requires `D22` to be square and invertible (true for bi-Lipschitz RENs
+        where `input_size == output_size`).
+
+        Args:
+            e (ExplicitRENParams): explicit params of the forward REN.
+
+        Returns:
+            ExplicitRENParams: explicit params of the inverse REN.
+        """
+        D22_inv = jnp.linalg.inv(e.D22)
+        B2_D = e.B2 @ D22_inv
+        D12_D = e.D12 @ D22_inv
+        
+        A_inv = e.A - B2_D @ e.C2
+        B1_inv = e.B1 - B2_D @ e.D21
+        B2_inv = B2_D
+        C1_inv = e.C1 - D12_D @ e.C2
+        C2_inv = -D22_inv @ e.C2
+        D11_inv = e.D11 - D12_D @ e.D21
+        D12_inv = D12_D
+        D21_inv = -D22_inv @ e.D21
+        D22_inv_e = D22_inv
+        bx_inv = e.bx - B2_D @ e.by
+        bv_inv = e.bv - D12_D @ e.by
+        by_inv = -e.by @ D22_inv.T
+        return ExplicitRENParams(A_inv, B1_inv, B2_inv, C1_inv, C2_inv, D11_inv,
+                                 D12_inv, D21_inv, D22_inv_e, bx_inv, bv_inv, by_inv)
+    
+    def _direct_to_explicit_inverse(self) -> ExplicitRENParams:
+        """Convert direct params straight to the explicit inverse REN params."""
+        return self._explicit_inverse(self._direct_to_explicit())
+    
+    def _explicit_inverse_call(
+        self, x: Array, u: Array, e: ExplicitRENParams
+    ) -> Tuple[Array, Array]:
+        """Evaluate the inverse REN given its (inverse) explicit params.
+
+        Args:
+            x (Array): internal model state.
+            u (Array): model outputs to be inverted (recovers the inputs).
+            e (ExplicitRENParams): inverse explicit params (see `_explicit_inverse`).
+
+        Returns:
+            Tuple[Array, Array]: (next_states, recovered_inputs).
+        
+        Note:
+            The inverse `D11` is generally not lower-triangular, so this uses the
+            iterative full-equilibrium solver instead of the triangular solve.
+        """
+        b = x @ e.C1.T + u @ e.D12.T + e.bv
+        w = full_equilibrium_layer(self.activation, e.D11, b)
+        x1 = x @ e.A.T + w @ e.B1.T + u @ e.B2.T + e.bx
+        y = x @ e.C2.T + w @ e.D21.T + u @ e.D22.T + e.by
+        return x1, y
+    
     def _simulate_sequence(self, x0, u) -> Tuple[Array, Array]:
         """Simulate a REN over a sequence of inputs.
 
@@ -468,6 +583,45 @@ class RENBase(nn.Module):
             ExplicitRENParams: explicit params for REN.
         """
         return self.apply(params, method="_direct_to_explicit")
+    
+    def direct_to_explicit_inverse(self, params: dict) -> ExplicitRENParams:
+        """Convert from direct params to the explicit inverse REN params.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+
+        Returns:
+            ExplicitRENParams: explicit params for the inverse REN.
+        """
+        return self.apply(params, method="_direct_to_explicit_inverse")
+    
+    def explicit_inverse(self, params: dict, e: ExplicitRENParams) -> ExplicitRENParams:
+        """Construct the explicit inverse params from forward explicit params.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            e (ExplicitRENParams): explicit params of the forward REN.
+
+        Returns:
+            ExplicitRENParams: explicit params for the inverse REN.
+        """
+        return self.apply(params, e, method="_explicit_inverse")
+    
+    def inverse_call(
+        self, params: dict, x: Array, u: Array, e: ExplicitRENParams
+    ) -> Tuple[Array, Array]:
+        """Evaluate the inverse REN given its (inverse) explicit params.
+
+        Args:
+            params (dict): Flax model parameters dictionary.
+            x (Array): internal model state.
+            u (Array): model outputs to invert.
+            e (ExplicitRENParams): inverse explicit params.
+
+        Returns:
+            Tuple[Array, Array]: (next_states, recovered_inputs).
+        """
+        return self._explicit_inverse_call(x, u, e)
     
     def simulate_sequence(self, params: dict, x0, u) -> Tuple[Array, Array]:
         """Simulate a REN over a sequence of inputs.
