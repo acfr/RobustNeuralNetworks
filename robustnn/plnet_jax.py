@@ -69,19 +69,21 @@ class PLNet(nn.Module):
     Attributes:
         BiLipBlock: the base BiLipNet block (g)
         add_constant: Whether to add a learnable constant term to the quadratic (default: False).
-        minimum: The known minimum/equilibrium point (default: None). This can be directly
+        optimal_point: The known minimum/equilibrium point (default: None). This can be directly
             set to a value if known. We can encode this in the model and guarantee that 
             the minimum of PLNet is always at this point. 
+        c: the constant value added (default is 0.0)
     """
     BiLipBlock: nn.Module
-    add_constant: float = False
+    add_constant: bool = False
     optimal_point: Array = None
+    c: float = 0.
 
     def setup(self):
         if self.add_constant:
             c = self.param('c', nn.initializers.constant(0.), (1,), jnp.float32)
         else:
-            c = 0.
+            c = self.c
 
         self.direct = DirectPLParams(
             bilip_layer=self.BiLipBlock.direct,
