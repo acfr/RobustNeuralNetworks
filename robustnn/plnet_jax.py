@@ -152,7 +152,7 @@ class PLNet(nn.Module):
         f = explicit.f_function(x, explicit.bilip_layer)
 
         # Calculate the quadratic potential
-        y = 0.5 * jnp.mean(jnp.square(f), axis=-1) + explicit.c
+        y = 0.5 * jnp.sum(jnp.square(f), axis=-1) + explicit.c
 
         return y
     
