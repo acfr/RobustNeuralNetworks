@@ -1,4 +1,10 @@
-"""Conditioned orthogonal layer for parameter-dependent BiLip networks."""
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
+"""
+Conditioned orthogonal layer for parameter-dependent BiLip networks.
+Adapted from code in 
+    "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
+Maintained by: Dechuan Liu (Aug 2026)
+"""
 
 import numpy as np
 import torch

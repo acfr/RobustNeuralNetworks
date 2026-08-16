@@ -1,4 +1,10 @@
-"""Parameter-conditioned Polyak-Lojasiewicz neural network for PyTorch."""
+# This file is a part of the RobustNeuralNetworks package. License is MIT: https://github.com/acfr/RobustNeuralNetworks/blob/main/LICENSE 
+"""
+Parameter-conditioned Polyak-Lojasiewicz neural network for PyTorch.
+Adapted from code in 
+    "Monotone, Bi-Lipschitz, and Polyak-Łojasiewicz Networks" [https://arxiv.org/html/2402.01344v2]
+Maintained by: Dechuan Liu (Aug 2026)
+"""
 
 from typing import Callable
 
