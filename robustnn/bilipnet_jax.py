@@ -9,7 +9,7 @@ Author: Dechuan Liu (May 2024)
 '''
 import jax.numpy as jnp
 from flax import linen as nn 
-from typing import Any, Sequence, Callable
+from typing import Any, Sequence, Callable, Optional
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
 from flax.struct import dataclass
@@ -158,13 +158,39 @@ class BiLipNet(nn.Module):
                                    lipmax=lipmax,
                                    distortion=tau)
     
-    def _direct_to_explicit_inverse(self, alphas: Sequence[float],
-                                    inverse_activation_fns: Sequence[Callable],
-                                    iterations: Sequence[int],
-                                    Lambdas: Sequence[float]) -> ExplicitInverseBiLipParams:
+    def _direct_to_explicit_inverse(
+        self,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+    ) -> ExplicitInverseBiLipParams:
         """Convert direct params to explicit params."""
+        alphas = [None] * self.depth if alphas is None else alphas
+        inverse_activation_fns = (
+            [nn.relu] * self.depth
+            if inverse_activation_fns is None else inverse_activation_fns
+        )
+        iterations = [2000] * self.depth if iterations is None else iterations
+        Lambdas = [1.0] * self.depth if Lambdas is None else Lambdas
+        tolerances = [1e-6] * self.depth if tolerances is None else tolerances
+        arguments = {
+            "alphas": alphas,
+            "inverse_activation_fns": inverse_activation_fns,
+            "iterations": iterations,
+            "Lambdas": Lambdas,
+            "tolerances": tolerances,
+        }
+        for name, values in arguments.items():
+            if len(values) != self.depth:
+                raise ValueError(f"{name} must contain {self.depth} values.")
+
         monlip_explict_layers = [
-            layer._direct_to_explicit_inverse(alphas[i], inverse_activation_fns[i], iterations[i], Lambdas[i])
+            layer._direct_to_explicit_inverse(
+                alphas[i], inverse_activation_fns[i], iterations[i],
+                Lambdas[i], tolerances[i]
+            )
             for i, layer in enumerate(self.mon)
         ]
 
@@ -189,12 +215,25 @@ class BiLipNet(nn.Module):
         x = self.uni[self.depth]._explicit_call( x, explicit.unitary_layers[self.depth])
         return x
     
-    def _explicit_inverse_call(self, x: jnp.array, explicit: ExplicitInverseBiLipParams) -> Array:
-        """Call method for the BiLipNet layer using explicit parameters."""
+    def _explicit_inverse_call_with_diagnostics(
+        self, x: jnp.array, explicit: ExplicitInverseBiLipParams
+    ):
+        residuals = [None] * self.depth
+        iterations = [None] * self.depth
         for k in range(self.depth, 0, -1):
             x = self.uni[k]._explicit_inverse_call( x, explicit.unitary_layers[k])
-            x = self.mon[k-1]._explicit_inverse_call( x, explicit.monlip_layers[k-1])
+            x, residuals[k - 1], iterations[k - 1] = (
+                self.mon[k - 1]._explicit_inverse_call_with_diagnostics(
+                    x, explicit.monlip_layers[k - 1]
+                )
+            )
         x = self.uni[0]._explicit_inverse_call( x, explicit.unitary_layers[0])
+        return x, jnp.stack(residuals), jnp.stack(iterations)
+
+    def _explicit_inverse_call(self, x: jnp.array,
+                               explicit: ExplicitInverseBiLipParams) -> Array:
+        """Call method for the BiLipNet layer using explicit parameters."""
+        x, _, _ = self._explicit_inverse_call_with_diagnostics(x, explicit)
         return x
     
     @nn.compact
@@ -243,31 +282,47 @@ class BiLipNet(nn.Module):
         """
         return self.apply(params, method="_direct_to_explicit")
     
-    def inverse_call(self, params: dict, x: Array, explicit: ExplicitInverseMonLipParams) -> Array:
+    def inverse_call(self, params: dict, x: Array,
+                     explicit: ExplicitInverseBiLipParams) -> Array:
         """Evaluate the inverse model for a BiLipNet layer.
         Args:
             params (dict): Flax model parameters dictionary.
             x (Array): model inputs.
-            explicit (ExplicitInverseMonLipParams): explicit params for inverse.
+            explicit (ExplicitInverseBiLipParams): explicit params for inverse.
         Returns:
             Array: model outputs.
         """
         return self.apply(params, x, explicit, method="_explicit_inverse_call")
+
+    def inverse_call_with_diagnostics(
+        self, params: dict, x: Array, explicit: ExplicitInverseBiLipParams
+    ):
+        """Evaluate the inverse and return each block's DYS diagnostics."""
+        return self.apply(
+            params, x, explicit, method="_explicit_inverse_call_with_diagnostics"
+        )
     
-    def direct_to_explicit_inverse(self, params: dict,
-                                    alphas: Sequence[float],
-                                    inverse_activation_fns: Sequence[Callable],
-                                    iterations: Sequence[int],
-                                    Lambdas: Sequence[float]) -> ExplicitInverseBiLipParams:
+    def direct_to_explicit_inverse(
+        self,
+        params: dict,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+    ) -> ExplicitInverseBiLipParams:
         """Convert from direct BiLipNet params to explicit form for eval.
         Args:
             params (dict): Flax model parameters dictionary.
-            alphas (Sequence[float]): scaling factors for each layer.
-            inverse_activation_fns (Sequence[Callable]): inverse activation functions for each layer.
-            iterations (Sequence[int]): number of iterations for each layer.
-            Lambdas (Sequence[float]): scaling factors for each layer.
+            alphas: Requested DYS steps. Unsafe values are capped per layer.
+            inverse_activation_fns: Proximal operators for each layer.
+            iterations: Maximum DYS iterations for each layer.
+            Lambdas: Relaxation factors for each layer.
+            tolerances: Relative splitting-residual tolerances for each layer.
         Returns:
             ExplicitInverseBiLipParams: explicit BiLipNet layer params.
         """
-        return self.apply(params, alphas, inverse_activation_fns, iterations, Lambdas, method="_direct_to_explicit_inverse")
-    
+        return self.apply(
+            params, alphas, inverse_activation_fns, iterations, Lambdas,
+            tolerances, method="_direct_to_explicit_inverse"
+        )

@@ -9,10 +9,10 @@ Author: Dechuan Liu (May 2024)
 '''
 import jax.numpy as jnp
 from flax import linen as nn 
-from typing import Any, Sequence, Callable
+from typing import Any, Sequence, Callable, Optional
 from flax.typing import Array, PrecisionLike
 from robustnn.utils import cayley
-from flax.struct import dataclass
+from flax.struct import dataclass, field
 
 @dataclass
 class DirectMonLipParams:
@@ -35,7 +35,7 @@ class ExplicitMonLipParams:
     mu: float
     nu: float
     gam: float
-    units: Sequence[int]
+    units: Sequence[int] = field(pytree_node=False)
     V: Array
     S: Array
     by: Array
@@ -51,13 +51,14 @@ class ExplicitMonLipParams:
 class ExplicitInverseMonLipParams:
     """Data class to keep track of explicit params for Monontone Lipschitz layer."""
     monlip: ExplicitMonLipParams
-    alpha: float # defined for inverse of Monlip layer
-    inverse_activation_fn: Callable # inverse activation function
-    iterations: int = 200 # number of iterations for the inverse call
+    alpha: float # effective DYS step, capped below mu / (nu - mu)
+    inverse_activation_fn: Callable = field(pytree_node=False)
+    iterations: int = 2000 # maximum number of inverse iterations
     Lambda: float = 1.0 # step size for the update in DYS solver
+    tolerance: float = 1e-6
 
 
-from robustnn.solvers import DavisYinSplit
+from robustnn.solvers import DavisYinSolve
 class MonLipNet(nn.Module):
     '''
     Monotone Lipschitz neural network layer using Cayley transform.
@@ -239,28 +240,50 @@ class MonLipNet(nn.Module):
             bs=bs,
         )
 
-    def _direct_to_explicit_inverse(self, alpha: float = 1.0,
+    def _direct_to_explicit_inverse(self, alpha: Optional[float] = None,
                             inverse_activation_fn: Callable = nn.relu,
-                            iterations: int = 200,
+                            iterations: int = 2000,
                             Lambda: float = 1.0,
+                            tolerance: float = 1e-6,
                             ) -> ExplicitInverseMonLipParams:
         """Convert the direct parameters to explicit parameters for inverse call.
         Args:
-            alpha: Scaling factor for the explicit parameters in inverse
-                MonLipNet layer.
-            inverse_activation_fn: Inverse activation function to be used (default: nn.relu).
-            iterations: Number of iterations for the inverse call (DYS solver) (default: 200).
+            alpha: Requested DYS step. Unsafe values are capped from the
+                layer's current monotonicity and Lipschitz bounds.
+            inverse_activation_fn: Proximal operator used by DYS.
+            iterations: Maximum DYS iterations.
             Lambda: Step size for the update in DYS solver (default: 1.0).
+            tolerance: Relative splitting-residual tolerance.
         Returns:
             ExplicitInverseMonLipParams: Explicit parameters for inverse call.
         """
 
+        monlip = self._direct_to_explicit()
+        # A margin below the paper's strict alpha < mu / (nu - mu) bound
+        # avoids silently divergent inverses when callers request alpha=1.
+        positive_gamma = monlip.gam > 0
+        safe_alpha = jnp.where(
+            positive_gamma,
+            0.9 * monlip.mu / jnp.where(positive_gamma, monlip.gam, 1.0),
+            jnp.where(monlip.gam == 0, 1.0, jnp.nan),
+        )
+        if alpha is None:
+            alpha = safe_alpha
+        else:
+            requested_alpha = jnp.asarray(alpha, dtype=monlip.S.dtype)
+            alpha = jnp.where(
+                jnp.logical_and(jnp.isfinite(requested_alpha), requested_alpha > 0),
+                jnp.minimum(requested_alpha, safe_alpha),
+                safe_alpha,
+            )
+
         return ExplicitInverseMonLipParams(
-            monlip=self._direct_to_explicit(),
+            monlip=monlip,
             alpha=alpha,
             inverse_activation_fn=inverse_activation_fn,
             iterations=iterations,
             Lambda=Lambda,
+            tolerance=tolerance,
         )
 
 
@@ -287,13 +310,16 @@ class MonLipNet(nn.Module):
         explict = self._direct_to_explicit()
         return self._explicit_call(x, explict)
     
-    def _explicit_inverse_call(self, y: jnp.array, e_inv: ExplicitInverseMonLipParams) -> Array:
+    def _explicit_inverse_call_with_diagnostics(
+        self, y: jnp.array, e_inv: ExplicitInverseMonLipParams
+    ):
         """
         Inverse call method for the MonLipNet layer using explicit parameters.
         Args:
             y: Output tensor of shape (batch_size, output_dim).
             e: ExplicitInverseMonLipParams object containing explicit inverse parameters.
-        Note: The inverse activation function should be the inverse of the activation function used in the forward pass.
+        Note: ``inverse_activation_fn`` must implement the activation's
+        alpha-dependent proximal operator. For ReLU this is ReLU itself.
         Returns:
             x: Input tensor of shape (batch_size, input_dim).
         """
@@ -303,26 +329,25 @@ class MonLipNet(nn.Module):
         # inverse of equation 12
         # bz = (y - e.by) / e.sqrt_2g
         bz = e.sqrt_2g/e.mu * (y-e.by) @ e.S.T + e.bh
-        uk = jnp.zeros(jnp.shape(bz))
-
-        # iterate until converge for zk using DYS solver
-        # todo: might change this for loop to jitable loop
-        for i in range(e_inv.iterations):
-            # iterate until converge for zk using DYS solver
-            zk, uk = DavisYinSplit(uk, bz, e, 
-                inverse_activation_fn=e_inv.inverse_activation_fn, 
-                Lambda=e_inv.Lambda,
-                alpha=e_inv.alpha)
+        zk, _, residual, iterations = DavisYinSolve(
+            bz,
+            e,
+            inverse_activation_fn=e_inv.inverse_activation_fn,
+            Lambda=e_inv.Lambda,
+            alpha=e_inv.alpha,
+            max_iterations=e_inv.iterations,
+            tolerance=e_inv.tolerance,
+        )
 
         # z to x
         x = (y - e.by - e.sqrt_g2 * zk @ e.S) / e.mu
 
 
-        # check loss here
-        # import jax
-        # diff = jnp.linalg.norm(y - self.__call__(x), axis=-1)
-        # jax.debug.print(f"MonLipNet inverse loss: {jnp.mean(diff)}")
-        return x
+        return x, residual, iterations
+
+    def _explicit_inverse_call(self, y: jnp.array,
+                               e_inv: ExplicitInverseMonLipParams) -> Array:
+        return self._explicit_inverse_call_with_diagnostics(y, e_inv)[0]
 
 
     #################### Convenient Wrappers ####################
@@ -349,6 +374,14 @@ class MonLipNet(nn.Module):
         """
         return self.apply(params, y, explicit, method="_explicit_inverse_call")
 
+    def inverse_call_with_diagnostics(
+        self, params: dict, y: Array, explicit: ExplicitInverseMonLipParams
+    ):
+        """Evaluate the inverse and return its residual and iteration count."""
+        return self.apply(
+            params, y, explicit, method="_explicit_inverse_call_with_diagnostics"
+        )
+
     def direct_to_explicit(self, params: dict) -> ExplicitMonLipParams:
         """
         Convert from direct MonLipNet params to explicit form for eval.
@@ -359,25 +392,30 @@ class MonLipNet(nn.Module):
         """
         return self.apply(params, method="_direct_to_explicit")
 
-    def direct_to_explicit_inverse(self, params: dict, alpha: float = 1.0,
+    def direct_to_explicit_inverse(self, params: dict,
+                            alpha: Optional[float] = None,
                             inverse_activation_fn: Callable = nn.relu,
-                            iterations: int = 200,
-                            Lambda: float = 1.0) -> ExplicitInverseMonLipParams:
+                            iterations: int = 2000,
+                            Lambda: float = 1.0,
+                            tolerance: float = 1e-6) -> ExplicitInverseMonLipParams:
         """
         Convert from direct MonLipNet params to explicit form for inverse call.
         Args:
             params (dict): Flax model parameters dictionary.
-            alpha: Scaling factor for the explicit parameters in inverse
-                MonLipNet layer.
-            inverse_activation_fn: Inverse activation function to be used (default: nn.relu).
-            iterations: Number of iterations for the inverse call (DYS solver) (default: 200).
+            alpha: Requested DYS step. Values outside the convergence range are
+                replaced by a safe step based on the layer's current bounds.
+            inverse_activation_fn: Proximal operator used by DYS (default: nn.relu).
+            iterations: Maximum DYS iterations (default: 2000).
             Lambda: Step size for the update in DYS solver (default: 1.0).
+            tolerance: Relative splitting-residual tolerance (default: 1e-6).
         Returns:
             ExplicitInverseMonLipParams: explicit MonLipNet params.
         """
-        return self.apply(params, alpha, inverse_activation_fn, iterations, Lambda, method="_direct_to_explicit_inverse")
-    
+        return self.apply(
+            params, alpha, inverse_activation_fn, iterations, Lambda, tolerance,
+            method="_direct_to_explicit_inverse"
+        )
+
     def get_bounds(self, params: dict = None) -> tuple:
         """Get the bounds for the MonLipNet layer."""
         return self.apply(params, method="_get_bounds")
-    

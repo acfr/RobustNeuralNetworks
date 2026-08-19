@@ -72,7 +72,8 @@ def DavisYinSplit(uk, bz, e,
         uk (Array): Current value of u.
         bz (Array): Current value of b.
         e (ExplicitMonLipParams): ExplicitMonLipParams object containing the network parameters.
-        inverse_activation_fn (Callable, optional): Inverse activation function. Defaults to nn.relu.
+        inverse_activation_fn (Callable, optional): Proximal operator required
+            by DYS. Defaults to ``nn.relu``.
         Lambda (float, optional): Step size for the update. Defaults to 1.0.
     Returns:
         Update once (uk+1, zk+1) as mentioned in eq 14.
@@ -89,6 +90,42 @@ def DavisYinSplit(uk, bz, e,
     uk += Lambda * (zk - zh) 
 
     return zk, uk
+
+
+def DavisYinSolve(bz, e, inverse_activation_fn: Callable = nn.relu,
+                   Lambda: float = 1.0, alpha: float = 1.0,
+                   max_iterations: int = 2000,
+                   tolerance: float = 1e-6):
+    """Run DYS until its relative splitting residual reaches ``tolerance``.
+
+    Returns the final hidden state, splitting variable, maximum batch residual,
+    and iteration count. ``inverse_activation_fn`` is the proximal operator
+    required by DYS; for ReLU this is ReLU itself for every positive ``alpha``.
+    """
+    uk = jnp.zeros_like(bz)
+    zk = jnp.zeros_like(bz)
+    residual = jnp.asarray(jnp.inf, dtype=bz.dtype)
+    iteration = jnp.asarray(0, dtype=jnp.int32)
+
+    def body_fun(carry):
+        _, uk, _, iteration = carry
+        zh = inverse_activation_fn(uk)
+        zk, uk = DavisYinSplit(
+            uk, bz, e, inverse_activation_fn, Lambda, alpha
+        )
+        residual = jnp.max(
+            jnp.linalg.norm(zk - zh, axis=-1)
+            / (1.0 + jnp.linalg.norm(zh, axis=-1))
+        )
+        return zk, uk, residual, iteration + 1
+
+    def cond_fun(carry):
+        return jnp.logical_and(carry[2] > tolerance,
+                               carry[3] < max_iterations)
+
+    return jax.lax.while_loop(
+        cond_fun, body_fun, (zk, uk, residual, iteration)
+    )
 
 
 ######### Equilibrium-layer solvers: w = activation(D11 @ w + b) #########

@@ -166,3 +166,5 @@ cython_debug/
 .vscode/
 
 myTest/
+
+**/agent/**
