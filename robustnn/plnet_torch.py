@@ -56,7 +56,7 @@ class PLNet(nn.Module):
             x0 = self.bln(self.optimal_point)
         else:
             x0 = torch.zeros_like(x)
-        y = 0.5 * ((x - x0) ** 2).mean(dim=-1)
+        y = 0.5 * ((x - x0) ** 2).sum(dim=-1)
 
         if self.use_bias:
             y += self.bias
@@ -101,7 +101,7 @@ class PLNet(nn.Module):
         explicit_params = Params(
             bilip_layer=self.bln.direct_to_explicit(),
             f_function=f_function,
-            c=self.bias if self.use_bias else 0.,
+            c=self.bias.numpy(force=True) if self.use_bias else 0.,
             optimal_point=optimal_point,
             lipmin=lipmin,
             lipmax=lipmax,

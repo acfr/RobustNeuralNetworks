@@ -14,6 +14,7 @@ import torch
 import torch.nn as nn
 
 from robustnn.orthogonal_torch import Params, cayley, norm
+from robustnn.solvers import DavisYinSolveNumpy
 
 
 def _resolve_bounds(mu, nu, tau):
@@ -208,20 +209,43 @@ class PMonLipNet(nn.Module):
         self,
         y: np.ndarray,
         b: np.ndarray,
-        alpha: float = 1.0,
+        alpha: float = None,
         inverse_activation_fn: Callable = lambda value: np.maximum(0, value),
-        iterations: int = 200,
+        iterations: int = 2000,
         Lambda: float = 1.0,
+        tolerance: float = 1e-6,
     ) -> np.ndarray:
         """Invert the conditioned map for a fixed hidden-bias tensor."""
-        from robustnn.solvers import DavisYinSplit
+        return self.inverse_with_diagnostics(
+            y, b, alpha, inverse_activation_fn, iterations, Lambda, tolerance
+        )[0]
 
+    def inverse_with_diagnostics(
+        self,
+        y: np.ndarray,
+        b: np.ndarray,
+        alpha: float = None,
+        inverse_activation_fn: Callable = lambda value: np.maximum(0, value),
+        iterations: int = 2000,
+        Lambda: float = 1.0,
+        tolerance: float = 1e-6,
+    ):
+        """Invert the map and return residual, iteration count, and DYS step."""
+        if b.shape[-1] != sum(self.units):
+            raise ValueError(f"b must have {sum(self.units)} features; got {b.shape[-1]}.")
         params = self.direct_to_explicit()
-        bz = params.sqrt_2g / params.mu * (y - params.by) @ params.S.T + b
-        uk = np.zeros_like(bz)
-        for _ in range(iterations):
-            z, uk = DavisYinSplit(
-                uk, bz, params, inverse_activation_fn=inverse_activation_fn,
-                Lambda=Lambda, alpha=alpha,
-            )
-        return (y - params.by - params.sqrt_g2 * z @ params.S) / params.mu
+        bz = (
+            params.sqrt_2g / params.mu * (y - params.by) @ params.S.T
+            + b
+        )
+        z, _, residual, steps, effective_alpha = DavisYinSolveNumpy(
+            bz,
+            params,
+            inverse_activation_fn=inverse_activation_fn,
+            Lambda=Lambda,
+            alpha=alpha,
+            max_iterations=iterations,
+            tolerance=tolerance,
+        )
+        x = (y - params.by - params.sqrt_g2 * z @ params.S) / params.mu
+        return x, residual, steps, effective_alpha

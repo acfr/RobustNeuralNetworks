@@ -6,7 +6,9 @@ Adapted from code in
 Maintained by: Dechuan Liu (Aug 2026)
 """
 
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence
+
+import jax.numpy as jnp
 
 from flax import linen as nn
 from flax.struct import dataclass
@@ -146,11 +148,31 @@ class PBiLipNet(nn.Module):
 
     def _direct_to_explicit_inverse(
         self,
-        alphas: Sequence[float],
-        inverse_activation_fns: Sequence[Callable],
-        iterations: Sequence[int],
-        Lambdas: Sequence[float],
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
     ) -> ExplicitInversePBiLipParams:
+        alphas = [None] * self.depth if alphas is None else alphas
+        inverse_activation_fns = (
+            [nn.relu] * self.depth
+            if inverse_activation_fns is None else inverse_activation_fns
+        )
+        iterations = [2000] * self.depth if iterations is None else iterations
+        Lambdas = [1.0] * self.depth if Lambdas is None else Lambdas
+        tolerances = [1e-6] * self.depth if tolerances is None else tolerances
+        arguments = {
+            "alphas": alphas,
+            "inverse_activation_fns": inverse_activation_fns,
+            "iterations": iterations,
+            "Lambdas": Lambdas,
+            "tolerances": tolerances,
+        }
+        for name, values in arguments.items():
+            if len(values) != self.depth:
+                raise ValueError(f"{name} must contain {self.depth} values.")
+
         lipmin, lipmax, distortion = self._get_bounds()
         return ExplicitInversePBiLipParams(
             monlip_layers=[
@@ -159,6 +181,7 @@ class PBiLipNet(nn.Module):
                     inverse_activation_fns[index],
                     iterations[index],
                     Lambdas[index],
+                    tolerances[index],
                 )
                 for index, layer in enumerate(self.mon)
             ],
@@ -187,16 +210,28 @@ class PBiLipNet(nn.Module):
     def _explicit_inverse_call(
         self, y: Array, p: Array, explicit: ExplicitInversePBiLipParams
     ) -> Array:
+        return self._explicit_inverse_call_with_diagnostics(y, p, explicit)[0]
+
+    def _explicit_inverse_call_with_diagnostics(
+        self, y: Array, p: Array, explicit: ExplicitInversePBiLipParams
+    ):
+        residuals = [None] * self.depth
+        iterations = [None] * self.depth
         for index in range(self.depth, 0, -1):
             y = self.uni[index]._explicit_inverse_call(
                 y, self.uni_b[index](p), explicit.unitary_layers[index]
             )
-            y = self.mon[index - 1]._explicit_inverse_call(
-                y, self.mon_b[index - 1](p), explicit.monlip_layers[index - 1]
+            y, residuals[index - 1], iterations[index - 1] = (
+                self.mon[index - 1]._explicit_inverse_call_with_diagnostics(
+                    y,
+                    self.mon_b[index - 1](p),
+                    explicit.monlip_layers[index - 1],
+                )
             )
-        return self.uni[0]._explicit_inverse_call(
+        y = self.uni[0]._explicit_inverse_call(
             y, self.uni_b[0](p), explicit.unitary_layers[0]
         )
+        return y, jnp.stack(residuals), jnp.stack(iterations)
 
     def _get_bounds(self):
         lipmin, lipmax, distortion = 1.0, 1.0, 1.0
@@ -227,20 +262,30 @@ class PBiLipNet(nn.Module):
         """Evaluate the inverse conditioned network using explicit parameters."""
         return self.apply(params, y, p, explicit, method="_explicit_inverse_call")
 
+    def inverse_call_with_diagnostics(
+        self, params: dict, y: Array, p: Array, explicit: ExplicitInversePBiLipParams
+    ):
+        """Evaluate the inverse and return each block's DYS diagnostics."""
+        return self.apply(
+            params, y, p, explicit, method="_explicit_inverse_call_with_diagnostics"
+        )
+
     def direct_to_explicit_inverse(
         self,
         params: dict,
-        alphas: Sequence[float],
-        inverse_activation_fns: Sequence[Callable],
-        iterations: Sequence[int],
-        Lambdas: Sequence[float],
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
     ) -> ExplicitInversePBiLipParams:
-        """Convert the conditioned network for inverse evaluation."""
+        """Convert the conditioned network for adaptive inverse evaluation."""
         return self.apply(
             params,
             alphas,
             inverse_activation_fns,
             iterations,
             Lambdas,
+            tolerances,
             method="_direct_to_explicit_inverse",
         )

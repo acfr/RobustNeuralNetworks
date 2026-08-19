@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Sequence
 import numpy as np 
-from robustnn.solvers import DavisYinSplit
+from robustnn.solvers import DavisYinSolveNumpy
 from robustnn.orthogonal_torch import Params, cayley, norm
 
 class MonLipNet(nn.Module):
@@ -230,36 +230,48 @@ class MonLipNet(nn.Module):
         return y
     
     def inverse(self, y: np.array,
-                alpha: float = 1.0,
+                alpha: float = None,
                 inverse_activation_fn: callable = lambda x: np.maximum(0, x),
-                iterations: int = 200,
-                Lambda: float = 1.0):
+                iterations: int = 2000,
+                Lambda: float = 1.0,
+                tolerance: float = 1e-6):
         """
         Inverse of the MonLip layer using Davis-Yin splitting method.
         arguments:
             y: (batch_size, features) in numpy array
             alpha: alpha value for the solver
-            inverse_activation_fn: inverse activation function (need to be numpy version!)
-            iterations: number of iterations for the solver
+            inverse_activation_fn: proximal operator (need to be numpy version!)
+            iterations: maximum number of iterations for the solver
             Lambda: step size for the solver
+            tolerance: relative splitting-residual tolerance
         """
-        
+        return self.inverse_with_diagnostics(
+            y, alpha, inverse_activation_fn, iterations, Lambda, tolerance
+        )[0]
+
+    def inverse_with_diagnostics(self, y: np.array,
+                alpha: float = None,
+                inverse_activation_fn: callable = lambda x: np.maximum(0, x),
+                iterations: int = 2000,
+                Lambda: float = 1.0,
+                tolerance: float = 1e-6):
+        """Invert the layer and return residual, iteration count, and DYS step."""
         mon_params = self.direct_to_explicit()
 
         # y to b
         # inverse of equation 12
         # bz = (y - e.by) / e.sqrt_2g
         bz = mon_params.sqrt_2g/mon_params.mu * (y-mon_params.by) @ mon_params.S.T + mon_params.bh
-        uk = np.zeros_like(bz)
-
-        # iterate until converge for zk using DYS solver
-        for i in range(iterations):
-            # iterate until converge for zk using DYS solver
-            zk, uk = DavisYinSplit(uk, bz, mon_params, 
-                inverse_activation_fn=inverse_activation_fn, 
-                Lambda=Lambda,
-                alpha=alpha)
+        zk, _, residual, steps, effective_alpha = DavisYinSolveNumpy(
+            bz,
+            mon_params,
+            inverse_activation_fn=inverse_activation_fn,
+            Lambda=Lambda,
+            alpha=alpha,
+            max_iterations=iterations,
+            tolerance=tolerance,
+        )
             
         # z to x
         x = (y - mon_params.by - mon_params.sqrt_g2 * zk @ mon_params.S) / mon_params.mu
-        return x
+        return x, residual, steps, effective_alpha

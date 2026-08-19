@@ -132,10 +132,15 @@ class PMonLipNet(MonLipNet):
     def _explicit_inverse_call(
         self, y: Array, b: Array, explicit: ExplicitInversePMonLipParams
     ) -> Array:
+        return self._explicit_inverse_call_with_diagnostics(y, b, explicit)[0]
+
+    def _explicit_inverse_call_with_diagnostics(
+        self, y: Array, b: Array, explicit: ExplicitInversePMonLipParams
+    ):
         if b.shape[-1] != sum(self.units):
             raise ValueError(f"b must have {sum(self.units)} features; got {b.shape[-1]}.")
         conditioned = explicit.replace(monlip=explicit.monlip.replace(bh=b))
-        return super()._explicit_inverse_call(y, conditioned)
+        return super()._explicit_inverse_call_with_diagnostics(y, conditioned)
 
     def explicit_call(
         self, params: dict, x: Array, b: Array, explicit: ExplicitPMonLipParams
@@ -148,3 +153,11 @@ class PMonLipNet(MonLipNet):
     ) -> Array:
         """Evaluate the inverse conditioned map using explicit parameters."""
         return self.apply(params, y, b, explicit, method="_explicit_inverse_call")
+
+    def inverse_call_with_diagnostics(
+        self, params: dict, y: Array, b: Array, explicit: ExplicitInversePMonLipParams
+    ):
+        """Evaluate the inverse and return its residual and iteration count."""
+        return self.apply(
+            params, y, b, explicit, method="_explicit_inverse_call_with_diagnostics"
+        )

@@ -42,7 +42,7 @@ class PPLNet(nn.Module):
         f = self.pbln(x, p)
         if optimal_point is not None:
             f = f - self.pbln(optimal_point, p)
-        return 0.5 * torch.square(f).mean(dim=-1) + self.c
+        return 0.5 * torch.square(f).sum(dim=-1) + self.c
 
     def direct_to_explicit(self, x_optimal=None) -> Params:
         """Convert the conditioned network core to explicit NumPy parameters."""
@@ -72,7 +72,7 @@ class PPLNet(nn.Module):
             f = f - self.pbln.explicit_call(
                 explicit.optimal_point, p, explicit.bilip_layer, act_mon
             )
-        return 0.5 * np.square(f).mean(axis=-1) + explicit.c
+        return 0.5 * np.square(f).sum(axis=-1) + explicit.c
 
     def get_bounds(self):
         """Return the lower bound, upper bound, and distortion."""

@@ -28,6 +28,7 @@ from typing import Callable, Any, Tuple
 from flax.typing import Array, PrecisionLike
 import jax.numpy as jnp
 import jax
+import numpy as np
 
 from robustnn.utils import l2_norm
 
@@ -126,6 +127,73 @@ def DavisYinSolve(bz, e, inverse_activation_fn: Callable = nn.relu,
     return jax.lax.while_loop(
         cond_fun, body_fun, (zk, uk, residual, iteration)
     )
+
+
+def resolve_dys_alpha(mu, gam, alpha=None, safety: float = 0.9) -> float:
+    """Return a finite DYS step strictly below ``mu / gam``."""
+    mu, gam = float(np.asarray(mu)), float(np.asarray(gam))
+    if not 0 < safety < 1:
+        raise ValueError("safety must lie strictly between zero and one.")
+    if mu <= 0 or gam < 0:
+        raise ValueError("DYS requires mu > 0 and nu - mu >= 0.")
+    safe_alpha = 1.0 if gam == 0 else safety * mu / gam
+    if alpha is None:
+        return safe_alpha
+    alpha = float(np.asarray(alpha))
+    if not np.isfinite(alpha) or alpha <= 0:
+        return safe_alpha
+    return min(alpha, safe_alpha)
+
+
+def DavisYinSolveNumpy(bz, e,
+                        inverse_activation_fn: Callable = lambda x: np.maximum(0, x),
+                        Lambda: float = 1.0, alpha=None,
+                        max_iterations: int = 2000,
+                        tolerance: float = 1e-6):
+    """NumPy DYS solve with the same stopping criterion as ``DavisYinSolve``."""
+    if max_iterations < 1:
+        raise ValueError("max_iterations must be at least one.")
+    if tolerance < 0:
+        raise ValueError("tolerance must be non-negative.")
+    if not 0 < Lambda < 2:
+        raise ValueError("Lambda must lie strictly between zero and two.")
+
+    alpha = resolve_dys_alpha(e.mu, e.gam, alpha)
+    bz = np.asarray(bz)
+    S = np.asarray(e.S)
+    V = [np.asarray(value) for value in e.V]
+    uk = np.zeros_like(bz)
+    zk = np.zeros_like(bz)
+    residual = np.inf
+
+    for iteration in range(1, max_iterations + 1):
+        zh = np.asarray(inverse_activation_fn(uk))
+        uh = 2.0 * zh - uk
+        vh = bz - float(np.asarray(e.gam)) / float(np.asarray(e.mu)) * (zh @ S) @ S.T
+        b = (alpha * vh + uh) / (1.0 + alpha)
+
+        blocks, index = [], 0
+        for layer, units in enumerate(e.units):
+            next_index = index + units
+            if layer == 0:
+                z_layer = b[..., index:next_index]
+            else:
+                z_layer = (
+                    alpha / (1.0 + alpha) * z_layer @ V[layer - 1].T
+                    + b[..., index:next_index]
+                )
+            blocks.append(z_layer)
+            index = next_index
+        zk = np.concatenate(blocks, axis=-1)
+        uk = uk + Lambda * (zk - zh)
+        residual = float(np.max(
+            np.linalg.norm(zk - zh, axis=-1)
+            / (1.0 + np.linalg.norm(zh, axis=-1))
+        ))
+        if residual <= tolerance:
+            break
+
+    return zk, uk, residual, iteration, alpha
 
 
 ######### Equilibrium-layer solvers: w = activation(D11 @ w + b) #########

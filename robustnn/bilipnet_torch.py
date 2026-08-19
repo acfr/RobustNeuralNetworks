@@ -9,7 +9,7 @@ Author: Dechuan Liu (Aug 2024)
 '''
 
 import torch.nn as nn
-from typing import Sequence
+from typing import Callable, Optional, Sequence
 from robustnn.monlipnet_torch import MonLipNet
 import numpy as np
 from robustnn.orthogonal_torch import Params, Unitary
@@ -128,11 +128,29 @@ class BiLipNet(nn.Module):
             tau *= ta 
         return lipmin, lipmax, tau
     
+    def _solver_arguments(self, alphas, inverse_activation_fns, iterations,
+                          Lambdas, tolerances):
+        values = {
+            "alphas": [None] * self.depth if alphas is None else alphas,
+            "inverse_activation_fns": (
+                [lambda value: np.maximum(0, value)] * self.depth
+                if inverse_activation_fns is None else inverse_activation_fns
+            ),
+            "iterations": [2000] * self.depth if iterations is None else iterations,
+            "Lambdas": [1.0] * self.depth if Lambdas is None else Lambdas,
+            "tolerances": [1e-6] * self.depth if tolerances is None else tolerances,
+        }
+        for name, sequence in values.items():
+            if len(sequence) != self.depth:
+                raise ValueError(f"{name} must contain {self.depth} values.")
+        return values
+
     def inverse(self, y: np.array,
-                alphas: Sequence[float],
-                inverse_activation_fns: Sequence[callable],
-                iterations: Sequence[int],
-                Lambdas: Sequence[float]):
+                alphas: Optional[Sequence[float]] = None,
+                inverse_activation_fns: Optional[Sequence[Callable]] = None,
+                iterations: Optional[Sequence[int]] = None,
+                Lambdas: Optional[Sequence[float]] = None,
+                tolerances: Optional[Sequence[float]] = None):
         """        
         Inverse of the BiLipNet.
         arguments:
@@ -144,15 +162,40 @@ class BiLipNet(nn.Module):
         returns:
             numpy array: Inverted Ouput.
         """
+        return self.inverse_with_diagnostics(
+            y, alphas, inverse_activation_fns, iterations, Lambdas, tolerances
+        )[0]
+
+    def inverse_with_diagnostics(self, y: np.array,
+                alphas: Optional[Sequence[float]] = None,
+                inverse_activation_fns: Optional[Sequence[Callable]] = None,
+                iterations: Optional[Sequence[int]] = None,
+                Lambdas: Optional[Sequence[float]] = None,
+                tolerances: Optional[Sequence[float]] = None):
+        """Invert the network and return per-block DYS diagnostics."""
+        arguments = self._solver_arguments(
+            alphas, inverse_activation_fns, iterations, Lambdas, tolerances
+        )
         x = y
+        residuals = [None] * self.depth
+        steps = [None] * self.depth
+        effective_alphas = [None] * self.depth
         for k in range(self.depth, 0, -1):
             x = self.orth_layers[k].inverse(x)
-            
-            x = self.mon_layers[k-1].inverse(
-                x, 
-                alpha=alphas[k-1],
-                inverse_activation_fn=inverse_activation_fns[k-1],
-                iterations=iterations[k-1],
-                Lambda=Lambdas[k-1])
+            x, residuals[k - 1], steps[k - 1], effective_alphas[k - 1] = (
+                self.mon_layers[k - 1].inverse_with_diagnostics(
+                    x,
+                    alpha=arguments["alphas"][k - 1],
+                    inverse_activation_fn=arguments["inverse_activation_fns"][k - 1],
+                    iterations=arguments["iterations"][k - 1],
+                    Lambda=arguments["Lambdas"][k - 1],
+                    tolerance=arguments["tolerances"][k - 1],
+                )
+            )
         x = self.orth_layers[0].inverse(x)
-        return x
+        return (
+            x,
+            np.asarray(residuals),
+            np.asarray(steps),
+            np.asarray(effective_alphas),
+        )

@@ -6,7 +6,7 @@ Adapted from code in
 Maintained by: Dechuan Liu (Aug 2026)
 """
 
-from typing import Callable, Sequence
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 import torch
@@ -129,18 +129,62 @@ class PBiLipNet(nn.Module):
         self,
         y: np.ndarray,
         p: np.ndarray,
-        alphas: Sequence[float],
-        inverse_activation_fns: Sequence[Callable],
-        iterations: Sequence[int],
-        Lambdas: Sequence[float],
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
     ) -> np.ndarray:
         """Invert the conditioned network for a fixed conditioning input."""
+        return self.inverse_with_diagnostics(
+            y, p, alphas, inverse_activation_fns, iterations, Lambdas, tolerances
+        )[0]
+
+    def inverse_with_diagnostics(
+        self,
+        y: np.ndarray,
+        p: np.ndarray,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+    ):
+        """Invert the network and return per-block DYS diagnostics."""
+        values = {
+            "alphas": [None] * self.depth if alphas is None else alphas,
+            "inverse_activation_fns": (
+                [lambda value: np.maximum(0, value)] * self.depth
+                if inverse_activation_fns is None else inverse_activation_fns
+            ),
+            "iterations": [2000] * self.depth if iterations is None else iterations,
+            "Lambdas": [1.0] * self.depth if Lambdas is None else Lambdas,
+            "tolerances": [1e-6] * self.depth if tolerances is None else tolerances,
+        }
+        for name, sequence in values.items():
+            if len(sequence) != self.depth:
+                raise ValueError(f"{name} must contain {self.depth} values.")
+
+        residuals = [None] * self.depth
+        steps = [None] * self.depth
+        effective_alphas = [None] * self.depth
         for index in range(self.depth, 0, -1):
             y = self.orth_layers[index].inverse(y, self._condition(self.orth_biases[index], p))
-            y = self.mon_layers[index - 1].inverse(
-                y, self._condition(self.mon_biases[index - 1], p),
-                alpha=alphas[index - 1],
-                inverse_activation_fn=inverse_activation_fns[index - 1],
-                iterations=iterations[index - 1], Lambda=Lambdas[index - 1],
+            y, residuals[index - 1], steps[index - 1], effective_alphas[index - 1] = (
+                self.mon_layers[index - 1].inverse_with_diagnostics(
+                    y,
+                    self._condition(self.mon_biases[index - 1], p),
+                    alpha=values["alphas"][index - 1],
+                    inverse_activation_fn=values["inverse_activation_fns"][index - 1],
+                    iterations=values["iterations"][index - 1],
+                    Lambda=values["Lambdas"][index - 1],
+                    tolerance=values["tolerances"][index - 1],
+                )
             )
-        return self.orth_layers[0].inverse(y, self._condition(self.orth_biases[0], p))
+        y = self.orth_layers[0].inverse(y, self._condition(self.orth_biases[0], p))
+        return (
+            y,
+            np.asarray(residuals),
+            np.asarray(steps),
+            np.asarray(effective_alphas),
+        )
