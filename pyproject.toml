@@ -1,0 +1,50 @@
+[project]
+name = "robustnn"
+version = "0.1.0"
+description = "A collection of robust neural network architectures developed at the Australian Centre for Robotics (ACFR)."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [
+    { name = "Nicholas Barbara", email = "nicholas.barbara@epfl.ch" },
+    { name = "Ruigang Wang" },
+    { name = "Dechuan Liu" },
+    { name = "Michael Somerfield" },
+    { name = "Jing Cheng" },
+    { name = "Yurui Zhang" },
+    { name = "Ian Manchester" },
+]
+
+# Dependencies required by the `robustnn/` package itself. Versions are pinned to
+# those the models are currently tested against; `uv.lock` fixes the full set.
+dependencies = [
+    "flax==0.10.4",
+    "jax<=0.5.3",
+    "numpy",
+    "torch==2.8.0",
+]
+
+[project.optional-dependencies]
+# GPU build of jax. Selected automatically by `install.sh`.
+cuda12 = ["jax[cuda12]<=0.5.3"]
+
+# Everything needed to run the demos in `examples/` (including the Colab
+# notebooks) and the scripts in `test/`, but not needed to use `robustnn`.
+examples = [
+    "cycler==0.12.1",
+    "matplotlib==3.10.0",
+    "optax==0.2.4",
+    "pandas==2.2.3",
+    "scipy==1.15.1",
+    "tensorflow<=2.20.0",
+    "tensorflow_datasets<=4.9.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "robustnn"
+module-root = ""

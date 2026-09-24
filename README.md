@@ -16,28 +16,49 @@ This repository is a work-in-progress. More network architectures, tutorials, an
 
 ## Installation for Development
 
-To install the required dependencies, open a terminal in the root directory of this repository and enter the following commands.
+All dependencies are managed with [uv](https://docs.astral.sh/uv/). To install uv, run the following (Mac/Linux, see the [docs](https://docs.astral.sh/uv/getting-started/installation/) for Windows).
 
 ```bash
-    ./install.sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-This will create a Python virtual environment at `./venv` and install all dependencies. If you would rather create a virtual environment with conda, poetry, or something else, feel free to modify the `install.sh` script.
+Then, to install the package and all of its dependencies, open a terminal in the root directory of this repository and enter the following command.
+
+```bash
+./install.sh
+```
+
+This will create a Python virtual environment at `./.venv`, install the pinned Python version, and install all dependencies. The script checks whether CUDA is available on your machine and installs the corresponding jax package. To check that everything works, run the test suite:
+
+```bash
+./run_tests.sh
+```
 
 ### A Note on Dependencies
 
-All code was tested and developed in Ubuntu 22.04 with CUDA 12.4 and Python 3.10.12. 
+Dependencies are declared in `pyproject.toml` and locked to exact versions in `uv.lock`, which is committed to the repository so that everyone builds the same environment. They are split into two sets:
 
-Requirements were generated with [`pipreqs`](https://github.com/bndr/pipreqs). The ```install.sh``` will check for whether CUDA is available for your machine, and install the corresponding jax package. 
+- The **core dependencies** are those required by the `robustnn` package itself (`jax`, `flax`, `numpy`, and `torch`). These are the only packages a user installing `robustnn` will get.
+- The **`examples` extra** adds everything needed to run the demos in `examples/` and the scripts in `test/` (`matplotlib`, `optax`, `pandas`, `scipy`, `tensorflow`, etc.). The `install.sh` script installs this extra by default for development.
+
+There is also a `cuda12` extra, which `install.sh` selects automatically when CUDA is detected. If you would rather manage the environment yourself, the equivalent commands are:
+
+```bash
+uv sync --extra examples                # CPU
+uv sync --extra examples --extra cuda12 # CUDA 12
+```
+
+All code was tested and developed in Ubuntu 22.04 with CUDA 12.4 and Python 3.12.
 
 ## Running an Example
 
-Once you have installed the package as above, simply activate the virtual environment and run any of the scripts in the `examples/` folder. For example, from the root directory of the project, run:
+Once you have installed the package as above, use `uv run` to run any of the scripts in the `examples/` folder. For example, from the root directory of the project, run:
 
 ```bash
-source venv/bin/activate
-python examples/sandwich_mnist.py
+uv run python examples/sandwich_mnist.py
 ```
+
+There is no need to activate the virtual environment first; `uv run` does it for you. If you would prefer to activate it manually, use `source .venv/bin/activate`.
 
 ## Contact
 
