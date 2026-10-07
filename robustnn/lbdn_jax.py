@@ -159,7 +159,7 @@ class SandwichLayer(nn.Module):
         # Clip d to avoid over/underflow and return
         ps = self.direct
         A_T, B_T = cayley(ps.a / l2_norm(ps.XY) * ps.XY, return_split=True)
-        psi_d = jnp.exp(jnp.clip(ps.d, a_min=-20.0, a_max=20.0))
+        psi_d = jnp.exp(jnp.clip(ps.d, min=-20.0, max=20.0))
         return ExplicitSandwichParams(A_T, B_T.T, psi_d, ps.b)
 
 
