@@ -49,7 +49,7 @@ uv python install
 if check_cuda; then
     uv sync --extra examples --extra cuda13
 else
-    uv sync --extra examples
+    uv sync --extra examples --extra cpu
 fi
 
 echo

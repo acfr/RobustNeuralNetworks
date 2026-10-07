@@ -19,8 +19,8 @@ authors = [
 # Dependencies required by the `robustnn/` package itself. Versions are pinned to
 # those the models are currently tested against; `uv.lock` fixes the full set.
 dependencies = [
-    "flax<=0.12.10",
-    "numpy<=2.5.3",
+    "flax>=0.12.10",
+    "numpy>=2.5.3",
 ]
 
 [project.optional-dependencies]
