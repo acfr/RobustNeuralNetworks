@@ -19,26 +19,34 @@ authors = [
 # Dependencies required by the `robustnn/` package itself. Versions are pinned to
 # those the models are currently tested against; `uv.lock` fixes the full set.
 dependencies = [
-    "flax==0.10.4",
-    "jax<=0.5.3",
-    "numpy",
-    "torch==2.8.0",
+    "flax<=0.12.10",
+    "numpy<=2.5.3",
 ]
 
 [project.optional-dependencies]
-# GPU build of jax. Selected automatically by `install.sh`.
-cuda12 = ["jax[cuda12]<=0.5.3"]
+# CPU-only build. jax comes in (as the CPU build) via flax; torch is routed to
+# the CPU index via [tool.uv.sources] below.
+cpu = [
+    "torch",
+    "jax",
+]
+
+# GPU build (CUDA 13). Selected automatically by `install.sh`.
+cuda13 = [
+    "jax[cuda13]>=0.11.2",
+    "torch",
+]
 
 # Everything needed to run the demos in `examples/` (including the Colab
 # notebooks) and the scripts in `test/`, but not needed to use `robustnn`.
 examples = [
-    "cycler==0.12.1",
-    "matplotlib==3.10.0",
-    "optax==0.2.4",
-    "pandas==2.2.3",
-    "scipy==1.15.1",
-    "tensorflow<=2.20.0",
-    "tensorflow_datasets<=4.9.8",
+    "optax>=0.2.8",
+    "pandas>=3.0.6",
+    "scipy>=1.18.1",
+    "tensorflow-datasets>=4.9.10",
+    "tensorflow>=2.21.0",
+    "matplotlib>=3.11.2",
+    "cycler>=0.12.1",
 ]
 
 [build-system]
@@ -48,3 +56,30 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "robustnn"
 module-root = ""
+
+# --- PyTorch index routing -------------------------------------------------
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv]
+# The cpu and cuda13 extras are mutually exclusive. Declaring this lets uv
+# resolve them as separate forks within a single lockfile.
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cuda13" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda13"},
+]

@@ -1,6 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
+
+while true; do
+  read -p "This will create a virtual environment (venv) at ./.venv/ with uv, would you like to continue? (y/n) " answer
+  if [[ "$answer" =~ ^[yYnN]$ ]]; then break; fi
+  echo "Please answer y or n."
+done
+
+# Exit if user does not want to continue
+if [[ "$answer" == "n" ]]; then
+    exit 1
+fi
+
 # Function to check if CUDA is available
 check_cuda() {
     # Check if nvidia-smi exists and works
@@ -35,7 +47,7 @@ uv python install
 # Install dependencies and the package itself (editable by default) into ./.venv,
 # choosing the correct jax build based upon the available hardware
 if check_cuda; then
-    uv sync --extra examples --extra cuda12
+    uv sync --extra examples --extra cuda13
 else
     uv sync --extra examples
 fi
