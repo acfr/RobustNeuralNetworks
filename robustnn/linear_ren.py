@@ -11,7 +11,7 @@ Author: Nic Barbara.
 import jax.numpy as jnp
 from flax.typing import Array
 from robustnn import linear_ren_base as ren
-from robustnn.ren import _check_valid_qsr, _adjust_iqc_params
+from robustnn.ren_jax import _check_valid_qsr, _adjust_iqc_params
 
 class ContractingLinREN(ren.LinRENBase):
     """Construct a contracting linear REN.
