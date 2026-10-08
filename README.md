@@ -1,6 +1,6 @@
 # Robust Neural Networks
 
-This repository contains a collection or robust neural network architectures developed at the Australian Centre For Robotics (ACFR). All networks are implemented in Python/JAX.
+This repository contains a collection of robust neural network architectures developed at the Australian Centre For Robotics (ACFR). All networks are implemented in Python with PyTorch and/or JAX.
 
 Implemented network architectures currently include:
 
@@ -16,7 +16,7 @@ This repository and README are a work-in-progress. More network architectures, t
 
 ## Installation for Development
 
-All dependencies are managed with [uv](https://docs.astral.sh/uv/). To install uv, run the following (Mac/Linux, see the [docs](https://docs.astral.sh/uv/getting-started/installation/) for Windows).
+All dependencies are managed with [uv](https://docs.astral.sh/uv/). To install uv, run the following (Mac/Linux, use [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) for Windows).
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -28,7 +28,7 @@ Then, to install the package and all of its dependencies, open a terminal in the
 ./install.sh
 ```
 
-This will create a Python virtual environment at `./.venv`, install the pinned Python version, and install all dependencies. The script checks whether CUDA is available on your machine and installs the corresponding JAX/PyTorch version accordingly. To check that everything works, run the test suite:
+This will create a Python virtual environment at `./.venv`, install the pinned Python version, and install all dependencies. The script checks whether CUDA is available on your machine and installs the corresponding JAX/PyTorch version accordingly. To check your installation, run the test suite:
 
 ```bash
 ./run_tests.sh
@@ -41,7 +41,7 @@ Dependencies are declared in `pyproject.toml` and are split into two sets:
 - **Core dependencies:** required by the `robustnn` package itself.
 - **Extra dependencies for `examples`:** all additional dependencies needed to run the demos in `examples/` and the scripts in `test/`. 
 
-By default, the `install.sh` script installs boht the core and extra dependencies, and checks for CUDA to install the correct versions of `jax` and `torch`. If you would rather just install the minimal `robustnn` package itself, do not run the `install.sh` script, and instead run one of the following.
+By default, the `install.sh` script installs both the core and extra dependencies, and checks for CUDA to install the correct versions of `jax` and `torch`. If you would rather just install the `robustnn` package itself, do not run the `install.sh` script, and instead run one of the following.
 
 ```bash
 uv sync --extra cpu     # CPU only
