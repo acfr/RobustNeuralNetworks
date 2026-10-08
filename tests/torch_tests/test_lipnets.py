@@ -57,8 +57,6 @@ def test_unitary_no_bias_forward_preserves_norm(size):
     np.testing.assert_allclose(layer(x).norm(dim=1).detach(), x.norm(dim=1), rtol=1e-4)
 
 
-@pytest.mark.xfail(raises=AttributeError, strict=True,
-                   reason="Unitary.direct_to_explicit assumes a bias exists")
 def test_unitary_no_bias_explicit():
     Unitary(3, 3, bias=False).direct_to_explicit()
 

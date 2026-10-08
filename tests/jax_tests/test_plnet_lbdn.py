@@ -97,7 +97,6 @@ def test_lbdn_options_and_grad(key, use_bias, trainable_lipschitz):
     assert bool(jnp.isfinite(ravel_pytree(g)[0]).all())
 
 
-@pytest.mark.xfail(reason="init_output_zero documents a zero output at init, but the output is non-zero (see PR notes)")
 def test_lbdn_init_output_zero(key):
     net = LBDN(3, (6,), 2, init_output_zero=True)
     x = jax.random.normal(key, (4, 3))
