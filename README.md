@@ -34,18 +34,31 @@ This will create a Python virtual environment at `./.venv`, install the pinned P
 ./run_tests.sh
 ```
 
+### Testing
+
+Tests are written with [pytest](https://pytest.org) and live in `tests/`: `tests/jax_tests/` for the JAX/Flax implementations, `tests/torch_tests/` for the PyTorch implementations, and `tests/test_parity.py` for JAX-vs-PyTorch checks. `./run_tests.sh` is a thin wrapper around `uv run pytest`, so any pytest arguments work:
+
+```bash
+./run_tests.sh                  # everything
+./run_tests.sh -m torch         # PyTorch tests only (or -m jax)
+./run_tests.sh -n auto          # run in parallel
+./run_tests.sh -k bilip         # select by name
+```
+
+The same suite runs on every push to `main` and every pull request through GitHub Actions (`.github/workflows/tests.yml`, CPU only).
+
 ### A Note on Dependencies
 
 Dependencies are declared in `pyproject.toml` and locked to exact versions in `uv.lock`, which is committed to the repository so that everyone builds the same environment. They are split into two sets:
 
 - The **core dependencies** are those required by the `robustnn` package itself (`jax`, `flax`, `numpy`, and `torch`). These are the only packages a user installing `robustnn` will get.
-- The **`examples` extra** adds everything needed to run the demos in `examples/` and the scripts in `test/` (`matplotlib`, `optax`, `pandas`, `scipy`, `tensorflow`, etc.). The `install.sh` script installs this extra by default for development.
+- The **`examples` extra** adds everything needed to run the demos in `examples/` (`matplotlib`, `optax`, `pandas`, `scipy`, `tensorflow`, etc.). The `install.sh` script installs this extra by default for development.
 
-There is also a `cuda12` extra, which `install.sh` selects automatically when CUDA is detected. If you would rather manage the environment yourself, the equivalent commands are:
+The `cpu` and `cuda13` extras select the CPU or CUDA 13 builds of `jax` and `torch`; `install.sh` picks one automatically when CUDA is detected. The test tools (`pytest`, `pytest-xdist`, `optax`) are in the `dev` dependency group, which `uv sync` installs by default. If you would rather manage the environment yourself, the equivalent commands are:
 
 ```bash
-uv sync --extra examples                # CPU
-uv sync --extra examples --extra cuda12 # CUDA 12
+uv sync --extra examples --extra cpu     # CPU
+uv sync --extra examples --extra cuda13  # CUDA 13
 ```
 
 All code was tested and developed in Ubuntu 22.04 with CUDA 12.4 and Python 3.12.
