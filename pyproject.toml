@@ -43,7 +43,7 @@ examples = [
     "optax>=0.2.8",
     "pandas>=3.0.6",
     "scipy>=1.18.1",
-    "datasets[vision]>=5.1.0",
+    "datasets[vision]>=4.8.5",
     "matplotlib>=3.11.2",
     "cycler>=0.12.1",
 ]
