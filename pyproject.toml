@@ -43,11 +43,9 @@ examples = [
     "optax>=0.2.8",
     "pandas>=3.0.6",
     "scipy>=1.18.1",
-    "tensorflow-datasets>=4.9.10",
-    "tensorflow>=2.21.0",
+    "datasets[vision]>=5.1.0",
     "matplotlib>=3.11.2",
     "cycler>=0.12.1",
-    "importlib-resources>=7.1.0",
 ]
 
 [build-system]
