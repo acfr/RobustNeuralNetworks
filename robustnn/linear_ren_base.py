@@ -17,7 +17,7 @@ from flax.linen import initializers as init
 from flax.struct import dataclass
 from flax.typing import Array
 
-from robustnn.ren_base import RENBase
+from robustnn.ren_base_jax import RENBase
 from robustnn.utils import l2_norm, identity_init
 
 

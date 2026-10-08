@@ -1,4 +1,17 @@
 #!/bin/bash
+set -euo pipefail
+
+
+while true; do
+  read -p "This will create a virtual environment (venv) at ./.venv/ with uv, would you like to continue? (y/n) " answer
+  if [[ "$answer" =~ ^[yYnN]$ ]]; then break; fi
+  echo "Please answer y or n."
+done
+
+# Exit if user does not want to continue
+if [[ "$answer" == "n" ]]; then
+    exit 1
+fi
 
 # Function to check if CUDA is available
 check_cuda() {
@@ -20,22 +33,24 @@ check_cuda() {
     return 1
 }
 
-# Instantiate into a venv
-python3 -m venv venv
-source venv/bin/activate
-
-# Install basic requirements
-pip install pip --upgrade
-pip install -r requirements.txt
-
-# Install the correct jax based upon hardware
-if check_cuda; then
-    pip install "jax[cuda12_pip]==0.5.3"
-else
-    pip install "jax<=0.5.3"
+# Check that uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv is not installed. Install it with:"
+    echo "    curl -LsSf https://astral.sh/uv/install.sh | sh"
+    echo "See https://docs.astral.sh/uv/getting-started/installation/ for Windows."
+    exit 1
 fi
 
-# Install the package locally in editable mode for dev
-# Flag PEP517 to avoid issues with deprecated versions of local/editable 
-# installs using setuptools (https://github.com/pypa/pip/issues/11457)
-pip install -e . --use-pep517
+# Use pinned Python version (see .python-version)
+uv python install
+
+# Install dependencies and the package itself (editable by default) into ./.venv,
+# choosing the correct jax build based upon the available hardware
+if check_cuda; then
+    uv sync --extra examples --extra cuda13
+else
+    uv sync --extra examples --extra cpu
+fi
+
+echo
+echo "Done. Run the tests with ./run_tests.sh, or a script with 'uv run python examples/<script_name>.py'."
