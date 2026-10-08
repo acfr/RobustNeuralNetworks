@@ -49,6 +49,13 @@ examples = [
     "cycler>=0.12.1",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-xdist>=3",
+    "optax>=0.2.8",
+]
+
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13"]
 build-backend = "uv_build"
@@ -82,4 +89,14 @@ conflicts = [
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu130", extra = "cuda13"},
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-ra --strict-markers --import-mode=importlib"
+markers = [
+    "jax: tests for the JAX/Flax implementations",
+    "torch: tests for the PyTorch implementations",
+    "slow: slow tests (e.g. optimisation-based Lipschitz estimates)",
 ]
