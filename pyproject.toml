@@ -47,6 +47,7 @@ examples = [
     "tensorflow>=2.21.0",
     "matplotlib>=3.11.2",
     "cycler>=0.12.1",
+    "importlib-resources>=7.1.0",
 ]
 
 [build-system]
