@@ -36,14 +36,18 @@ This will create a Python virtual environment at `./.venv`, install the pinned P
 
 ### Testing
 
-Tests are written with [pytest](https://pytest.org) and live in `tests/`: `tests/jax_tests/` for the JAX/Flax implementations, `tests/torch_tests/` for the PyTorch implementations, and `tests/test_parity.py` for JAX-vs-PyTorch checks. `./run_tests.sh` is a thin wrapper around `uv run pytest`, so any pytest arguments work:
+Tests are written with [pytest](https://pytest.org) and live in `tests/`. Each network has its own test file, in `tests/jax_tests/` for the JAX/Flax implementations and `tests/torch_tests/` for the PyTorch implementations (e.g. `test_plnet.py`, `test_bilipschitz_ren.py`). `./run_tests.sh` is a thin wrapper around `uv run pytest`, so any pytest arguments work:
 
 ```bash
 ./run_tests.sh                  # everything
 ./run_tests.sh -m torch         # PyTorch tests only (or -m jax)
 ./run_tests.sh -n auto          # run in parallel
-./run_tests.sh -k bilip         # select by name
+./run_tests.sh -k plnet         # select by name
 ```
+
+Besides property tests (output shapes, inverse round-trips, Lipschitz bounds, gradients, error handling), every network is checked against **golden input/output files** in `tests/golden/<network>.json`. Each case stores the constructor arguments, the (unconstrained) parameters, some inputs, and the expected outputs. The JAX and PyTorch tests both load the same file, so if both pass, the two implementations agree with each other. Networks that only exist in JAX (e.g. `LBDN`, the contracting/Lipschitz/general RENs, the linear RENs and the R2DN) are checked against their golden files too, which guards against regressions when refactoring.
+
+Golden files are generated from the JAX implementation with `uv run python tests/generate_golden.py [network ...]`. Only regenerate them deliberately (a new case, or an intended change to a network) and review the diff.
 
 The same suite runs on every push to `main` and every pull request through GitHub Actions (`.github/workflows/tests.yml`, CPU only).
 

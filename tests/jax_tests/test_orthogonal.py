@@ -8,6 +8,8 @@ import numpy as np
 import pytest
 from jax.flatten_util import ravel_pytree
 
+import golden
+from jax_utils import check_golden
 from robustnn.orthogonal_jax import Unitary
 
 
@@ -65,3 +67,9 @@ def test_jit_and_grad(key):
     g = jax.grad(lambda p: jnp.sum(layer.apply(p, x) ** 2))(params)
     flat = ravel_pytree(g)[0]
     assert bool(jnp.isfinite(flat).all())
+
+
+@pytest.mark.parametrize("case", golden.cases("unitary"), ids=golden.case_id)
+@pytest.mark.parametrize("explicit", [False, True], ids=["forward", "explicit"])
+def test_unitary_matches_golden(case, explicit):
+    check_golden("unitary", case, explicit)
