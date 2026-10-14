@@ -36,7 +36,7 @@ This will create a Python virtual environment at `./.venv`, install the pinned P
 
 ### Testing
 
-Tests are written with [pytest](https://pytest.org) and live in `tests/`. Each network has its own test file, in `tests/jax_tests/` for the JAX/Flax implementations and `tests/torch_tests/` for the PyTorch implementations (e.g. `test_plnet.py`, `test_bilipschitz_ren.py`). `./run_tests.sh` is a thin wrapper around `uv run pytest`, so any pytest arguments work:
+Tests are written with [pytest](https://pytest.org) and live in `tests/`. Each network has a single test file (e.g. `test_plnet.py`, `test_bilipschitz_ren.py`) whose tests run against both the JAX/Flax and PyTorch implementations through the `backend` fixture (see `tests/backends.py`). Tests for networks or features that only exist in JAX use the `jax_backend` fixture, and the PyTorch side is skipped with a `TODO(torch)` note in the file. `./run_tests.sh` is a thin wrapper around `uv run pytest`, so any pytest arguments work:
 
 ```bash
 ./run_tests.sh                  # everything

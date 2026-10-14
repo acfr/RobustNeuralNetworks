@@ -24,7 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import golden
-from jax_utils import build_model, run_model
+from backends import JaxNet, build_jax_model
 
 BATCH = 4
 
@@ -59,11 +59,11 @@ def _randn(rng, *shape):
 
 
 def _make_case(network, name, config, rng, inputs, init_args):
-    model = build_model(network, config)
+    model = build_jax_model(network, config)
     variables = model.init(jax.random.key(0), *init_args(inputs))
     params = perturb(jax.tree.map(np.asarray, variables["params"]), rng)
     jparams = {"params": jax.tree.map(jnp.asarray, params)}
-    outputs = run_model(network, model, jparams, inputs)
+    outputs = JaxNet(network, config, model, jparams).forward(inputs)
     return {
         "name": name,
         "config": config,

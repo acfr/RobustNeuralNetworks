@@ -13,7 +13,7 @@ Each `tests/golden/<network>.json` holds a list of cases:
     }
 
 The JAX tests load `params` as-is; the PyTorch tests translate them to
-a `state_dict` (see `torch_utils.py`). Because both backends are checked against
+a `state_dict` (see `backends.py`). Because both backends are checked against
 the same file, passing both implies they agree with each other.
 
 Regenerate the files with `uv run python tests/generate_golden.py`.
