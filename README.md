@@ -34,6 +34,23 @@ This will create a Python virtual environment at `./.venv`, install the pinned P
 ./run_tests.sh
 ```
 
+### Testing
+
+Tests are written with [pytest](https://pytest.org) and live in `tests/`. Each network has a single test file (e.g. `test_plnet.py`, `test_bilipschitz_ren.py`) whose tests run against both the JAX/Flax and PyTorch implementations through the `backend` fixture (see `tests/backends.py`). Tests for networks or features that only exist in JAX use the `jax_backend` fixture, and the PyTorch side is skipped with a `TODO(torch)` note in the file. `./run_tests.sh` is a thin wrapper around `uv run pytest`, so any pytest arguments work:
+
+```bash
+./run_tests.sh                  # everything
+./run_tests.sh -m torch         # PyTorch tests only (or -m jax)
+./run_tests.sh -n auto          # run in parallel
+./run_tests.sh -k plnet         # select by name
+```
+
+Besides property tests (output shapes, inverse round-trips, Lipschitz bounds, gradients, error handling), every network is checked against **golden input/output files** in `tests/golden/<network>.json`. Each case stores the constructor arguments, the (unconstrained) parameters, some inputs, and the expected outputs. The JAX and PyTorch tests both load the same file, so if both pass, the two implementations agree with each other. Networks that only exist in JAX (e.g. `LBDN`, the contracting/Lipschitz/general RENs, the linear RENs and the R2DN) are checked against their golden files too, which guards against regressions when refactoring.
+
+Golden files are generated from the JAX implementation with `uv run python tests/generate_golden.py [network ...]`. Only regenerate them deliberately (a new case, or an intended change to a network) and review the diff.
+
+The same suite runs on every push to `main` and every pull request through GitHub Actions (`.github/workflows/tests.yml`, CPU only).
+
 ### A Note on Dependencies
 
 Dependencies are declared in `pyproject.toml` and are split into two sets:
@@ -46,7 +63,6 @@ By default, the `install.sh` script installs both the core and extra dependencie
 ```bash
 uv sync --extra cpu     # CPU only
 uv sync --extra cuda13  # GPU with CUDA 13
-```
 
 ## Running an Example
 

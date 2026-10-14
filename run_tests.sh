@@ -1,9 +1,7 @@
 #!/bin/bash
+# Run the test suite. Extra arguments are passed to pytest, e.g.
+#   ./run_tests.sh -k torch
+#   ./run_tests.sh -m jax -n auto
 set -euo pipefail
 
-uv run python test/test_lbdn.py
-uv run python test/test_linren.py
-uv run python test/test_ren.py
-uv run python test/test_r2dn.py
-uv run python test/test_bilipren.py
-uv run python test/test_bilipren_torch.py
+uv run pytest "$@"
