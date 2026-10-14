@@ -6,8 +6,7 @@ import jax.numpy as jnp                 # JAX NumPy
 import matplotlib.pyplot as plt         # Plotting
 import numpy as np
 import optax                            # Optimisation library
-import tensorflow_datasets as tfds      # TFDS to download MNIST.
-import tensorflow as tf                 # TensorFlow / `tf.data` operations.
+from datasets import load_dataset       # Hugging Face datasets to download MNIST
 
 import flax.linen as nn
 from robustnn import lbdn_jax as lbdn
@@ -23,29 +22,25 @@ filepath = dirpath / "../results/mnist/"
 if not filepath.exists():
     filepath.mkdir(parents=True)
 
-# Set the random seed for reproducibility.
-seed = 42
-tf.random.set_seed(seed)
+# Fix the random seed for reproducibility.
+fixed_seed = 42
 
 
 #### 1. Data loading
 
-# Load the dataset
-train_ds: tf.data.Dataset = tfds.load('mnist', split='train', data_dir="data/")
-test_ds: tf.data.Dataset = tfds.load('mnist', split='test', data_dir="data/")
+# Load the dataset into memory as dicts of numpy arrays
+mnist = load_dataset("ylecun/mnist").with_format("numpy")
+train_ds, test_ds = mnist["train"][:], mnist["test"][:]
 
 # Data pre-processing:
 #   1. Flatten the images (we're just using MLPs here)
 #   2. Normalise the data
-def flatten_and_normalise(sample):
-    image = sample["image"]
-    label = sample["label"]
-    image = tf.cast(image, tf.float32) / 255
-    image = tf.reshape(image, [-1])
-    return {"image": image, "label": label}
-  
-train_ds = train_ds.map(flatten_and_normalise)
-test_ds = test_ds.map(flatten_and_normalise)
+def flatten_and_normalise(data):
+    image = data["image"].reshape(len(data["image"]), -1).astype(np.float32) / 255
+    return {"image": image, "label": data["label"]}
+
+train_ds = flatten_and_normalise(train_ds)
+test_ds = flatten_and_normalise(test_ds)
 
 # Data sizes for MNIST
 n_inputs = 28 * 28      # Images are 28 x 28 pixels each
@@ -57,10 +52,16 @@ eval_every = 100        # How often to evaluate during training
 batch_size = 128        # Training batch size
 test_batch_size = 256   # Test batch size
 
-# Shuffle the dataset and group into batches. Skip any incomplete batches
-train_ds = train_ds.repeat().shuffle(1024, seed=seed)
-train_ds = train_ds.batch(batch_size, drop_remainder=True).take(train_steps).prefetch(1)
-test_ds = test_ds.batch(test_batch_size, drop_remainder=True).prefetch(1)
+# Sample random training batches, and split the test data into batches
+def train_batches(seed=fixed_seed):
+    rng = np.random.default_rng(seed)
+    for _ in range(train_steps):
+        idx = rng.choice(len(train_ds["label"]), batch_size, replace=False)
+        yield {k: v[idx] for k, v in train_ds.items()}
+
+def test_batches():
+    for i in range(0, len(test_ds["label"]) - test_batch_size + 1, test_batch_size):
+        yield {k: v[i:i + test_batch_size] for k, v in test_ds.items()}
 
 
 #### 2. Define Flax model
@@ -151,7 +152,7 @@ def train_mnist_classifier(model, seed=42, verbose=True):
 
     # Train over many batches and log test accuracy
     metrics = {"step": [], "test_accuracy": []}
-    for step, batch in enumerate(train_ds.as_numpy_iterator()):
+    for step, batch in enumerate(train_batches()):
 
         # Run the optimiser for one step
         params, opt_state = train_step(params, opt_state, batch)
@@ -159,7 +160,7 @@ def train_mnist_classifier(model, seed=42, verbose=True):
         # Log metrics intermittently
         if step == 0 or (step % eval_every == 0 or step == train_steps - 1):
             batch_accuracy = []
-            for test_batch in test_ds.as_numpy_iterator():
+            for test_batch in test_batches():
                 _, test_logits = loss_fn(params, test_batch)
                 acc = compute_accuracy(test_logits, test_batch["label"])
                 batch_accuracy.append(acc)
@@ -174,8 +175,8 @@ def train_mnist_classifier(model, seed=42, verbose=True):
 
 
 #### 5. Train models
-params_mlp, metrics_mlp = train_mnist_classifier(model_mlp, seed, verbose=True)
-params_lip, metrics_lip = train_mnist_classifier(model_lip, seed, verbose=True)
+params_mlp, metrics_mlp = train_mnist_classifier(model_mlp, fixed_seed, verbose=True)
+params_lip, metrics_lip = train_mnist_classifier(model_lip, fixed_seed, verbose=True)
 
 # Plot loss and accuracy in subplots
 color_mlp = "#009E73"
@@ -203,7 +204,7 @@ def plot_mnist_results(test_batch, pred, name):
     for i, ax in enumerate(axs.flatten()):
 
         # Reshape image again for plotting
-        i = i + 1   # Choose nice examples
+        i = i + 5   # Choose nice examples
         label = test_batch['label'][i]
         image = test_batch['image'][i]
         image = jnp.reshape(image, (28, 28))
@@ -217,7 +218,7 @@ def plot_mnist_results(test_batch, pred, name):
     plt.close()
 
 # Run the predictions
-test_batch = test_ds.as_numpy_iterator().next()
+test_batch = next(test_batches())
 pred_mlp = predict(model_mlp, params_mlp, test_batch)
 pred_lip = predict(model_lip, params_lip, test_batch)
 

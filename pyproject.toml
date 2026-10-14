@@ -16,8 +16,8 @@ authors = [
     { name = "Ian Manchester" },
 ]
 
-# Dependencies required by the `robustnn/` package itself. Versions are pinned to
-# those the models are currently tested against; `uv.lock` fixes the full set.
+# Dependencies required by the `robustnn/` package itself. Minimum versions are
+# those the models are currently tested against.
 dependencies = [
     "flax>=0.12.10",
     "numpy>=2.5.3",
@@ -43,8 +43,7 @@ examples = [
     "optax>=0.2.8",
     "pandas>=3.0.6",
     "scipy>=1.18.1",
-    "tensorflow-datasets>=4.9.10",
-    "tensorflow>=2.21.0",
+    "datasets[vision]>=4.8.5",
     "matplotlib>=3.11.2",
     "cycler>=0.12.1",
 ]
