@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 from robustnn.orthogonal_torch import Params, cayley, norm
-from robustnn.solvers import DavisYinSolveNumpy
+from robustnn.solvers import MonLipInverseSolveNumpy
 
 
 def _resolve_bounds(mu, nu, tau):
@@ -214,10 +214,12 @@ class PMonLipNet(nn.Module):
         iterations: int = 2000,
         Lambda: float = 1.0,
         tolerance: float = 1e-6,
+        solver: str = "dys",
     ) -> np.ndarray:
         """Invert the conditioned map for a fixed hidden-bias tensor."""
         return self.inverse_with_diagnostics(
-            y, b, alpha, inverse_activation_fn, iterations, Lambda, tolerance
+            y, b, alpha, inverse_activation_fn, iterations, Lambda, tolerance,
+            solver
         )[0]
 
     def inverse_with_diagnostics(
@@ -229,8 +231,9 @@ class PMonLipNet(nn.Module):
         iterations: int = 2000,
         Lambda: float = 1.0,
         tolerance: float = 1e-6,
+        solver: str = "dys",
     ):
-        """Invert the map and return residual, iteration count, and DYS step."""
+        """Invert with DYS/PRS/DRS and return residual, count, and step."""
         if b.shape[-1] != sum(self.units):
             raise ValueError(f"b must have {sum(self.units)} features; got {b.shape[-1]}.")
         params = self.direct_to_explicit()
@@ -238,7 +241,7 @@ class PMonLipNet(nn.Module):
             params.sqrt_2g / params.mu * (y - params.by) @ params.S.T
             + b
         )
-        z, _, residual, steps, effective_alpha = DavisYinSolveNumpy(
+        z, _, residual, steps, effective_alpha = MonLipInverseSolveNumpy(
             bz,
             params,
             inverse_activation_fn=inverse_activation_fn,
@@ -246,6 +249,7 @@ class PMonLipNet(nn.Module):
             alpha=alpha,
             max_iterations=iterations,
             tolerance=tolerance,
+            solver=solver,
         )
         x = (y - params.by - params.sqrt_g2 * z @ params.S) / params.mu
         return x, residual, steps, effective_alpha

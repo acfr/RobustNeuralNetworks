@@ -15,7 +15,7 @@ import torch.nn as nn
 import numpy as np 
 from robustnn.bilipnet_torch import BiLipNet
 from robustnn.orthogonal_torch import Params
-import numpy as np
+from typing import Callable, Optional, Sequence
 
 class PLNet(nn.Module):
     def __init__(self, 
@@ -131,3 +131,35 @@ class PLNet(nn.Module):
         """Get the bounds for the BiLipNet layer."""
         lipmin, lipmax, tau = self.bln.get_bounds()
         return lipmin, lipmax, tau
+
+    def inverse(
+        self,
+        y: np.ndarray,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
+    ) -> np.ndarray:
+        """Invert an output of the inner BiLip map, not the scalar potential."""
+        return self.bln.inverse(
+            y, alphas, inverse_activation_fns, iterations, Lambdas,
+            tolerances, solvers
+        )
+
+    def inverse_with_diagnostics(
+        self,
+        y: np.ndarray,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
+    ):
+        """Invert the inner BiLip map and return per-block diagnostics."""
+        return self.bln.inverse_with_diagnostics(
+            y, alphas, inverse_activation_fns, iterations, Lambdas,
+            tolerances, solvers
+        )

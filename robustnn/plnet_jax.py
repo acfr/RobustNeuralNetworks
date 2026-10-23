@@ -15,8 +15,13 @@ from flax import linen as nn
 from flax.struct import dataclass
 from robustnn.utils import cayley
 from flax.typing import Array, PrecisionLike
-from typing import Any, Sequence, Callable
-from robustnn.bilipnet_jax import BiLipNet, ExplicitBiLipParams, DirectBiLipParams
+from typing import Any, Sequence, Callable, Optional
+from robustnn.bilipnet_jax import (
+    BiLipNet,
+    DirectBiLipParams,
+    ExplicitBiLipParams,
+    ExplicitInverseBiLipParams,
+)
 
 @dataclass
 class DirectPLParams:
@@ -216,6 +221,62 @@ class PLNet(nn.Module):
             ExplicitPLParams: explicit PLNet layer params.
         """
         return self.apply(params, x_optimal=x_optimal, method="_direct_to_explicit")
+
+    def _direct_to_explicit_inverse(
+        self,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
+    ) -> ExplicitInverseBiLipParams:
+        """Create inverse parameters for the PLNet's inner BiLip map."""
+        return self.BiLipBlock._direct_to_explicit_inverse(
+            alphas, inverse_activation_fns, iterations, Lambdas, tolerances,
+            solvers
+        )
+
+    def _explicit_inverse_call_with_diagnostics(
+        self, y: Array, explicit: ExplicitInverseBiLipParams
+    ):
+        """Invert an output of the inner BiLip map and return diagnostics."""
+        return self.BiLipBlock._explicit_inverse_call_with_diagnostics(y, explicit)
+
+    def _explicit_inverse_call(
+        self, y: Array, explicit: ExplicitInverseBiLipParams
+    ) -> Array:
+        return self._explicit_inverse_call_with_diagnostics(y, explicit)[0]
+
+    def direct_to_explicit_inverse(
+        self,
+        params: dict,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
+    ) -> ExplicitInverseBiLipParams:
+        """Configure inversion of the inner BiLip map, not the scalar potential."""
+        return self.apply(
+            params, alphas, inverse_activation_fns, iterations, Lambdas,
+            tolerances, solvers, method="_direct_to_explicit_inverse"
+        )
+
+    def inverse_call(
+        self, params: dict, y: Array, explicit: ExplicitInverseBiLipParams
+    ) -> Array:
+        """Invert an output ``y`` of the PLNet's inner BiLip map."""
+        return self.apply(params, y, explicit, method="_explicit_inverse_call")
+
+    def inverse_call_with_diagnostics(
+        self, params: dict, y: Array, explicit: ExplicitInverseBiLipParams
+    ):
+        """Invert the inner BiLip map and return per-block diagnostics."""
+        return self.apply(
+            params, y, explicit, method="_explicit_inverse_call_with_diagnostics"
+        )
     
 
     

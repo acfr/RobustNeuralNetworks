@@ -6,8 +6,9 @@ Fixed-point / operator-splitting solvers used across `robustnn`.
 This module collects the iterative solvers used to evaluate implicit
 (equilibrium) layers, so other modules can share a single implementation:
 
-- `DavisYinSplit`: three-operator (Davis-Yin) split solver for the
-  monotone-Lipschitz network (`MonLipNet`) equilibrium.
+- `MonLipInverseSolve`: selectable Davis-Yin, Peaceman-Rachford, or
+  Douglas-Rachford solver for the monotone-Lipschitz network (`MonLipNet`)
+  inverse equilibrium. A NumPy counterpart serves the Torch evaluation path.
 - `ForwardBackwardSplit`, `PeacemanRachfordSplit`,
   `DouglasRachfordSplit`: operator-splitting solvers for the REN equilibrium
   layer `w = activation(D11 @ w + b)` with a full (non-triangular) `D11`. The
@@ -34,6 +35,48 @@ from robustnn.utils import l2_norm
 
 # Default maximum number of iterations for the equilibrium-layer solvers.
 _DEFAULT_SOLVER_ITERS = 200
+
+MONLIP_INVERSE_SOLVERS = ("dys", "prs", "drs")
+
+
+def normalize_monlip_solver(solver: str) -> str:
+    """Return the canonical name of a supported MonLip inverse solver.
+
+    The short names ``"dys"``, ``"prs"``, and ``"drs"`` are the public,
+    framework-independent configuration values. Class-style names are accepted
+    as aliases to ease migration from code that imported solver functions.
+    """
+    if not isinstance(solver, str):
+        raise TypeError("solver must be one of 'dys', 'prs', or 'drs'.")
+    key = solver.lower().replace("_", "").replace("-", "")
+    aliases = {
+        "dys": "dys",
+        "davisyin": "dys",
+        "davisyinsplit": "dys",
+        "prs": "prs",
+        "peacemanrachford": "prs",
+        "peacemanrachfordsplit": "prs",
+        "drs": "drs",
+        "douglasrachford": "drs",
+        "douglasrachfordsplit": "drs",
+    }
+    if key not in aliases:
+        choices = ", ".join(MONLIP_INVERSE_SOLVERS)
+        raise ValueError(f"Unknown MonLip inverse solver {solver!r}; choose {choices}.")
+    return aliases[key]
+
+
+def validate_two_operator_options(solver, alpha, relaxation):
+    """Validate and normalize PRS/DRS step and relaxation parameters."""
+    alpha = 1.0 if alpha is None else float(np.asarray(alpha))
+    relaxation = float(np.asarray(relaxation))
+    if not np.isfinite(alpha) or alpha <= 0:
+        raise ValueError("PRS/DRS alpha must be finite and strictly positive.")
+    upper = 1.0 if solver == "prs" else 2.0
+    if not np.isfinite(relaxation) or not 0 < relaxation <= upper:
+        interval = "(0, 1]" if solver == "prs" else "(0, 2]"
+        raise ValueError(f"{solver.upper()} relaxation must lie in {interval}.")
+    return alpha, relaxation
 
 # C(z) in eq 14
 # gamma / u * S * ST
@@ -196,6 +239,148 @@ def DavisYinSolveNumpy(bz, e,
     return zk, uk, residual, iteration, alpha
 
 
+def _monlip_equilibrium_matrix(e, array_module):
+    """Build ``W = V - (gamma / mu) S S^T`` from block MonLip parameters."""
+    size = sum(e.units)
+    V = array_module.zeros((size, size), dtype=array_module.asarray(e.S).dtype)
+    row = e.units[0]
+    column = 0
+    for layer in range(1, len(e.units)):
+        rows, columns = e.units[layer], e.units[layer - 1]
+        if array_module is jnp:
+            V = V.at[row:row + rows, column:column + columns].set(e.V[layer - 1])
+        else:
+            V[row:row + rows, column:column + columns] = np.asarray(e.V[layer - 1])
+        row += rows
+        column += columns
+    S = array_module.asarray(e.S)
+    return V - e.gam / e.mu * S @ S.T
+
+
+def _TwoOperatorSolve(proximal_fn, D11, b, solver, tolerance, alpha,
+                      max_iterations, relaxation):
+    """JAX PRS/DRS solve with a maximum batch-relative splitting residual."""
+    solver = normalize_monlip_solver(solver)
+    alpha = 1.0 if alpha is None else alpha
+
+    b = jnp.asarray(b)
+    identity = jnp.eye(D11.shape[0], dtype=b.dtype)
+    resolvent_matrix = identity + alpha * (identity - D11)
+    uk = jnp.zeros_like(b)
+    solution = jnp.zeros_like(b)
+    residual = jnp.asarray(jnp.inf, dtype=b.dtype)
+    iteration = jnp.asarray(0, dtype=jnp.int32)
+    update_scale = 2.0 * relaxation if solver == "prs" else relaxation
+
+    def body_fun(carry):
+        _, uk, _, iteration = carry
+        xk = proximal_fn(uk)
+        reflected = 2.0 * xk - uk
+        rhs = reflected + alpha * b
+        yk = jnp.linalg.solve(
+            resolvent_matrix, rhs.reshape((-1, rhs.shape[-1])).T
+        ).T.reshape(rhs.shape)
+        gap = yk - xk
+        residual = jnp.max(
+            jnp.linalg.norm(gap, axis=-1)
+            / (1.0 + jnp.linalg.norm(xk, axis=-1))
+        )
+        return yk, uk + update_scale * gap, residual, iteration + 1
+
+    def cond_fun(carry):
+        return jnp.logical_and(carry[2] > tolerance,
+                               carry[3] < max_iterations)
+
+    return jax.lax.while_loop(
+        cond_fun, body_fun, (solution, uk, residual, iteration)
+    )
+
+
+def _TwoOperatorSolveNumpy(proximal_fn, D11, b, solver, tolerance, alpha,
+                           max_iterations, relaxation):
+    """NumPy PRS/DRS solve equivalent to ``_TwoOperatorSolve``."""
+    if max_iterations < 1:
+        raise ValueError("max_iterations must be at least one.")
+    if tolerance < 0:
+        raise ValueError("tolerance must be non-negative.")
+    solver = normalize_monlip_solver(solver)
+    alpha, relaxation = validate_two_operator_options(
+        solver, alpha, relaxation
+    )
+
+    b, D11 = np.asarray(b), np.asarray(D11)
+    identity = np.eye(D11.shape[0], dtype=b.dtype)
+    resolvent_matrix = identity + alpha * (identity - D11)
+    uk = np.zeros_like(b)
+    solution = np.zeros_like(b)
+    residual = np.inf
+    update_scale = 2.0 * relaxation if solver == "prs" else relaxation
+
+    for iteration in range(1, max_iterations + 1):
+        xk = np.asarray(proximal_fn(uk))
+        reflected = 2.0 * xk - uk
+        rhs = reflected + alpha * b
+        solution = np.linalg.solve(
+            resolvent_matrix, rhs.reshape((-1, rhs.shape[-1])).T
+        ).T.reshape(rhs.shape)
+        gap = solution - xk
+        residual = float(np.max(
+            np.linalg.norm(gap, axis=-1)
+            / (1.0 + np.linalg.norm(xk, axis=-1))
+        ))
+        uk = uk + update_scale * gap
+        if residual <= tolerance:
+            break
+
+    return solution, uk, residual, iteration, alpha
+
+
+def MonLipInverseSolve(bz, e, inverse_activation_fn: Callable = nn.relu,
+                       Lambda: float = 1.0, alpha=None,
+                       max_iterations: int = 2000,
+                       tolerance: float = 1e-6, solver: str = "dys"):
+    """Solve a MonLip inverse equilibrium with DYS, PRS, or DRS.
+
+    ``inverse_activation_fn`` evaluates ``prox_(alpha f)``. ReLU is unchanged
+    by this scaling. DYS exploits the block-triangular representation, whereas
+    PRS and DRS solve the dense two-operator resolvent from paper Appendix B.3.
+
+    Returns:
+        Tuple containing hidden state, splitting variable, relative residual,
+        and iteration count.
+    """
+    solver = normalize_monlip_solver(solver)
+    if solver == "dys":
+        return DavisYinSolve(
+            bz, e, inverse_activation_fn, Lambda, alpha, max_iterations,
+            tolerance
+        )
+    D11 = _monlip_equilibrium_matrix(e, jnp)
+    return _TwoOperatorSolve(
+        inverse_activation_fn, D11, bz, solver, tolerance, alpha,
+        max_iterations, Lambda
+    )
+
+
+def MonLipInverseSolveNumpy(
+    bz, e, inverse_activation_fn: Callable = lambda x: np.maximum(0, x),
+    Lambda: float = 1.0, alpha=None, max_iterations: int = 2000,
+    tolerance: float = 1e-6, solver: str = "dys"
+):
+    """NumPy counterpart to ``MonLipInverseSolve`` for Torch models."""
+    solver = normalize_monlip_solver(solver)
+    if solver == "dys":
+        return DavisYinSolveNumpy(
+            bz, e, inverse_activation_fn, Lambda, alpha, max_iterations,
+            tolerance
+        )
+    D11 = _monlip_equilibrium_matrix(e, np)
+    return _TwoOperatorSolveNumpy(
+        inverse_activation_fn, D11, bz, solver, tolerance, alpha,
+        max_iterations, Lambda
+    )
+
+
 ######### Equilibrium-layer solvers: w = activation(D11 @ w + b) #########
 # These solve the (full, non-triangular) REN equilibrium layer by operator
 # splitting. They only compute the forward fixed point; gradients are attached
@@ -251,26 +436,9 @@ def PeacemanRachfordSplit(activation, D11, b, tol=1e-9, alpha=0.8,
     Returns:
         Array: the equilibrium point `w`.
     """
-    w_eq = jnp.zeros_like(b)
-    uk = jnp.zeros_like(b)
-    I = jnp.eye(D11.shape[0], dtype=b.dtype)
-
-    def body_fun(carry):
-        w_eq, uk, _, k = carry
-        uh = 2 * w_eq - uk
-        zh = jnp.linalg.solve(I + alpha * (I - D11), (uh + alpha * b).T)
-        uk_new = 2 * zh.T - uh
-        w_eq_new = activation(uk_new)
-        error = l2_norm(w_eq - w_eq_new)
-        return (w_eq_new, uk_new, error, k + 1)
-
-    def cond_fun(carry):
-        _, _, error, k = carry
-        return jnp.logical_and(error >= tol, k < max_iter)
-
-    init_carry = (w_eq, uk, jnp.inf, 0)
-    w_eq_final, _, _, _ = jax.lax.while_loop(cond_fun, body_fun, init_carry)
-    return w_eq_final
+    return _TwoOperatorSolve(
+        activation, D11, b, "prs", tol, alpha, max_iter, 1.0
+    )[0]
 
 
 def DouglasRachfordSplit(activation, D11, b, tol=1e-9, alpha=0.6,
@@ -291,23 +459,6 @@ def DouglasRachfordSplit(activation, D11, b, tol=1e-9, alpha=0.6,
     Returns:
         Array: the equilibrium point `w`.
     """
-    w_eq = jnp.zeros_like(b)
-    uk = jnp.zeros_like(b)
-    I = jnp.eye(D11.shape[0], dtype=b.dtype)
-
-    def body_fun(carry):
-        w_eq, uk, _, k = carry
-        uh = 2 * w_eq - uk
-        zh = jnp.linalg.solve(I + alpha * (I - D11), (uh + alpha * b).T)
-        uk_new = uk - w_eq + zh.T
-        w_eq_new = activation(uk_new)
-        error = l2_norm(w_eq - w_eq_new)
-        return (w_eq_new, uk_new, error, k + 1)
-
-    def cond_fun(carry):
-        _, _, error, k = carry
-        return jnp.logical_and(error >= tol, k < max_iter)
-
-    init_carry = (w_eq, uk, jnp.inf, 0)
-    w_eq_final, _, _, _ = jax.lax.while_loop(cond_fun, body_fun, init_carry)
-    return w_eq_final
+    return _TwoOperatorSolve(
+        activation, D11, b, "drs", tol, alpha, max_iter, 1.0
+    )[0]

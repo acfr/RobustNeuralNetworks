@@ -10,6 +10,10 @@ Implemented network architectures include:
 
 - **[WIP]** Monotone, Bi-Lipschitz (BiLipNet), and Polyak-Lojasiewicz networks (PLNet) from [Wang, Dvijotham, & Manchester (ICML 2024)](https://proceedings.mlr.press/v235/wang24p.html).
 
+  Their JAX and Torch evaluation APIs support DYS, Peaceman--Rachford, and
+  Douglas--Rachford inverse solvers. See the
+  [inverse-solver equations and usage](docs/monlip_inverse_solvers.tex).
+
 - Robust Recurrent Deep Network (R2DN) from [Barbara, Wang, & Manchester (arXiv 2025)](https://arxiv.org/abs/2504.01250).
 
 This repository is a work-in-progress. More network architectures, tutorials, and documentation will be added as we go along. 

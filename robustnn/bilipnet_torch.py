@@ -129,7 +129,7 @@ class BiLipNet(nn.Module):
         return lipmin, lipmax, tau
     
     def _solver_arguments(self, alphas, inverse_activation_fns, iterations,
-                          Lambdas, tolerances):
+                          Lambdas, tolerances, solvers):
         values = {
             "alphas": [None] * self.depth if alphas is None else alphas,
             "inverse_activation_fns": (
@@ -139,6 +139,7 @@ class BiLipNet(nn.Module):
             "iterations": [2000] * self.depth if iterations is None else iterations,
             "Lambdas": [1.0] * self.depth if Lambdas is None else Lambdas,
             "tolerances": [1e-6] * self.depth if tolerances is None else tolerances,
+            "solvers": ["dys"] * self.depth if solvers is None else solvers,
         }
         for name, sequence in values.items():
             if len(sequence) != self.depth:
@@ -150,7 +151,8 @@ class BiLipNet(nn.Module):
                 inverse_activation_fns: Optional[Sequence[Callable]] = None,
                 iterations: Optional[Sequence[int]] = None,
                 Lambdas: Optional[Sequence[float]] = None,
-                tolerances: Optional[Sequence[float]] = None):
+                tolerances: Optional[Sequence[float]] = None,
+                solvers: Optional[Sequence[str]] = None):
         """        
         Inverse of the BiLipNet.
         arguments:
@@ -163,7 +165,8 @@ class BiLipNet(nn.Module):
             numpy array: Inverted Ouput.
         """
         return self.inverse_with_diagnostics(
-            y, alphas, inverse_activation_fns, iterations, Lambdas, tolerances
+            y, alphas, inverse_activation_fns, iterations, Lambdas, tolerances,
+            solvers
         )[0]
 
     def inverse_with_diagnostics(self, y: np.array,
@@ -171,10 +174,12 @@ class BiLipNet(nn.Module):
                 inverse_activation_fns: Optional[Sequence[Callable]] = None,
                 iterations: Optional[Sequence[int]] = None,
                 Lambdas: Optional[Sequence[float]] = None,
-                tolerances: Optional[Sequence[float]] = None):
-        """Invert the network and return per-block DYS diagnostics."""
+                tolerances: Optional[Sequence[float]] = None,
+                solvers: Optional[Sequence[str]] = None):
+        """Invert the network and return per-block solver diagnostics."""
         arguments = self._solver_arguments(
-            alphas, inverse_activation_fns, iterations, Lambdas, tolerances
+            alphas, inverse_activation_fns, iterations, Lambdas, tolerances,
+            solvers
         )
         x = y
         residuals = [None] * self.depth
@@ -190,6 +195,7 @@ class BiLipNet(nn.Module):
                     iterations=arguments["iterations"][k - 1],
                     Lambda=arguments["Lambdas"][k - 1],
                     tolerance=arguments["tolerances"][k - 1],
+                    solver=arguments["solvers"][k - 1],
                 )
             )
         x = self.orth_layers[0].inverse(x)

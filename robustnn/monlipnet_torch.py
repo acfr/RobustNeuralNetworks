@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Sequence
 import numpy as np 
-from robustnn.solvers import DavisYinSolveNumpy
+from robustnn.solvers import MonLipInverseSolveNumpy
 from robustnn.orthogonal_torch import Params, cayley, norm
 
 class MonLipNet(nn.Module):
@@ -234,19 +234,22 @@ class MonLipNet(nn.Module):
                 inverse_activation_fn: callable = lambda x: np.maximum(0, x),
                 iterations: int = 2000,
                 Lambda: float = 1.0,
-                tolerance: float = 1e-6):
+                tolerance: float = 1e-6,
+                solver: str = "dys"):
         """
-        Inverse of the MonLip layer using Davis-Yin splitting method.
+        Inverse of the MonLip layer using a selected splitting method.
         arguments:
             y: (batch_size, features) in numpy array
-            alpha: alpha value for the solver
-            inverse_activation_fn: proximal operator (need to be numpy version!)
+            alpha: Solver step. DYS caps unsafe values; PRS/DRS default to 1.
+            inverse_activation_fn: ``prox_(alpha f)`` as a NumPy callable.
             iterations: maximum number of iterations for the solver
-            Lambda: step size for the solver
+            Lambda: solver relaxation; one selects the standard update
             tolerance: relative splitting-residual tolerance
+            solver: ``"dys"`` (default), ``"prs"``, or ``"drs"``
         """
         return self.inverse_with_diagnostics(
-            y, alpha, inverse_activation_fn, iterations, Lambda, tolerance
+            y, alpha, inverse_activation_fn, iterations, Lambda, tolerance,
+            solver
         )[0]
 
     def inverse_with_diagnostics(self, y: np.array,
@@ -254,15 +257,16 @@ class MonLipNet(nn.Module):
                 inverse_activation_fn: callable = lambda x: np.maximum(0, x),
                 iterations: int = 2000,
                 Lambda: float = 1.0,
-                tolerance: float = 1e-6):
-        """Invert the layer and return residual, iteration count, and DYS step."""
+                tolerance: float = 1e-6,
+                solver: str = "dys"):
+        """Invert the layer and return residual, iteration count, and step."""
         mon_params = self.direct_to_explicit()
 
         # y to b
         # inverse of equation 12
         # bz = (y - e.by) / e.sqrt_2g
         bz = mon_params.sqrt_2g/mon_params.mu * (y-mon_params.by) @ mon_params.S.T + mon_params.bh
-        zk, _, residual, steps, effective_alpha = DavisYinSolveNumpy(
+        zk, _, residual, steps, effective_alpha = MonLipInverseSolveNumpy(
             bz,
             mon_params,
             inverse_activation_fn=inverse_activation_fn,
@@ -270,6 +274,7 @@ class MonLipNet(nn.Module):
             alpha=alpha,
             max_iterations=iterations,
             tolerance=tolerance,
+            solver=solver,
         )
             
         # z to x

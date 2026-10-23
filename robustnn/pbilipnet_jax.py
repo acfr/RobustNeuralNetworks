@@ -153,6 +153,7 @@ class PBiLipNet(nn.Module):
         iterations: Optional[Sequence[int]] = None,
         Lambdas: Optional[Sequence[float]] = None,
         tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
     ) -> ExplicitInversePBiLipParams:
         alphas = [None] * self.depth if alphas is None else alphas
         inverse_activation_fns = (
@@ -162,12 +163,14 @@ class PBiLipNet(nn.Module):
         iterations = [2000] * self.depth if iterations is None else iterations
         Lambdas = [1.0] * self.depth if Lambdas is None else Lambdas
         tolerances = [1e-6] * self.depth if tolerances is None else tolerances
+        solvers = ["dys"] * self.depth if solvers is None else solvers
         arguments = {
             "alphas": alphas,
             "inverse_activation_fns": inverse_activation_fns,
             "iterations": iterations,
             "Lambdas": Lambdas,
             "tolerances": tolerances,
+            "solvers": solvers,
         }
         for name, values in arguments.items():
             if len(values) != self.depth:
@@ -182,6 +185,7 @@ class PBiLipNet(nn.Module):
                     iterations[index],
                     Lambdas[index],
                     tolerances[index],
+                    solvers[index],
                 )
                 for index, layer in enumerate(self.mon)
             ],
@@ -265,7 +269,7 @@ class PBiLipNet(nn.Module):
     def inverse_call_with_diagnostics(
         self, params: dict, y: Array, p: Array, explicit: ExplicitInversePBiLipParams
     ):
-        """Evaluate the inverse and return each block's DYS diagnostics."""
+        """Evaluate the inverse and return each block's solver diagnostics."""
         return self.apply(
             params, y, p, explicit, method="_explicit_inverse_call_with_diagnostics"
         )
@@ -278,6 +282,7 @@ class PBiLipNet(nn.Module):
         iterations: Optional[Sequence[int]] = None,
         Lambdas: Optional[Sequence[float]] = None,
         tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
     ) -> ExplicitInversePBiLipParams:
         """Convert the conditioned network for adaptive inverse evaluation."""
         return self.apply(
@@ -287,5 +292,6 @@ class PBiLipNet(nn.Module):
             iterations,
             Lambdas,
             tolerances,
+            solvers,
             method="_direct_to_explicit_inverse",
         )

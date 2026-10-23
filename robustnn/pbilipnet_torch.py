@@ -134,10 +134,12 @@ class PBiLipNet(nn.Module):
         iterations: Optional[Sequence[int]] = None,
         Lambdas: Optional[Sequence[float]] = None,
         tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
     ) -> np.ndarray:
         """Invert the conditioned network for a fixed conditioning input."""
         return self.inverse_with_diagnostics(
-            y, p, alphas, inverse_activation_fns, iterations, Lambdas, tolerances
+            y, p, alphas, inverse_activation_fns, iterations, Lambdas,
+            tolerances, solvers
         )[0]
 
     def inverse_with_diagnostics(
@@ -149,8 +151,9 @@ class PBiLipNet(nn.Module):
         iterations: Optional[Sequence[int]] = None,
         Lambdas: Optional[Sequence[float]] = None,
         tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
     ):
-        """Invert the network and return per-block DYS diagnostics."""
+        """Invert the network and return per-block solver diagnostics."""
         values = {
             "alphas": [None] * self.depth if alphas is None else alphas,
             "inverse_activation_fns": (
@@ -160,6 +163,7 @@ class PBiLipNet(nn.Module):
             "iterations": [2000] * self.depth if iterations is None else iterations,
             "Lambdas": [1.0] * self.depth if Lambdas is None else Lambdas,
             "tolerances": [1e-6] * self.depth if tolerances is None else tolerances,
+            "solvers": ["dys"] * self.depth if solvers is None else solvers,
         }
         for name, sequence in values.items():
             if len(sequence) != self.depth:
@@ -179,6 +183,7 @@ class PBiLipNet(nn.Module):
                     iterations=values["iterations"][index - 1],
                     Lambda=values["Lambdas"][index - 1],
                     tolerance=values["tolerances"][index - 1],
+                    solver=values["solvers"][index - 1],
                 )
             )
         y = self.orth_layers[0].inverse(y, self._condition(self.orth_biases[0], p))

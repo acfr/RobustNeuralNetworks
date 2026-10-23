@@ -6,7 +6,7 @@ Adapted from code in
 Maintained by: Dechuan Liu (Aug 2026)
 """
 
-from typing import Callable
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 import torch
@@ -77,3 +77,37 @@ class PPLNet(nn.Module):
     def get_bounds(self):
         """Return the lower bound, upper bound, and distortion."""
         return self.pbln.get_bounds()
+
+    def inverse(
+        self,
+        y: np.ndarray,
+        p: np.ndarray,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
+    ) -> np.ndarray:
+        """Invert an output of the conditioned inner BiLip map."""
+        return self.pbln.inverse(
+            y, p, alphas, inverse_activation_fns, iterations, Lambdas,
+            tolerances, solvers
+        )
+
+    def inverse_with_diagnostics(
+        self,
+        y: np.ndarray,
+        p: np.ndarray,
+        alphas: Optional[Sequence[float]] = None,
+        inverse_activation_fns: Optional[Sequence[Callable]] = None,
+        iterations: Optional[Sequence[int]] = None,
+        Lambdas: Optional[Sequence[float]] = None,
+        tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
+    ):
+        """Invert the conditioned inner map and return block diagnostics."""
+        return self.pbln.inverse_with_diagnostics(
+            y, p, alphas, inverse_activation_fns, iterations, Lambdas,
+            tolerances, solvers
+        )

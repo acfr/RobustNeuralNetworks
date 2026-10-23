@@ -165,6 +165,7 @@ class BiLipNet(nn.Module):
         iterations: Optional[Sequence[int]] = None,
         Lambdas: Optional[Sequence[float]] = None,
         tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
     ) -> ExplicitInverseBiLipParams:
         """Convert direct params to explicit params."""
         alphas = [None] * self.depth if alphas is None else alphas
@@ -175,12 +176,14 @@ class BiLipNet(nn.Module):
         iterations = [2000] * self.depth if iterations is None else iterations
         Lambdas = [1.0] * self.depth if Lambdas is None else Lambdas
         tolerances = [1e-6] * self.depth if tolerances is None else tolerances
+        solvers = ["dys"] * self.depth if solvers is None else solvers
         arguments = {
             "alphas": alphas,
             "inverse_activation_fns": inverse_activation_fns,
             "iterations": iterations,
             "Lambdas": Lambdas,
             "tolerances": tolerances,
+            "solvers": solvers,
         }
         for name, values in arguments.items():
             if len(values) != self.depth:
@@ -189,7 +192,7 @@ class BiLipNet(nn.Module):
         monlip_explict_layers = [
             layer._direct_to_explicit_inverse(
                 alphas[i], inverse_activation_fns[i], iterations[i],
-                Lambdas[i], tolerances[i]
+                Lambdas[i], tolerances[i], solvers[i]
             )
             for i, layer in enumerate(self.mon)
         ]
@@ -297,7 +300,7 @@ class BiLipNet(nn.Module):
     def inverse_call_with_diagnostics(
         self, params: dict, x: Array, explicit: ExplicitInverseBiLipParams
     ):
-        """Evaluate the inverse and return each block's DYS diagnostics."""
+        """Evaluate the inverse and return each block's solver diagnostics."""
         return self.apply(
             params, x, explicit, method="_explicit_inverse_call_with_diagnostics"
         )
@@ -310,6 +313,7 @@ class BiLipNet(nn.Module):
         iterations: Optional[Sequence[int]] = None,
         Lambdas: Optional[Sequence[float]] = None,
         tolerances: Optional[Sequence[float]] = None,
+        solvers: Optional[Sequence[str]] = None,
     ) -> ExplicitInverseBiLipParams:
         """Convert from direct BiLipNet params to explicit form for eval.
         Args:
@@ -319,10 +323,12 @@ class BiLipNet(nn.Module):
             iterations: Maximum DYS iterations for each layer.
             Lambdas: Relaxation factors for each layer.
             tolerances: Relative splitting-residual tolerances for each layer.
+            solvers: Per-layer choices from ``"dys"``, ``"prs"``, and
+                ``"drs"``. Defaults to DYS for every layer.
         Returns:
             ExplicitInverseBiLipParams: explicit BiLipNet layer params.
         """
         return self.apply(
             params, alphas, inverse_activation_fns, iterations, Lambdas,
-            tolerances, method="_direct_to_explicit_inverse"
+            tolerances, solvers, method="_direct_to_explicit_inverse"
         )

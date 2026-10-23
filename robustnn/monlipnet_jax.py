@@ -49,16 +49,27 @@ class ExplicitMonLipParams:
 
 @dataclass
 class ExplicitInverseMonLipParams:
-    """Data class to keep track of explicit params for Monontone Lipschitz layer."""
+    """Configuration and explicit weights for a MonLip inverse solve.
+
+    ``solver`` is one of ``"dys"``, ``"prs"``, or ``"drs"``. It is static
+    PyTree metadata so one inverse configuration remains JIT-compatible.
+    ``inverse_activation_fn`` must evaluate ``prox_(alpha f)``; ReLU itself is
+    valid for every positive ``alpha``.
+    """
     monlip: ExplicitMonLipParams
-    alpha: float # effective DYS step, capped below mu / (nu - mu)
+    alpha: float
     inverse_activation_fn: Callable = field(pytree_node=False)
     iterations: int = 2000 # maximum number of inverse iterations
-    Lambda: float = 1.0 # step size for the update in DYS solver
+    Lambda: float = 1.0 # solver relaxation
     tolerance: float = 1e-6
+    solver: str = field(pytree_node=False, default="dys")
 
 
-from robustnn.solvers import DavisYinSolve
+from robustnn.solvers import (
+    MonLipInverseSolve,
+    normalize_monlip_solver,
+    validate_two_operator_options,
+)
 class MonLipNet(nn.Module):
     '''
     Monotone Lipschitz neural network layer using Cayley transform.
@@ -245,36 +256,46 @@ class MonLipNet(nn.Module):
                             iterations: int = 2000,
                             Lambda: float = 1.0,
                             tolerance: float = 1e-6,
+                            solver: str = "dys",
                             ) -> ExplicitInverseMonLipParams:
         """Convert the direct parameters to explicit parameters for inverse call.
         Args:
-            alpha: Requested DYS step. Unsafe values are capped from the
-                layer's current monotonicity and Lipschitz bounds.
-            inverse_activation_fn: Proximal operator used by DYS.
-            iterations: Maximum DYS iterations.
-            Lambda: Step size for the update in DYS solver (default: 1.0).
+            alpha: Solver step. DYS values are capped below
+                ``mu / (nu - mu)``; PRS/DRS accept any positive value and
+                default to 1.
+            inverse_activation_fn: ``prox_(alpha f)`` for the activation.
+            iterations: Maximum solver iterations.
+            Lambda: Relaxation. One is the standard update for every solver.
             tolerance: Relative splitting-residual tolerance.
+            solver: ``"dys"`` (default), ``"prs"``, or ``"drs"``.
         Returns:
             ExplicitInverseMonLipParams: Explicit parameters for inverse call.
         """
 
         monlip = self._direct_to_explicit()
-        # A margin below the paper's strict alpha < mu / (nu - mu) bound
-        # avoids silently divergent inverses when callers request alpha=1.
-        positive_gamma = monlip.gam > 0
-        safe_alpha = jnp.where(
-            positive_gamma,
-            0.9 * monlip.mu / jnp.where(positive_gamma, monlip.gam, 1.0),
-            jnp.where(monlip.gam == 0, 1.0, jnp.nan),
-        )
-        if alpha is None:
-            alpha = safe_alpha
+        solver = normalize_monlip_solver(solver)
+        if solver == "dys":
+            # The paper proves the strict bound alpha < mu / (nu - mu).
+            positive_gamma = monlip.gam > 0
+            safe_alpha = jnp.where(
+                positive_gamma,
+                0.9 * monlip.mu / jnp.where(positive_gamma, monlip.gam, 1.0),
+                jnp.where(monlip.gam == 0, 1.0, jnp.nan),
+            )
+            if alpha is None:
+                alpha = safe_alpha
+            else:
+                requested_alpha = jnp.asarray(alpha, dtype=monlip.S.dtype)
+                alpha = jnp.where(
+                    jnp.logical_and(
+                        jnp.isfinite(requested_alpha), requested_alpha > 0
+                    ),
+                    jnp.minimum(requested_alpha, safe_alpha),
+                    safe_alpha,
+                )
         else:
-            requested_alpha = jnp.asarray(alpha, dtype=monlip.S.dtype)
-            alpha = jnp.where(
-                jnp.logical_and(jnp.isfinite(requested_alpha), requested_alpha > 0),
-                jnp.minimum(requested_alpha, safe_alpha),
-                safe_alpha,
+            alpha, Lambda = validate_two_operator_options(
+                solver, alpha, Lambda
             )
 
         return ExplicitInverseMonLipParams(
@@ -284,6 +305,7 @@ class MonLipNet(nn.Module):
             iterations=iterations,
             Lambda=Lambda,
             tolerance=tolerance,
+            solver=solver,
         )
 
 
@@ -329,7 +351,7 @@ class MonLipNet(nn.Module):
         # inverse of equation 12
         # bz = (y - e.by) / e.sqrt_2g
         bz = e.sqrt_2g/e.mu * (y-e.by) @ e.S.T + e.bh
-        zk, _, residual, iterations = DavisYinSolve(
+        zk, _, residual, iterations = MonLipInverseSolve(
             bz,
             e,
             inverse_activation_fn=e_inv.inverse_activation_fn,
@@ -337,6 +359,7 @@ class MonLipNet(nn.Module):
             alpha=e_inv.alpha,
             max_iterations=e_inv.iterations,
             tolerance=e_inv.tolerance,
+            solver=e_inv.solver,
         )
 
         # z to x
@@ -397,22 +420,25 @@ class MonLipNet(nn.Module):
                             inverse_activation_fn: Callable = nn.relu,
                             iterations: int = 2000,
                             Lambda: float = 1.0,
-                            tolerance: float = 1e-6) -> ExplicitInverseMonLipParams:
+                            tolerance: float = 1e-6,
+                            solver: str = "dys") -> ExplicitInverseMonLipParams:
         """
         Convert from direct MonLipNet params to explicit form for inverse call.
         Args:
             params (dict): Flax model parameters dictionary.
-            alpha: Requested DYS step. Values outside the convergence range are
-                replaced by a safe step based on the layer's current bounds.
-            inverse_activation_fn: Proximal operator used by DYS (default: nn.relu).
-            iterations: Maximum DYS iterations (default: 2000).
-            Lambda: Step size for the update in DYS solver (default: 1.0).
+            alpha: Solver step. Unsafe DYS values are capped; PRS/DRS require
+                a positive step and default to 1.
+            inverse_activation_fn: ``prox_(alpha f)`` (default: ``nn.relu``).
+            iterations: Maximum solver iterations (default: 2000).
+            Lambda: Solver relaxation (default: 1.0).
             tolerance: Relative splitting-residual tolerance (default: 1e-6).
+            solver: ``"dys"`` (default), ``"prs"``, or ``"drs"``.
         Returns:
             ExplicitInverseMonLipParams: explicit MonLipNet params.
         """
         return self.apply(
             params, alpha, inverse_activation_fn, iterations, Lambda, tolerance,
+            solver,
             method="_direct_to_explicit_inverse"
         )
 
