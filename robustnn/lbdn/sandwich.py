@@ -58,6 +58,33 @@ DirectLayerParams = DirectSandwichParams | DirectLinearParams
 ExplicitLayerParams = ExplicitSandwichParams | ExplicitLinearParams
 
 
+def _cayley_angle_init(theta: float, std: float) -> Initializer:
+    """Initializer for a Sandwich weight `XY` whose Cayley blocks are diagonal.
+
+    For `XY` of shape `(n_in + n_out, n_out)` this returns
+    `XY = [0; -tan(theta/2) E] + std * N(0, 1)` with `E = eye(n_in, n_out)`.
+    When `std = 0`, `Z = V^T V` is diagonal and the Cayley transform gives
+    `A_T = cos(theta) I` and `B_T = sin(theta) E` on the first `min(n_in, n_out)`
+    units. Any remaining units get `A_T = 1` and `B_T = 0`.
+
+    Use it through `SandwichLayer.identity_init` or `SandwichLinear.identity_init`,
+    which choose `theta` for a requested gain.
+
+    Args:
+        theta (float): angle splitting each unit between the `A_T` and `B_T` blocks.
+        std (float): standard deviation of the Gaussian noise added to `XY`.
+
+    Returns:
+        Initializer: a function `(key, shape, dtype) -> XY`.
+    """
+    def init_func(key, shape, dtype) -> Array:
+        n_out = shape[1]
+        V = -jnp.tan(theta / 2) * jnp.eye(shape[0] - n_out, n_out, dtype=dtype)
+        XY = jnp.concatenate([jnp.zeros((n_out, n_out), dtype), V])
+        return XY + init.normal(std)(key, shape, dtype)
+    return init_func
+
+
 class SandwichLayerBase(nn.Module):
     """Base class for Sandwich network layers.
 
@@ -180,6 +207,38 @@ class SandwichLayer(SandwichLayerBase):
     activation: ActivationFn = nn.relu
     psi_init: Initializer = init.zeros_init()
 
+    @staticmethod
+    def identity_init(gain: float = 1.0, std: float = 0.0) -> dict:
+        """Initializers that make the layer compute `sigma(gain * E^T u + b)`.
+
+        `E = eye(input_size, features)` keeps the first `min(input_size, features)`
+        inputs and pads any extra outputs with zeros. The Cayley blocks are set to
+        `A_T = cos(t) I` and `B_T = sin(t) E` with `sin(2t) = gain`, and
+        `psi = 1 / (sqrt(2) cos(t))`. The explicit weights are then
+        `A_T psi = I / sqrt(2)`, the same output side as a unit-gain layer, and
+        `B / psi = gain E^T / sqrt(2)`, so only the input matrix carries the gain.
+        `gain = 1` gives `A_T = B_T = I / sqrt(2)` and `psi = 1`.
+
+        With `std = 0`, the padded units are identical and stay that way under
+        gradient descent. A small `std` gives them different starting points.
+
+        Example usage::
+
+            >>> layer = SandwichLayer(3, 8, **SandwichLayer.identity_init(0.5, std=1e-3))
+
+        Args:
+            gain (float): gain on the layer input, in `[0, 1]` (default: 1.0).
+            std (float): std of Gaussian noise added to `XY` (default: 0.0, exact).
+
+        Returns:
+            dict: `kernel_init` and `psi_init` keyword arguments for the layer.
+        """
+        theta = jnp.arcsin(gain) / 2
+        return dict(
+            kernel_init=_cayley_angle_init(theta, std),
+            psi_init=init.constant(-jnp.log(jnp.sqrt(2.0) * jnp.cos(theta))),
+        )
+
     def _build_direct(self, XY: Array, a: Array, b: Array) -> DirectSandwichParams:
         """Add the activation scaling `d` to the shared direct params."""
         d = self.param("d", self.psi_init, (self.features,), self.param_dtype)
@@ -241,6 +300,27 @@ class SandwichLinear(SandwichLayerBase):
 
     See docs for `SandwichLayerBase` for the full list of arguments.
     """
+
+    @staticmethod
+    def identity_init(gain: float = 1.0, std: float = 0.0) -> dict:
+        """Initializers that make the weight a scaled identity, `B = gain * E^T`.
+
+        `E = eye(input_size, features)` keeps the first `min(input_size, features)`
+        inputs and pads any extra outputs with zeros. Returns a dict to match
+        `SandwichLayer.identity_init`.
+
+        Example usage::
+
+            >>> layer = SandwichLinear(3, 3, **SandwichLinear.identity_init(0.5))
+
+        Args:
+            gain (float): gain in `[0, 1]` (default: 1.0).
+            std (float): std of Gaussian noise added to `XY` (default: 0.0, exact).
+
+        Returns:
+            dict: the `kernel_init` keyword argument for the layer.
+        """
+        return dict(kernel_init=_cayley_angle_init(jnp.arcsin(gain), std))
 
     def _build_direct(self, XY: Array, a: Array, b: Array) -> DirectLinearParams:
         """The shared direct params are all this layer needs."""

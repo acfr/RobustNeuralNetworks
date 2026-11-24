@@ -5,18 +5,38 @@ import jax.numpy as jnp
 
 from typing import Callable, Any, Tuple, Union
 from flax.typing import Array, PrecisionLike
+import optax
 
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
 
 def l2_norm(x, eps=jnp.finfo(jnp.float32).eps, **kwargs):
-    """Compute l2 norm of a vector/matrix with JAX.
-    This is safe for backpropagation, unlike `jnp.linalg.norm`."""
-    return jnp.sqrt(jnp.sum(x**2, **kwargs) + eps)
+    """Compute the l2 norm of a vector/matrix with JAX, using `optax.safe_norm`.
 
+    Safe for backpropagation, unlike `jnp.linalg.norm`. Returns `max(|x|, eps)`, so 
+    it is exact for `|x| > eps` and its gradient is zero below. Keyword arguments 
+    (e.g. `axis`, `keepdims`) are passed to `optax.safe_norm`.
+    """
+    return optax.safe_norm(x, eps, **kwargs)
 
-def cayley(W: Array, return_split:bool=False) -> Union[Array, Tuple[Array, Array]]:
+def _cayley_setup(W: Array) -> Tuple[Array, Array, Array, Array]:
+    """Shared setup for the Cayley transform of a stacked matrix `W = [U; V]`.
+
+    Args:
+        W (Array): Input matrix to transform. Assumes `W.shape[0] >= W.shape[1]`.
+
+    Returns:
+        Tuple[Array, Array, Array, Array]: `(V, Z, I, Z + I)`, where `Z` is the
+            matrix from which both Cayley blocks are constructed.
+    """
+    n = W.shape[1]
+    U, V = W[:n, :], W[n:, :]
+    Z = (U - U.T) + (V.T @ V)
+    I = jnp.eye(n)
+    return V, Z, I, Z + I
+
+def cayley(W: Array, return_split:bool=False) -> Array | Tuple[Array, Array]:
     """Perform Cayley transform on a stacked matrix `W = [U; V]`
     with `U.shape == (n, n)` and `V.shape == (m, n)`.
 
@@ -32,10 +52,7 @@ def cayley(W: Array, return_split:bool=False) -> Union[Array, Tuple[Array, Array
     if n > m:
        return cayley(W.T).T
     
-    U, V = W[:n, :], W[n:, :]
-    Z = (U - U.T) + (V.T @ V)
-    I = jnp.eye(n)
-    ZI = Z + I
+    V, Z, I, ZI = _cayley_setup(W)
     
     # Note that B * A^-1 = solve(A.T, B.T).T
     A_T = jnp.linalg.solve(ZI, I-Z)
@@ -44,6 +61,22 @@ def cayley(W: Array, return_split:bool=False) -> Union[Array, Tuple[Array, Array
     if return_split:
         return A_T, B_T
     return jnp.concatenate([A_T, B_T])
+
+def cayley_b(W: Array) -> Array:
+    """Compute only the `B` block of the Cayley transform of `W = [U; V]`.
+
+    Equivalent to `cayley(W, return_split=True)[1]`, but skips the linear solve
+    for the `A` block. Use this wherever only `B` is needed (eg: the output
+    layer of an LBDN, which has no activation to orthogonalise).
+
+    Args:
+        W (Array): Input matrix to transform. Assumes `W.shape[0] >= W.shape[1]`.
+
+    Returns:
+        Array: the `B` block of the Cayley transform (transposed, as in `cayley`).
+    """
+    V, _, _, ZI = _cayley_setup(W)
+    return -2 * jnp.linalg.solve(ZI.T, V.T).T
 
 
 def dot_lax(input1, input2, precision: PrecisionLike = None):

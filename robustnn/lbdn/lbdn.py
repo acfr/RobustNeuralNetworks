@@ -66,14 +66,31 @@ class LBDN(nn.Module):
         gamma: upper bound on the Lipschitz constant (default: 1.0).
         activation: activation function to use (default: relu).
         
-        kernel_init: initializer function for the weight matrix (default: lecun_normal()).
+        kernel_init: initializer function for the weight matrix, used only when
+            `init_identity=False` (default: lecun_normal()).
         bias_init: initializer function for the bias (default: zeros_init()).
-        psi_init: initializer function for the activation scaling (default: zeros_init()).
+        psi_init: initializer function for the activation scaling, used only when
+            `init_identity=False` (default: zeros_init()).
         param_dtype: the dtype passed to parameter initializers (default: float32).
         
         use_bias:whether to add a bias to the output (default: True).
         trainable_lipschitz: make the Lipschitz constant trainable (default: False).
         init_output_zero: initialize the network so its output is zero (default: False).
+            Overrides `init_identity` for the output layer.
+        init_identity: initialize the network close to the identity map (default: True).
+            Set to False for the random `kernel_init`/`psi_init` initialization
+            of Wang & Manchester (ICML '23). Every layer starts as a (padded
+            or truncated) identity, `h = sigma(E^T u + b)`. Only the input matrix
+            of the first layer and the output matrix are scaled, each by
+            `1 / sqrt(gamma)`, to cancel the `sqrt(gamma)` input/output scaling.
+            With zero biases the network is then `sigma(...sigma(x))`: exactly `x`
+            for the `identity` activation, `relu(x)` for relu, and `tanh(tanh(x))`
+            for tanh with two hidden layers. For `gamma < 1` the scaling cannot be
+            cancelled by 1-Lipschitz layers, so the linear part is `gamma * I`.
+            See `SandwichLayer.identity_init`.
+        identity_std: std of the Gaussian noise added to each weight by
+            `init_identity` (default: 1e-3). Use 0 for the exact identity, but
+            then units beyond the input width stay identical during training.
     
     Note: Only monotone activations are supported: `identity`, `relu`, `tanh`, `sigmoid`.
     """
@@ -91,6 +108,8 @@ class LBDN(nn.Module):
     use_bias: bool = True
     trainable_lipschitz: bool = False
     init_output_zero: bool = False
+    init_identity: bool = True
+    identity_std: float = 1e-3
     
     def setup(self):
         """Initialise direct LBDN params.
@@ -113,6 +132,16 @@ class LBDN(nn.Module):
         hidden_sizes = tuple(self.hidden_sizes)
         in_layers = (self.input_size,) + hidden_sizes
         out_layers = hidden_sizes + (self.output_size,)
+        n_hidden = len(hidden_sizes)
+
+        layer_inits = [dict(kernel_init=self.kernel_init, psi_init=self.psi_init)] * n_hidden
+        out_init = dict(kernel_init=self.kernel_init)
+        if self.init_identity:
+            # A 1-Lipschitz layer has gain <= 1, so it cannot cancel gamma < 1.
+            g, std = jnp.minimum(1.0, 1 / jnp.sqrt(self.gamma)), self.identity_std
+            layer_inits = [SandwichLayer.identity_init(g if k == 0 else 1.0, std)
+                           for k in range(n_hidden)]
+            out_init = SandwichLinear.identity_init(g if n_hidden else g**2, std)
         
         layers = [
             SandwichLayer(
@@ -120,26 +149,24 @@ class LBDN(nn.Module):
                 features=out_layers[k],
                 activation=self.activation,
                 use_bias=self.use_bias,
-                kernel_init=self.kernel_init,
                 bias_init=self.bias_init,
-                psi_init=self.psi_init,
-                param_dtype=dtype
+                param_dtype=dtype,
+                **layer_inits[k]
             )
-            for k in range(len(hidden_sizes))
+            for k in range(n_hidden)
         ]
         
-        out_kernel_init = self.kernel_init
         if self.init_output_zero:
-            out_kernel_init = init.zeros_init()
+            out_init = dict(kernel_init=init.zeros_init())
         
         layers.append(
             SandwichLinear(
                 input_size=in_layers[-1],
                 features=out_layers[-1],
                 use_bias=self.use_bias,
-                kernel_init=out_kernel_init,
                 bias_init=self.bias_init,
-                param_dtype=dtype
+                param_dtype=dtype,
+                **out_init
             )
         )
         
