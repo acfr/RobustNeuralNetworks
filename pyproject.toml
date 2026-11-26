@@ -20,6 +20,7 @@ authors = [
 # those the models are currently tested against.
 dependencies = [
     "flax>=0.12.10",
+    "optax>=0.2.8",
     "numpy>=2.5.3",
 ]
 
