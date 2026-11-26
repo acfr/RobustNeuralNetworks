@@ -87,7 +87,7 @@ class LipschitzMLP(nn.Module):
     def setup(self):
       self.sandwich1 = lbdn.SandwichLayer(n_inputs, 64, activation=nn.relu)
       self.sandwich2 = lbdn.SandwichLayer(64, 64, activation=nn.relu)
-      self.sandwich3 = lbdn.SandwichLayer(64, n_out, is_output=True)
+      self.sandwich3 = lbdn.SandwichLinear(64, n_out)
       self.scale = jnp.sqrt(self.gamma)
 
     def __call__(self, x):
